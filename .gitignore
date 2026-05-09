@@ -1,0 +1,17 @@
+customer-app/lib/core/config/app_config.dart
+customer-app/test
+customer-app/andriod
+customer-app/ios
+customer-app/linux
+customer-app/windows
+api/vendor
+vendor
+screens
+docs
+*.txt
+*.log
+*cache
+*node_modules
+*.env
+*.claude
+*.trae
