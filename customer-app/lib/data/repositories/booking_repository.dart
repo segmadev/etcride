@@ -12,12 +12,12 @@ class BookingRepository {
     // Flatten nested driver object returned by show()
     final driver = raw['driver'] as Map<String, dynamic>?;
 
-    // Status: map snake_case backend values to camelCase enum keys
+    // Status: backend stores snake_case ('in_progress', 'payment_pending')
+    // but the generated enum map uses camelCase values.
     final rawStatus = (raw['status'] ?? 'pending').toString();
     final status = switch (rawStatus) {
       'in_progress'      => 'inProgress',
       'payment_pending'  => 'paymentPending',
-      'arrived'          => 'arrived',
       _                  => rawStatus,
     };
 
@@ -51,12 +51,15 @@ class BookingRepository {
       'driverPhone':        raw['driver_phone']  ?? driver?['phone'],
       'driverAvatar':       raw['driver_avatar'] ?? driver?['photo'],
       'driverRating':       _toDouble(raw['driver_rating'] ?? driver?['rating']),
-      'vehicleTypeName':    raw['vehicle_type_name'] ?? raw['vehicle_type'],
+      'vehicleTypeName':    raw['vehicle_type_name'],
       'vehiclePlate':       raw['vehicle_plate'] ?? raw['plate_number'],
       'vehicleColor':       raw['vehicle_color'],
       'numStops':           _toInt(raw['num_stops']),
       'durationMinutes':    _toInt(raw['duration_minutes']),
       'distanceKm':         _toDouble(raw['distance_km']),
+      'routePolyline':      raw['route_polyline'],
+      'routeDistanceMeters': _toInt(raw['route_distance_meters']),
+      'routeDurationSeconds': _toInt(raw['route_duration_seconds']),
       'cancellationReason': raw['cancellation_reason'],
       'createdAt':          raw['created_at'],
       'updatedAt':          raw['updated_at'],
@@ -151,11 +154,45 @@ class BookingRepository {
     return BookingModel.fromJson(_normalize(data));
   }
 
+  Future<({String status, double? lat, double? lng, String? lastSeen})> trackBooking(String id) async {
+    final data = await _client.get<Map<String, dynamic>>(
+      ApiEndpoints.trackBooking(id),
+    );
+    final status = data?['status']?.toString() ?? '';
+    final loc = data?['location'] as Map?;
+    final lat = _toDouble(loc?['lat']);
+    final lng = _toDouble(loc?['lng']);
+    final lastSeen = loc?['last_seen']?.toString();
+    return (
+      status: status,
+      lat: (lat == 0.0 && lng == 0.0) ? null : lat,
+      lng: (lat == 0.0 && lng == 0.0) ? null : lng,
+      lastSeen: lastSeen,
+    );
+  }
+
   /// Cancel a booking.
   Future<void> cancelBooking(String id, {String reason = 'Cancelled by user'}) async {
     await _client.post<void>(
       ApiEndpoints.cancelBooking(id),
       body: {'reason': reason},
+    );
+  }
+
+  Future<void> updatePaymentMethod(String bookingId, String paymentMethod) async {
+    await _client.put<Map<String, dynamic>>(
+      ApiEndpoints.paymentMethod(bookingId),
+      body: {'payment_method': paymentMethod},
+    );
+  }
+
+  Future<void> rateDriver(String bookingId, {required int rating, String? comment}) async {
+    await _client.post<Map<String, dynamic>>(
+      ApiEndpoints.rateBooking(bookingId),
+      body: {
+        'rating': rating,
+        if (comment != null && comment.trim().isNotEmpty) 'comment': comment.trim(),
+      },
     );
   }
 
@@ -177,34 +214,5 @@ class BookingRepository {
       params: {if (bookingType != null) 'type': bookingType},
     );
     return data ?? const [];
-  }
-
-  /// Check driver availability before showing booking UI.
-  Future<Map<String, dynamic>> checkDriverAvailability({
-    required String vehicleTypeId,
-    required double lat,
-    required double lng,
-  }) async {
-    final data = await _client.get<Map<String, dynamic>>(
-      ApiEndpoints.driverAvailability,
-      params: {'vehicle_type_id': vehicleTypeId, 'lat': lat, 'lng': lng},
-    );
-    return data ?? {'available': false, 'driver_count': 0};
-  }
-
-  /// Update payment method. Both customer and driver can call this.
-  Future<void> updatePaymentMethod(String bookingId, String method) async {
-    await _client.put<void>(
-      ApiEndpoints.updatePaymentMethod(bookingId),
-      body: {'payment_method': method},
-    );
-  }
-
-  /// Submit a star rating for the driver after a trip.
-  Future<void> rateDriver(String bookingId, {required int rating, String comment = ''}) async {
-    await _client.post<void>(
-      ApiEndpoints.rateDriver(bookingId),
-      body: {'rating': rating, 'comment': comment},
-    );
   }
 }

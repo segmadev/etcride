@@ -25,6 +25,8 @@ abstract final class ApiEndpoints {
   static String confirmDelivery(String id)=> '/bookings/$id/confirm-delivery';
   static String initiatePayment(String id)=> '/bookings/$id/pay';
   static String paymentStatus(String id)  => '/bookings/$id/payment-status';
+  static String paymentMethod(String id)  => '/bookings/$id/payment-method';
+  static String rateBooking(String id)    => '/bookings/$id/rate';
 
   // ── Notifications ─────────────────────────────────────────────────────────
   static const String notifications        = '/notifications';
@@ -37,8 +39,6 @@ abstract final class ApiEndpoints {
 
   // ── Content ───────────────────────────────────────────────────────────────
   static const String vehicleTypes         = '/content/vehicle-types';
-  static const String driverAvailability   = '/content/driver-availability';
-  static const String directions           = '/content/directions';
 
   // ── Google Maps proxy (server-side, avoids CORS + hides API key) ─────────────
   static const String placesAutocomplete   = '/content/places';
@@ -47,8 +47,4 @@ abstract final class ApiEndpoints {
 
   // ── Fare ──────────────────────────────────────────────────────────────────
   static const String fareEstimate         = '/fare/estimate';
-
-  // ── Booking extras ────────────────────────────────────────────────────────
-  static String updatePaymentMethod(String id) => '/bookings/$id/payment-method';
-  static String rateDriver(String id)          => '/bookings/$id/rate';
 }

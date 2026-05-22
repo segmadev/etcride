@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../network/api_client.dart';
 import '../network/api_endpoints.dart';
@@ -111,36 +112,35 @@ class MapsService {
     }
   }
 
-  // ── Directions: origin → destination road route ─────────────────────────────
-
-  /// Returns decoded LatLng points for the fastest driving route.
-  /// Falls back to a two-point straight line if the API fails.
-  static Future<List<LatLng>> getDirections({
-    required double originLat,
-    required double originLng,
-    required double destLat,
-    required double destLng,
-  }) async {
-    final fallback = [LatLng(originLat, originLng), LatLng(destLat, destLng)];
-    try {
-      final data = await _c.get<Map<String, dynamic>>(
-        ApiEndpoints.directions,
-        params: {
-          'origin':      '$originLat,$originLng',
-          'destination': '$destLat,$destLng',
-        },
-      );
-      final encoded = data?['polyline'] as String? ?? '';
-      if (encoded.isEmpty) return fallback;
-      final points = _decodePolyline(encoded);
-      return points.isNotEmpty ? points : fallback;
-    } catch (_) {
-      return fallback;
+  static LatLngBounds? boundsFromPoints(List<LatLng> pts) {
+    if (pts.isEmpty) return null;
+    var minLat = pts.first.latitude,  maxLat = pts.first.latitude;
+    var minLng = pts.first.longitude, maxLng = pts.first.longitude;
+    for (final p in pts) {
+      if (p.latitude  < minLat) minLat = p.latitude;
+      if (p.latitude  > maxLat) maxLat = p.latitude;
+      if (p.longitude < minLng) minLng = p.longitude;
+      if (p.longitude > maxLng) maxLng = p.longitude;
     }
+    return LatLngBounds(
+      southwest: LatLng(minLat, minLng),
+      northeast: LatLng(maxLat, maxLng),
+    );
   }
 
+  static double _haversineKm(double lat1, double lng1, double lat2, double lng2) {
+    const r = 6371.0;
+    final dLat = _toRad(lat2 - lat1);
+    final dLng = _toRad(lng2 - lng1);
+    final a = _sin2(dLat / 2) + math.cos(_toRad(lat1)) * math.cos(_toRad(lat2)) * _sin2(dLng / 2);
+    return r * 2 * math.asin(math.sqrt(a));
+  }
+
+  static double _toRad(double d) => d * math.pi / 180;
+  static double _sin2(double x) { final s = math.sin(x); return s * s; }
+
   /// Decodes a Google Maps encoded polyline string into a list of [LatLng].
-  static List<LatLng> _decodePolyline(String encoded) {
+  static List<LatLng> decodePolyline(String encoded) {
     final result = <LatLng>[];
     int index = 0, lat = 0, lng = 0;
     while (index < encoded.length) {

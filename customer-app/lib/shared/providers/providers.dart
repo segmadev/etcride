@@ -49,6 +49,14 @@ final authInitProvider = FutureProvider<UserModel?>((ref) async {
 /// Holds the current booking being assembled across multiple screens.
 final bookingDraftProvider = StateProvider<BookingDraft>((ref) => const BookingDraft());
 
+final activeBookingProvider = FutureProvider.family<BookingModel?, String>((ref, bookingType) async {
+  final all = await ref.read(bookingRepositoryProvider).getMyBookings();
+  for (final b in all) {
+    if (b.bookingType.apiValue == bookingType && b.status.isActive) return b;
+  }
+  return null;
+});
+
 // ── Payment ───────────────────────────────────────────────────────────────────
 
 final selectedPaymentMethodProvider = StateProvider<String>((ref) => 'cash');
@@ -61,13 +69,4 @@ final mapSettingsProvider = FutureProvider<Map<String, dynamic>>((ref) async {
 final mapApiKeyProvider = Provider<String>((ref) {
   final v = ref.watch(mapSettingsProvider).valueOrNull;
   return v?['api_key']?.toString() ?? '';
-});
-
-/// The user's first active booking (ride or delivery). Null when idle.
-/// Refresh by calling ref.invalidate(activeBookingProvider).
-final activeBookingProvider = FutureProvider.autoDispose<BookingModel?>((ref) async {
-  final user = ref.read(currentUserProvider);
-  if (user == null) return null;
-  final list = await ref.read(bookingRepositoryProvider).getMyBookings();
-  return list.where((b) => b.status.isActive).firstOrNull;
 });

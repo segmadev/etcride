@@ -32,6 +32,7 @@ class _SelectRideScreenState extends ConsumerState<SelectRideScreen> {
   bool _loading = true;
   bool _confirming = false;
   String? _error;
+  String? _confirmError;
   String _paymentMethod = 'cash';
 
   double _toDouble(dynamic v) {
@@ -156,7 +157,7 @@ class _SelectRideScreenState extends ConsumerState<SelectRideScreen> {
     ));
     ref.read(selectedPaymentMethodProvider.notifier).state = _paymentMethod;
 
-    setState(() => _confirming = true);
+    setState(() { _confirming = true; _confirmError = null; });
     try {
       final booking = await ref.read(bookingRepositoryProvider).createBooking(
         vehicleTypeId:       _selectedId!,
@@ -180,9 +181,11 @@ class _SelectRideScreenState extends ConsumerState<SelectRideScreen> {
         context.go(AppRoutes.requesting, extra: booking.id);
       }
     } catch (e) {
+      final msg = e.toString();
       if (mounted) {
+        setState(() => _confirmError = msg);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString()), backgroundColor: AppColors.error),
+          SnackBar(content: Text(msg), backgroundColor: AppColors.error),
         );
       }
     } finally {
@@ -288,10 +291,31 @@ class _SelectRideScreenState extends ConsumerState<SelectRideScreen> {
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
-          child: AppButton(
-            label: AppStrings.confirmRideBtn,
-            onPressed: _selectedId != null ? _confirm : null,
-            enabled: _selectedId != null,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_confirmError != null) ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: AppColors.error.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.error.withValues(alpha: 0.25)),
+                  ),
+                  child: Text(
+                    _confirmError!,
+                    style: AppTextStyles.bodySmall.copyWith(color: AppColors.error),
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
+              AppButton(
+                label: AppStrings.confirmRideBtn,
+                onPressed: _selectedId != null ? _confirm : null,
+                enabled: _selectedId != null,
+              ),
+            ],
           ),
         ),
       ],

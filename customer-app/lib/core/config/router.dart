@@ -101,34 +101,41 @@ final appRouter = GoRouter(
     GoRoute(path: AppRoutes.selectRide,         builder: (_, __) => const SelectRideScreen()),
     GoRoute(
       path: AppRoutes.requesting,
-      builder: (_, state) => RequestingScreen(bookingId: state.extra as String),
+      redirect: (_, s) => s.extra == null ? AppRoutes.home : null,
+      builder: (_, state) => RequestingScreen(bookingId: state.extra! as String),
     ),
     GoRoute(
       path: AppRoutes.driverAssigned,
-      builder: (_, state) => DriverAssignedScreen(bookingId: state.extra as String),
+      redirect: (_, s) => s.extra == null ? AppRoutes.home : null,
+      builder: (_, state) => DriverAssignedScreen(bookingId: state.extra! as String),
     ),
 
     // ── Trip ─────────────────────────────────────────────────────────────
     GoRoute(
       path: AppRoutes.payment,
-      builder: (_, state) => PaymentScreen(bookingId: state.extra as String),
+      redirect: (_, s) => s.extra == null ? AppRoutes.home : null,
+      builder: (_, state) => PaymentScreen(bookingId: state.extra! as String),
     ),
     GoRoute(
       path: AppRoutes.tripInProgress,
-      builder: (_, state) => TripInProgressScreen(bookingId: state.extra as String),
+      redirect: (_, s) => s.extra == null ? AppRoutes.home : null,
+      builder: (_, state) => TripInProgressScreen(bookingId: state.extra! as String),
     ),
     GoRoute(
       path: AppRoutes.tripCompleted,
-      builder: (_, state) => TripCompletedScreen(bookingId: state.extra as String),
+      redirect: (_, s) => s.extra == null ? AppRoutes.home : null,
+      builder: (_, state) => TripCompletedScreen(bookingId: state.extra! as String),
     ),
     GoRoute(path: AppRoutes.tripHistory,        builder: (_, __) => const TripHistoryScreen()),
     GoRoute(
       path: AppRoutes.tripDetails,
-      builder: (_, state) => TripDetailsScreen(bookingId: state.extra as String),
+      redirect: (_, s) => s.extra == null ? AppRoutes.home : null,
+      builder: (_, state) => TripDetailsScreen(bookingId: state.extra! as String),
     ),
     GoRoute(
       path: AppRoutes.tripReceipt,
-      builder: (_, state) => TripReceiptScreen(bookingId: state.extra as String),
+      redirect: (_, s) => s.extra == null ? AppRoutes.home : null,
+      builder: (_, state) => TripReceiptScreen(bookingId: state.extra! as String),
     ),
 
     // ── Courier ───────────────────────────────────────────────────────────

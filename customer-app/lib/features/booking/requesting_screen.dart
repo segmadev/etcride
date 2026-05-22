@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,6 +13,7 @@ import '../../core/maps/maps_service.dart';
 import '../../core/utils/formatters.dart';
 import '../../data/models/booking_model.dart';
 import '../../shared/providers/providers.dart';
+import '../../shared/widgets/trip_quick_nav.dart';
 
 class RequestingScreen extends ConsumerStatefulWidget {
   const RequestingScreen({super.key, required this.bookingId});
@@ -26,19 +26,22 @@ class RequestingScreen extends ConsumerStatefulWidget {
 class _RequestingScreenState extends ConsumerState<RequestingScreen> {
   Timer? _pollTimer;
   GoogleMapController? _mapCtrl;
+  int _mapVersion = 0;
 
   BookingModel? _booking;
   bool          _cancelling = false;
 
-  // Route state — only changes when booking loads or route is fetched
-  List<LatLng>  _routePoints = [];
-  bool          _routeLoaded = false;
+  // Route state
+  List<LatLng>   _routePoints    = [];
+  bool           _routeLoaded    = false;
+  int            _durationSec    = 0;   // actual driving duration from Directions API
+  LatLngBounds?  _routeBounds;
+  String?        _routePolylineUsed;
 
   @override
   void initState() {
     super.initState();
     _loadBooking();
-    // Poll every 10 s — aggressive enough for UX, gentle on the server
     _pollTimer = Timer.periodic(const Duration(seconds: 10), (_) => _poll());
   }
 
@@ -49,43 +52,49 @@ class _RequestingScreenState extends ConsumerState<RequestingScreen> {
       final b = await ref.read(bookingRepositoryProvider).getBooking(widget.bookingId);
       if (!mounted) return;
       setState(() => _booking = b);
-      _fitBounds(b);
       _fetchRoute(b);
-      // Navigate immediately if the driver was already assigned during creation
       _handleStatus(b);
     } catch (_) {}
   }
 
   Future<void> _fetchRoute(BookingModel b) async {
-    if (_routeLoaded) return;
     if (b.pickupLat == 0 || b.destinationLat == 0) return;
-    final pts = await MapsService.getDirections(
-      originLat: b.pickupLat,
-      originLng: b.pickupLng,
-      destLat:   b.destinationLat,
-      destLng:   b.destinationLng,
-    );
+
+    final encoded = (b.routePolyline ?? '').trim();
+    if (_routeLoaded && (encoded.isEmpty || encoded == _routePolylineUsed)) return;
+    final fallbackPts = [
+      LatLng(b.pickupLat, b.pickupLng),
+      LatLng(b.destinationLat, b.destinationLng),
+    ];
+    final points = encoded.isNotEmpty ? MapsService.decodePolyline(encoded) : fallbackPts;
+
+    final distKm = b.distanceKm > 0 ? b.distanceKm : (b.routeDistanceMeters > 0 ? (b.routeDistanceMeters / 1000) : 0.0);
+    final durationSec = b.routeDurationSeconds > 0
+        ? b.routeDurationSeconds
+        : (distKm > 0 ? ((distKm / 30) * 3600).round() : 0);
+
     if (!mounted) return;
     setState(() {
-      _routePoints = pts;
+      _routePoints = points.length >= 2 ? points : fallbackPts;
+      _durationSec = durationSec;
+      _routeBounds = MapsService.boundsFromPoints(_routePoints);
       _routeLoaded = true;
+      _routePolylineUsed = encoded.isNotEmpty ? encoded : _routePolylineUsed;
     });
+    _fitRoute();
   }
 
   Future<void> _poll() async {
     try {
       final b = await ref.read(bookingRepositoryProvider).getBooking(widget.bookingId);
       if (!mounted) return;
-
-      // Only setState if status or driver changed — avoid unnecessary map redraws
       final changed = _booking == null ||
           _booking!.status != b.status ||
           _booking!.driverId != b.driverId;
       if (changed) setState(() => _booking = b);
-
+      _fetchRoute(b);
       _handleStatus(b);
     } catch (e) {
-      // Booking not found (deleted / wrong account) — stop polling and go home
       final is404 = e.toString().contains('404') ||
           e.toString().toLowerCase().contains('not found');
       if (is404 && mounted) {
@@ -95,11 +104,9 @@ class _RequestingScreenState extends ConsumerState<RequestingScreen> {
             backgroundColor: AppColors.error));
         context.go(AppRoutes.home);
       }
-      // Other errors (network, timeout) — keep polling, try again next tick
     }
   }
 
-  /// Check booking status and navigate to the appropriate screen.
   void _handleStatus(BookingModel b) {
     if (!mounted) return;
     if (b.status == BookingStatus.assigned ||
@@ -125,20 +132,19 @@ class _RequestingScreenState extends ConsumerState<RequestingScreen> {
 
   // ── Map helpers ─────────────────────────────────────────────────────────────
 
-  void _fitBounds(BookingModel b) {
-    if (b.pickupLat == 0 || b.destinationLat == 0) return;
-    Future.delayed(const Duration(milliseconds: 400), () {
+  void _fitRoute() {
+    final bounds = _routeBounds;
+    if (bounds == null) return;
+    final version = _mapVersion;
+    Future.delayed(const Duration(milliseconds: 500), () {
       if (!mounted) return;
-      final sw = LatLng(
-        min(b.pickupLat, b.destinationLat),
-        min(b.pickupLng, b.destinationLng),
-      );
-      final ne = LatLng(
-        max(b.pickupLat, b.destinationLat),
-        max(b.pickupLng, b.destinationLng),
-      );
-      _mapCtrl?.animateCamera(
-          CameraUpdate.newLatLngBounds(LatLngBounds(southwest: sw, northeast: ne), 90));
+      if (version != _mapVersion) return;
+      try {
+        _mapCtrl?.animateCamera(
+            CameraUpdate.newLatLngBounds(bounds, 80));
+      } catch (_) {
+        _mapCtrl = null;
+      }
     });
   }
 
@@ -154,7 +160,7 @@ class _RequestingScreenState extends ConsumerState<RequestingScreen> {
       Marker(
         markerId: const MarkerId('dest'),
         position: LatLng(b.destinationLat, b.destinationLng),
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
         infoWindow: InfoWindow(title: 'Destination', snippet: b.destinationAddress),
       ),
   };
@@ -200,13 +206,12 @@ class _RequestingScreenState extends ConsumerState<RequestingScreen> {
     }
   }
 
-  void _stop() {
-    _pollTimer?.cancel();
-  }
+  void _stop() { _pollTimer?.cancel(); }
 
   @override
   void dispose() {
     _stop();
+    _mapVersion++;
     _mapCtrl?.dispose();
     super.dispose();
   }
@@ -219,7 +224,6 @@ class _RequestingScreenState extends ConsumerState<RequestingScreen> {
     final draft  = ref.watch(bookingDraftProvider);
     final mapKey = ref.watch(mapApiKeyProvider);
 
-    // Fall back to draft data while booking loads
     final pickupAddr = b?.pickupAddress      ?? draft.pickupAddress;
     final destAddr   = b?.destinationAddress ?? draft.destinationAddress;
     final fare       = b?.estimatedFare      ?? draft.estimatedFare;
@@ -240,7 +244,10 @@ class _RequestingScreenState extends ConsumerState<RequestingScreen> {
               polylineId: const PolylineId('route'),
               points:     _routePoints,
               color:      AppColors.primary,
-              width:      4,
+              width:      5,
+              jointType:  JointType.round,
+              startCap:   Cap.roundCap,
+              endCap:     Cap.roundCap,
             ),
           }
         : <Polyline>{};
@@ -248,7 +255,7 @@ class _RequestingScreenState extends ConsumerState<RequestingScreen> {
     return Scaffold(
       body: Stack(
         children: [
-          // ── Stable map — only rebuilds when markers/polylines change ─────
+          // ── Stable map ────────────────────────────────────────────────────
           _StableMapView(
             initialPos: initialPos,
             apiKey:     mapKey,
@@ -256,33 +263,15 @@ class _RequestingScreenState extends ConsumerState<RequestingScreen> {
             polylines:  polylines,
             onMapCreated: (c) {
               _mapCtrl = c;
-              if (b != null) _fitBounds(b);
+              _mapVersion++;
+              if (_routeBounds != null) _fitRoute();
             },
           ),
 
-          // ── Back button ────────────────────────────────────────────────────
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: GestureDetector(
-                onTap: () => context.pop(),
-                child: Container(
-                  width: 40, height: 40,
-                  decoration: BoxDecoration(
-                    color: AppColors.white,
-                    shape: BoxShape.circle,
-                    boxShadow: [BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.12),
-                        blurRadius: 10)],
-                  ),
-                  child: const Icon(Icons.arrow_back_rounded,
-                      size: 20, color: AppColors.textPrimary),
-                ),
-              ),
-            ),
-          ),
+          // ── Top bar: [menu]  ···  [home] ─────────────────────────────────
+          const TripTopBar(),
 
-          // ── Info sheet — owns its own 1-s timer, map never sees it ───────
+          // ── Info sheet ───────────────────────────────────────────────────
           Positioned(
             left: 0, right: 0, bottom: 0,
             child: _InfoSheet(
@@ -291,6 +280,7 @@ class _RequestingScreenState extends ConsumerState<RequestingScreen> {
               fare:          fare,
               vehicleType:   vtName.isNotEmpty ? vtName : 'Standard',
               distanceKm:    distKm,
+              durationSec:   _durationSec,
               isDelivery:    isDelivery,
               cancelling:    _cancelling,
               status:        _booking?.status,
@@ -304,8 +294,6 @@ class _RequestingScreenState extends ConsumerState<RequestingScreen> {
 }
 
 // ── Stable map widget ─────────────────────────────────────────────────────────
-// Only rebuilds when markers or polylines actually change.
-// Prevents the PlatformView from flickering on every parent setState.
 
 class _StableMapView extends StatefulWidget {
   const _StableMapView({
@@ -340,9 +328,9 @@ class _StableMapViewState extends State<_StableMapView> {
   @override
   void didUpdateWidget(_StableMapView old) {
     super.didUpdateWidget(old);
-    final markersChanged   = _hashMarkers(old.markers)   != _hashMarkers(widget.markers);
-    final polylinesChanged = _hashPolylines(old.polylines) != _hashPolylines(widget.polylines);
-    if (markersChanged || polylinesChanged) {
+    final mc = _hashMarkers(old.markers)    != _hashMarkers(widget.markers);
+    final pc = _hashPolylines(old.polylines) != _hashPolylines(widget.polylines);
+    if (mc || pc) {
       setState(() {
         _markers   = widget.markers;
         _polylines = widget.polylines;
@@ -351,7 +339,8 @@ class _StableMapViewState extends State<_StableMapView> {
   }
 
   String _hashMarkers(Set<Marker> m) => m
-      .map((x) => '${x.markerId.value}:${x.position.latitude.toStringAsFixed(5)},'
+      .map((x) => '${x.markerId.value}:'
+          '${x.position.latitude.toStringAsFixed(5)},'
           '${x.position.longitude.toStringAsFixed(5)}')
       .join('|');
 
@@ -400,7 +389,7 @@ class _MapPlaceholder extends StatelessWidget {
       );
 }
 
-// ── Info sheet (owns elapsed timer — map never rebuilds because of it) ────────
+// ── Info sheet ────────────────────────────────────────────────────────────────
 
 class _InfoSheet extends StatefulWidget {
   const _InfoSheet({
@@ -409,6 +398,7 @@ class _InfoSheet extends StatefulWidget {
     required this.fare,
     required this.vehicleType,
     required this.distanceKm,
+    required this.durationSec,
     required this.isDelivery,
     required this.cancelling,
     required this.onCancel,
@@ -420,6 +410,7 @@ class _InfoSheet extends StatefulWidget {
   final double        fare;
   final String        vehicleType;
   final double        distanceKm;
+  final int           durationSec;
   final bool          isDelivery;
   final bool          cancelling;
   final BookingStatus? status;
@@ -431,12 +422,11 @@ class _InfoSheet extends StatefulWidget {
 
 class _InfoSheetState extends State<_InfoSheet> {
   Timer? _timer;
-  int    _elapsed = 0;   // seconds since screen opened
+  int    _elapsed = 0;
 
   @override
   void initState() {
     super.initState();
-    // 1-s tick only rebuilds this widget, never the map
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() => _elapsed++);
     });
@@ -454,27 +444,27 @@ class _InfoSheetState extends State<_InfoSheet> {
     return m == 0 ? '${s}s' : '${m}m ${s}s';
   }
 
-  String get _statusHeading {
-    return switch (widget.status) {
-      BookingStatus.assigned  => 'Driver found!',
-      BookingStatus.accepted  => 'Driver accepted!',
-      BookingStatus.arrived   => 'Driver has arrived!',
-      null || _               => AppStrings.findingDriver,
-    };
-  }
+  String get _statusHeading => switch (widget.status) {
+    BookingStatus.assigned => 'Driver found!',
+    BookingStatus.accepted => 'Driver accepted!',
+    BookingStatus.arrived  => 'Driver has arrived!',
+    _                      => AppStrings.findingDriver,
+  };
 
-  String get _statusSubheading {
-    return switch (widget.status) {
-      BookingStatus.assigned  => 'Waiting for driver to confirm the trip…',
-      BookingStatus.accepted  => 'Your driver is on the way to you.',
-      BookingStatus.arrived   => 'Your driver is waiting at the pickup point.',
-      null || _               => AppStrings.findingDriverSub,
-    };
-  }
+  String get _statusSubheading => switch (widget.status) {
+    BookingStatus.assigned => 'Waiting for driver to confirm the trip…',
+    BookingStatus.accepted => 'Your driver is on the way to you.',
+    BookingStatus.arrived  => 'Your driver is waiting at the pickup point.',
+    _                      => AppStrings.findingDriverSub,
+  };
 
-  String get _estimatedTripTime {
+  // Use Google's duration when available; fall back to distance-based estimate
+  String get _etaLabel {
+    if (widget.durationSec > 0) {
+      return AppFormatters.duration(widget.durationSec ~/ 60);
+    }
     if (widget.distanceKm <= 0) return '—';
-    final mins = max(2, (widget.distanceKm / 25 * 60).round());
+    final mins = (widget.distanceKm / 25 * 60).round().clamp(2, 9999);
     return AppFormatters.duration(mins);
   }
 
@@ -486,7 +476,7 @@ class _InfoSheetState extends State<_InfoSheet> {
     return '$h:$m$p';
   }
 
-  String _shortAddress(String addr) {
+  String _short(String addr) {
     if (addr.isEmpty) return '';
     return addr.split(',').first.trim();
   }
@@ -501,7 +491,7 @@ class _InfoSheetState extends State<_InfoSheet> {
         color: AppColors.white,
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         boxShadow: [
-          BoxShadow(color: Color(0x28000000), blurRadius: 24, offset: Offset(0, -4))
+          BoxShadow(color: Color(0x28000000), blurRadius: 24, offset: Offset(0, -4)),
         ],
       ),
       child: Column(
@@ -513,13 +503,11 @@ class _InfoSheetState extends State<_InfoSheet> {
               margin: const EdgeInsets.only(bottom: 14),
               width: 40, height: 4,
               decoration: BoxDecoration(
-                color: AppColors.divider,
-                borderRadius: BorderRadius.circular(2),
-              ),
+                  color: AppColors.divider, borderRadius: BorderRadius.circular(2)),
             ),
           ),
 
-          // ── Status row ─────────────────────────────────────────────────
+          // ── Status row ────────────────────────────────────────────────
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -538,9 +526,8 @@ class _InfoSheetState extends State<_InfoSheet> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(100),
-                ),
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(100)),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -559,15 +546,14 @@ class _InfoSheetState extends State<_InfoSheet> {
           const Divider(height: 1),
           const SizedBox(height: 12),
 
-          // ── ETA row ────────────────────────────────────────────────────
+          // ── ETA row ───────────────────────────────────────────────────
           Row(
             children: [
               Container(
                 width: 36, height: 36,
                 decoration: BoxDecoration(
-                  color: AppColors.primaryLight,
-                  borderRadius: BorderRadius.circular(10),
-                ),
+                    color: AppColors.primaryLight,
+                    borderRadius: BorderRadius.circular(10)),
                 child: const Icon(Icons.access_time_rounded,
                     size: 18, color: AppColors.primary),
               ),
@@ -575,10 +561,9 @@ class _InfoSheetState extends State<_InfoSheet> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Pick Up in ~$_estimatedTripTime',
+                  Text('Pick Up in ~$_etaLabel',
                       style: AppTextStyles.labelMedium),
-                  Text(
-                      'at $_scheduledTime from ${_shortAddress(widget.pickupAddress)}',
+                  Text('at $_scheduledTime from ${_short(widget.pickupAddress)}',
                       style: AppTextStyles.caption
                           .copyWith(color: AppColors.textSecondary)),
                 ],
@@ -588,15 +573,14 @@ class _InfoSheetState extends State<_InfoSheet> {
 
           const SizedBox(height: 12),
 
-          // ── Destination row ────────────────────────────────────────────
+          // ── Destination row ───────────────────────────────────────────
           Row(
             children: [
               Container(
                 width: 36, height: 36,
                 decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(10),
-                ),
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(10)),
                 child: const Icon(Icons.location_on_rounded,
                     size: 18, color: AppColors.destinationPin),
               ),
@@ -605,7 +589,7 @@ class _InfoSheetState extends State<_InfoSheet> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('To ${_shortAddress(widget.destAddress)}',
+                    Text('To ${_short(widget.destAddress)}',
                         style: AppTextStyles.labelMedium,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis),
@@ -623,7 +607,7 @@ class _InfoSheetState extends State<_InfoSheet> {
           const Divider(height: 1),
           const SizedBox(height: 12),
 
-          // ── Vehicle + fare ─────────────────────────────────────────────
+          // ── Vehicle + fare ────────────────────────────────────────────
           Row(
             children: [
               Icon(
@@ -636,7 +620,7 @@ class _InfoSheetState extends State<_InfoSheet> {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  '${widget.vehicleType}  ~  ${AppFormatters.naira(widget.fare)}',
+                  '${widget.vehicleType}  ·  ${AppFormatters.naira(widget.fare)}',
                   style: AppTextStyles.bodyLarge
                       .copyWith(fontWeight: FontWeight.w700),
                 ),
@@ -648,7 +632,7 @@ class _InfoSheetState extends State<_InfoSheet> {
           const Divider(height: 1),
           const SizedBox(height: 10),
 
-          // ── Share trip status ──────────────────────────────────────────
+          // ── Share ─────────────────────────────────────────────────────
           Row(
             children: [
               const Icon(Icons.share_outlined,
@@ -673,7 +657,7 @@ class _InfoSheetState extends State<_InfoSheet> {
 
           const SizedBox(height: 14),
 
-          // ── Cancel button ─────────────────────────────────────────────
+          // ── Cancel ────────────────────────────────────────────────────
           SizedBox(
             width: double.infinity,
             child: OutlinedButton(
@@ -723,10 +707,7 @@ class _PulsingDotState extends State<_PulsingDot>
   }
 
   @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
+  void dispose() { _ctrl.dispose(); super.dispose(); }
 
   @override
   Widget build(BuildContext context) => FadeTransition(

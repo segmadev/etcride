@@ -45,6 +45,9 @@ mixin _$BookingModel {
   int get numStops => throw _privateConstructorUsedError;
   int get durationMinutes => throw _privateConstructorUsedError;
   double get distanceKm => throw _privateConstructorUsedError;
+  String? get routePolyline => throw _privateConstructorUsedError;
+  int get routeDistanceMeters => throw _privateConstructorUsedError;
+  int get routeDurationSeconds => throw _privateConstructorUsedError;
   String? get cancellationReason => throw _privateConstructorUsedError;
   String? get createdAt => throw _privateConstructorUsedError;
   String? get updatedAt => throw _privateConstructorUsedError;
@@ -91,6 +94,9 @@ abstract class $BookingModelCopyWith<$Res> {
       int numStops,
       int durationMinutes,
       double distanceKm,
+      String? routePolyline,
+      int routeDistanceMeters,
+      int routeDurationSeconds,
       String? cancellationReason,
       String? createdAt,
       String? updatedAt});
@@ -136,6 +142,9 @@ class _$BookingModelCopyWithImpl<$Res, $Val extends BookingModel>
     Object? numStops = null,
     Object? durationMinutes = null,
     Object? distanceKm = null,
+    Object? routePolyline = freezed,
+    Object? routeDistanceMeters = null,
+    Object? routeDurationSeconds = null,
     Object? cancellationReason = freezed,
     Object? createdAt = freezed,
     Object? updatedAt = freezed,
@@ -241,6 +250,18 @@ class _$BookingModelCopyWithImpl<$Res, $Val extends BookingModel>
           ? _value.distanceKm
           : distanceKm // ignore: cast_nullable_to_non_nullable
               as double,
+      routePolyline: freezed == routePolyline
+          ? _value.routePolyline
+          : routePolyline // ignore: cast_nullable_to_non_nullable
+              as String?,
+      routeDistanceMeters: null == routeDistanceMeters
+          ? _value.routeDistanceMeters
+          : routeDistanceMeters // ignore: cast_nullable_to_non_nullable
+              as int,
+      routeDurationSeconds: null == routeDurationSeconds
+          ? _value.routeDurationSeconds
+          : routeDurationSeconds // ignore: cast_nullable_to_non_nullable
+              as int,
       cancellationReason: freezed == cancellationReason
           ? _value.cancellationReason
           : cancellationReason // ignore: cast_nullable_to_non_nullable
@@ -291,6 +312,9 @@ abstract class _$$BookingModelImplCopyWith<$Res>
       int numStops,
       int durationMinutes,
       double distanceKm,
+      String? routePolyline,
+      int routeDistanceMeters,
+      int routeDurationSeconds,
       String? cancellationReason,
       String? createdAt,
       String? updatedAt});
@@ -334,6 +358,9 @@ class __$$BookingModelImplCopyWithImpl<$Res>
     Object? numStops = null,
     Object? durationMinutes = null,
     Object? distanceKm = null,
+    Object? routePolyline = freezed,
+    Object? routeDistanceMeters = null,
+    Object? routeDurationSeconds = null,
     Object? cancellationReason = freezed,
     Object? createdAt = freezed,
     Object? updatedAt = freezed,
@@ -439,6 +466,18 @@ class __$$BookingModelImplCopyWithImpl<$Res>
           ? _value.distanceKm
           : distanceKm // ignore: cast_nullable_to_non_nullable
               as double,
+      routePolyline: freezed == routePolyline
+          ? _value.routePolyline
+          : routePolyline // ignore: cast_nullable_to_non_nullable
+              as String?,
+      routeDistanceMeters: null == routeDistanceMeters
+          ? _value.routeDistanceMeters
+          : routeDistanceMeters // ignore: cast_nullable_to_non_nullable
+              as int,
+      routeDurationSeconds: null == routeDurationSeconds
+          ? _value.routeDurationSeconds
+          : routeDurationSeconds // ignore: cast_nullable_to_non_nullable
+              as int,
       cancellationReason: freezed == cancellationReason
           ? _value.cancellationReason
           : cancellationReason // ignore: cast_nullable_to_non_nullable
@@ -484,6 +523,9 @@ class _$BookingModelImpl implements _BookingModel {
       this.numStops = 0,
       this.durationMinutes = 0,
       this.distanceKm = 0.0,
+      this.routePolyline,
+      this.routeDistanceMeters = 0,
+      this.routeDurationSeconds = 0,
       this.cancellationReason,
       this.createdAt,
       this.updatedAt});
@@ -549,6 +591,14 @@ class _$BookingModelImpl implements _BookingModel {
   @JsonKey()
   final double distanceKm;
   @override
+  final String? routePolyline;
+  @override
+  @JsonKey()
+  final int routeDistanceMeters;
+  @override
+  @JsonKey()
+  final int routeDurationSeconds;
+  @override
   final String? cancellationReason;
   @override
   final String? createdAt;
@@ -557,7 +607,7 @@ class _$BookingModelImpl implements _BookingModel {
 
   @override
   String toString() {
-    return 'BookingModel(id: $id, bookingCode: $bookingCode, status: $status, bookingType: $bookingType, pickupAddress: $pickupAddress, destinationAddress: $destinationAddress, pickupLat: $pickupLat, pickupLng: $pickupLng, destinationLat: $destinationLat, destinationLng: $destinationLng, estimatedFare: $estimatedFare, finalFare: $finalFare, paymentStatus: $paymentStatus, paymentMethod: $paymentMethod, driverId: $driverId, driverName: $driverName, driverPhone: $driverPhone, driverAvatar: $driverAvatar, driverRating: $driverRating, vehicleTypeName: $vehicleTypeName, vehiclePlate: $vehiclePlate, vehicleColor: $vehicleColor, numStops: $numStops, durationMinutes: $durationMinutes, distanceKm: $distanceKm, cancellationReason: $cancellationReason, createdAt: $createdAt, updatedAt: $updatedAt)';
+    return 'BookingModel(id: $id, bookingCode: $bookingCode, status: $status, bookingType: $bookingType, pickupAddress: $pickupAddress, destinationAddress: $destinationAddress, pickupLat: $pickupLat, pickupLng: $pickupLng, destinationLat: $destinationLat, destinationLng: $destinationLng, estimatedFare: $estimatedFare, finalFare: $finalFare, paymentStatus: $paymentStatus, paymentMethod: $paymentMethod, driverId: $driverId, driverName: $driverName, driverPhone: $driverPhone, driverAvatar: $driverAvatar, driverRating: $driverRating, vehicleTypeName: $vehicleTypeName, vehiclePlate: $vehiclePlate, vehicleColor: $vehicleColor, numStops: $numStops, durationMinutes: $durationMinutes, distanceKm: $distanceKm, routePolyline: $routePolyline, routeDistanceMeters: $routeDistanceMeters, routeDurationSeconds: $routeDurationSeconds, cancellationReason: $cancellationReason, createdAt: $createdAt, updatedAt: $updatedAt)';
   }
 
   @override
@@ -613,6 +663,12 @@ class _$BookingModelImpl implements _BookingModel {
                 other.durationMinutes == durationMinutes) &&
             (identical(other.distanceKm, distanceKm) ||
                 other.distanceKm == distanceKm) &&
+            (identical(other.routePolyline, routePolyline) ||
+                other.routePolyline == routePolyline) &&
+            (identical(other.routeDistanceMeters, routeDistanceMeters) ||
+                other.routeDistanceMeters == routeDistanceMeters) &&
+            (identical(other.routeDurationSeconds, routeDurationSeconds) ||
+                other.routeDurationSeconds == routeDurationSeconds) &&
             (identical(other.cancellationReason, cancellationReason) ||
                 other.cancellationReason == cancellationReason) &&
             (identical(other.createdAt, createdAt) ||
@@ -650,6 +706,9 @@ class _$BookingModelImpl implements _BookingModel {
         numStops,
         durationMinutes,
         distanceKm,
+        routePolyline,
+        routeDistanceMeters,
+        routeDurationSeconds,
         cancellationReason,
         createdAt,
         updatedAt
@@ -698,6 +757,9 @@ abstract class _BookingModel implements BookingModel {
       final int numStops,
       final int durationMinutes,
       final double distanceKm,
+      final String? routePolyline,
+      final int routeDistanceMeters,
+      final int routeDurationSeconds,
       final String? cancellationReason,
       final String? createdAt,
       final String? updatedAt}) = _$BookingModelImpl;
@@ -755,6 +817,12 @@ abstract class _BookingModel implements BookingModel {
   int get durationMinutes;
   @override
   double get distanceKm;
+  @override
+  String? get routePolyline;
+  @override
+  int get routeDistanceMeters;
+  @override
+  int get routeDurationSeconds;
   @override
   String? get cancellationReason;
   @override
