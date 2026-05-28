@@ -1,17 +1,21 @@
+import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../data/models/otp_extra.dart';
 import '../../features/splash/splash_screen.dart';
 import '../../features/onboarding/onboarding_screen.dart';
 import '../../features/auth/phone_screen.dart';
 import '../../features/auth/otp_screen.dart';
+import '../../features/auth/login_screen.dart';
 import '../../features/auth/complete_profile_screen.dart';
 import '../../features/location_permission/location_permission_screen.dart';
 import '../../features/home/home_screen.dart';
 import '../../features/booking/search_destination_screen.dart';
 import '../../features/booking/confirm_pickup_screen.dart';
 import '../../features/booking/select_ride_screen.dart';
+import '../../features/booking/payment_methods_screen.dart';
 import '../../features/booking/requesting_screen.dart';
 import '../../features/booking/driver_assigned_screen.dart';
+import '../../features/booking/driver_chat_screen.dart';
 import '../../features/trip/trip_in_progress_screen.dart';
 import '../../features/trip/trip_completed_screen.dart';
 import '../../features/trip/payment_screen.dart';
@@ -28,6 +32,28 @@ import '../../features/help/help_screen.dart';
 import '../../features/help/contact_support_screen.dart';
 import '../../features/help/report_issue_screen.dart';
 import '../../features/help/legal_documents_screen.dart';
+import '../../features/help/common_topics_screen.dart';
+import '../../features/help/common_topic_detail_screen.dart';
+
+CustomTransitionPage<void> _appPage(GoRouterState state, Widget child) {
+  return CustomTransitionPage<void>(
+    key: state.pageKey,
+    child: child,
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
+      return FadeTransition(
+        opacity: curved,
+        child: SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0.02, 0),
+            end: Offset.zero,
+          ).animate(curved),
+          child: child,
+        ),
+      );
+    },
+  );
+}
 
 /// Named route paths — always use these constants, never raw strings.
 abstract final class AppRoutes {
@@ -35,6 +61,7 @@ abstract final class AppRoutes {
   static const String splash             = '/';
   static const String onboarding         = '/onboarding';
   static const String phone              = '/phone';        // contact entry (email or phone)
+  static const String login              = '/login';
   static const String otp                = '/otp';          // extra: OtpExtra
   static const String completeProfile    = '/complete-profile';
   static const String locationPermission = '/location-permission';
@@ -46,8 +73,10 @@ abstract final class AppRoutes {
   static const String searchDestination  = '/search-destination';
   static const String confirmPickup      = '/confirm-pickup';
   static const String selectRide         = '/select-ride';
+  static const String paymentMethods     = '/payment-methods';
   static const String requesting         = '/requesting';    // extra: bookingId (String)
   static const String driverAssigned     = '/driver-assigned'; // extra: bookingId (String)
+  static const String driverChat         = '/driver-chat'; // extra: bookingId (String)
 
   // ── Trip ──────────────────────────────────────────────────────────────────
   static const String payment            = '/payment';           // extra: bookingId
@@ -72,6 +101,8 @@ abstract final class AppRoutes {
   static const String contactSupport     = '/contact-support';
   static const String reportIssue        = '/report-issue';
   static const String legalDocuments     = '/legal-documents';
+  static const String commonTopics       = '/common-topics';       // extra: category (String)
+  static const String commonTopicDetail  = '/common-topic-detail'; // extra: {category, topic}
 }
 
 final appRouter = GoRouter(
@@ -79,79 +110,188 @@ final appRouter = GoRouter(
   debugLogDiagnostics: false,
   routes: [
     // ── Pre-auth ──────────────────────────────────────────────────────────
-    GoRoute(path: AppRoutes.splash,             builder: (_, __) => const SplashScreen()),
-    GoRoute(path: AppRoutes.onboarding,         builder: (_, __) => const OnboardingScreen()),
-    GoRoute(path: AppRoutes.phone,              builder: (_, __) => const PhoneScreen()),
+    GoRoute(
+      path: AppRoutes.splash,
+      pageBuilder: (_, state) => _appPage(state, const SplashScreen()),
+    ),
+    GoRoute(
+      path: AppRoutes.onboarding,
+      pageBuilder: (_, state) => _appPage(state, const OnboardingScreen()),
+    ),
+    GoRoute(
+      path: AppRoutes.phone,
+      pageBuilder: (_, state) => _appPage(state, const PhoneScreen()),
+    ),
+    GoRoute(
+      path: AppRoutes.login,
+      pageBuilder: (_, state) => _appPage(state, const LoginScreen()),
+    ),
     GoRoute(
       path: AppRoutes.otp,
-      builder: (_, state) {
+      pageBuilder: (_, state) {
         final extra = state.extra as OtpExtra;
-        return OtpScreen(contact: extra.contact, contactType: extra.contactType);
+        return _appPage(
+          state,
+          OtpScreen(contact: extra.contact, contactType: extra.contactType),
+        );
       },
     ),
-    GoRoute(path: AppRoutes.completeProfile,    builder: (_, __) => const CompleteProfileScreen()),
-    GoRoute(path: AppRoutes.locationPermission, builder: (_, __) => const LocationPermissionScreen()),
+    GoRoute(
+      path: AppRoutes.completeProfile,
+      pageBuilder: (_, state) => _appPage(state, const CompleteProfileScreen()),
+    ),
+    GoRoute(
+      path: AppRoutes.locationPermission,
+      pageBuilder: (_, state) => _appPage(state, const LocationPermissionScreen()),
+    ),
 
     // ── Main ─────────────────────────────────────────────────────────────
-    GoRoute(path: AppRoutes.home,               builder: (_, __) => const HomeScreen()),
+    GoRoute(
+      path: AppRoutes.home,
+      pageBuilder: (_, state) => _appPage(state, const HomeScreen()),
+    ),
 
     // ── Booking flow ──────────────────────────────────────────────────────
-    GoRoute(path: AppRoutes.searchDestination,  builder: (_, __) => const SearchDestinationScreen()),
-    GoRoute(path: AppRoutes.confirmPickup,      builder: (_, __) => const ConfirmPickupScreen()),
-    GoRoute(path: AppRoutes.selectRide,         builder: (_, __) => const SelectRideScreen()),
+    GoRoute(
+      path: AppRoutes.searchDestination,
+      pageBuilder: (_, state) => _appPage(state, const SearchDestinationScreen()),
+    ),
+    GoRoute(
+      path: AppRoutes.confirmPickup,
+      pageBuilder: (_, state) => _appPage(state, const ConfirmPickupScreen()),
+    ),
+    GoRoute(
+      path: AppRoutes.selectRide,
+      pageBuilder: (_, state) => _appPage(state, const SelectRideScreen()),
+    ),
+    GoRoute(
+      path: AppRoutes.paymentMethods,
+      pageBuilder: (_, state) => _appPage(
+        state,
+        PaymentMethodsScreen(selected: (state.extra as String?) ?? 'cash'),
+      ),
+    ),
     GoRoute(
       path: AppRoutes.requesting,
       redirect: (_, s) => s.extra == null ? AppRoutes.home : null,
-      builder: (_, state) => RequestingScreen(bookingId: state.extra! as String),
+      pageBuilder: (_, state) =>
+          _appPage(state, RequestingScreen(bookingId: state.extra! as String)),
     ),
     GoRoute(
       path: AppRoutes.driverAssigned,
       redirect: (_, s) => s.extra == null ? AppRoutes.home : null,
-      builder: (_, state) => DriverAssignedScreen(bookingId: state.extra! as String),
+      pageBuilder: (_, state) =>
+          _appPage(state, DriverAssignedScreen(bookingId: state.extra! as String)),
+    ),
+    GoRoute(
+      path: AppRoutes.driverChat,
+      redirect: (_, s) => s.extra == null ? AppRoutes.home : null,
+      pageBuilder: (_, state) =>
+          _appPage(state, DriverChatScreen(bookingId: state.extra! as String)),
     ),
 
     // ── Trip ─────────────────────────────────────────────────────────────
     GoRoute(
       path: AppRoutes.payment,
       redirect: (_, s) => s.extra == null ? AppRoutes.home : null,
-      builder: (_, state) => PaymentScreen(bookingId: state.extra! as String),
+      pageBuilder: (_, state) =>
+          _appPage(state, PaymentScreen(bookingId: state.extra! as String)),
     ),
     GoRoute(
       path: AppRoutes.tripInProgress,
       redirect: (_, s) => s.extra == null ? AppRoutes.home : null,
-      builder: (_, state) => TripInProgressScreen(bookingId: state.extra! as String),
+      pageBuilder: (_, state) =>
+          _appPage(state, TripInProgressScreen(bookingId: state.extra! as String)),
     ),
     GoRoute(
       path: AppRoutes.tripCompleted,
       redirect: (_, s) => s.extra == null ? AppRoutes.home : null,
-      builder: (_, state) => TripCompletedScreen(bookingId: state.extra! as String),
+      pageBuilder: (_, state) =>
+          _appPage(state, TripCompletedScreen(bookingId: state.extra! as String)),
     ),
-    GoRoute(path: AppRoutes.tripHistory,        builder: (_, __) => const TripHistoryScreen()),
+    GoRoute(
+      path: AppRoutes.tripHistory,
+      pageBuilder: (_, state) => _appPage(state, const TripHistoryScreen()),
+    ),
     GoRoute(
       path: AppRoutes.tripDetails,
       redirect: (_, s) => s.extra == null ? AppRoutes.home : null,
-      builder: (_, state) => TripDetailsScreen(bookingId: state.extra! as String),
+      pageBuilder: (_, state) =>
+          _appPage(state, TripDetailsScreen(bookingId: state.extra! as String)),
     ),
     GoRoute(
       path: AppRoutes.tripReceipt,
       redirect: (_, s) => s.extra == null ? AppRoutes.home : null,
-      builder: (_, state) => TripReceiptScreen(bookingId: state.extra! as String),
+      pageBuilder: (_, state) =>
+          _appPage(state, TripReceiptScreen(bookingId: state.extra! as String)),
     ),
 
     // ── Courier ───────────────────────────────────────────────────────────
-    GoRoute(path: AppRoutes.courier,            builder: (_, __) => const CourierScreen()),
-    GoRoute(path: AppRoutes.courierReceiveDetails, builder: (_, __) => const CourierReceiveDetailsScreen()),
-    GoRoute(path: AppRoutes.deliveryRules,      builder: (_, __) => const DeliveryRulesScreen()),
+    GoRoute(
+      path: AppRoutes.courier,
+      pageBuilder: (_, state) => _appPage(state, const CourierScreen()),
+    ),
+    GoRoute(
+      path: AppRoutes.courierReceiveDetails,
+      pageBuilder: (_, state) => _appPage(state, const CourierReceiveDetailsScreen()),
+    ),
+    GoRoute(
+      path: AppRoutes.deliveryRules,
+      pageBuilder: (_, state) => _appPage(state, const DeliveryRulesScreen()),
+    ),
 
     // ── Profile & settings ────────────────────────────────────────────────
-    GoRoute(path: AppRoutes.profile,            builder: (_, __) => const ProfileScreen()),
-    GoRoute(path: AppRoutes.settings,           builder: (_, __) => const SettingsScreen()),
-    GoRoute(path: AppRoutes.notifications,      builder: (_, __) => const NotificationsScreen()),
+    GoRoute(
+      path: AppRoutes.profile,
+      pageBuilder: (_, state) => _appPage(state, const ProfileScreen()),
+    ),
+    GoRoute(
+      path: AppRoutes.settings,
+      pageBuilder: (_, state) => _appPage(state, const SettingsScreen()),
+    ),
+    GoRoute(
+      path: AppRoutes.notifications,
+      pageBuilder: (_, state) => _appPage(state, const NotificationsScreen()),
+    ),
 
     // ── Help ──────────────────────────────────────────────────────────────
-    GoRoute(path: AppRoutes.help,               builder: (_, __) => const HelpScreen()),
-    GoRoute(path: AppRoutes.contactSupport,     builder: (_, __) => const ContactSupportScreen()),
-    GoRoute(path: AppRoutes.reportIssue,        builder: (_, __) => const ReportIssueScreen()),
-    GoRoute(path: AppRoutes.legalDocuments,     builder: (_, __) => const LegalDocumentsScreen()),
+    GoRoute(
+      path: AppRoutes.help,
+      pageBuilder: (_, state) => _appPage(state, const HelpScreen()),
+    ),
+    GoRoute(
+      path: AppRoutes.contactSupport,
+      pageBuilder: (_, state) => _appPage(state, const ContactSupportScreen()),
+    ),
+    GoRoute(
+      path: AppRoutes.reportIssue,
+      pageBuilder: (_, state) => _appPage(state, const ReportIssueScreen()),
+    ),
+    GoRoute(
+      path: AppRoutes.legalDocuments,
+      pageBuilder: (_, state) => _appPage(state, const LegalDocumentsScreen()),
+    ),
+    GoRoute(
+      path: AppRoutes.commonTopics,
+      redirect: (_, s) => s.extra == null ? AppRoutes.help : null,
+      pageBuilder: (_, state) => _appPage(
+        state,
+        CommonTopicsScreen(category: state.extra! as String),
+      ),
+    ),
+    GoRoute(
+      path: AppRoutes.commonTopicDetail,
+      redirect: (_, s) => s.extra == null ? AppRoutes.help : null,
+      pageBuilder: (_, state) {
+        final extra = state.extra as Map;
+        return _appPage(
+          state,
+          CommonTopicDetailScreen(
+            category: extra['category']?.toString() ?? '',
+            topic: extra['topic']?.toString() ?? '',
+          ),
+        );
+      },
+    ),
   ],
 );

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 
@@ -12,6 +13,7 @@ class AppTextField extends StatelessWidget {
     this.errorText,
     this.keyboardType,
     this.textInputAction,
+    this.inputFormatters,
     this.onChanged,
     this.onSubmitted,
     this.enabled = true,
@@ -19,6 +21,7 @@ class AppTextField extends StatelessWidget {
     this.obscureText = false,
     this.suffixIcon,
     this.prefixIcon,
+    this.prefixIconConstraints,
     this.maxLines = 1,
     this.focusNode,
     this.validator,
@@ -31,6 +34,7 @@ class AppTextField extends StatelessWidget {
   final String? errorText;
   final TextInputType? keyboardType;
   final TextInputAction? textInputAction;
+  final List<TextInputFormatter>? inputFormatters;
   final ValueChanged<String>? onChanged;
   final ValueChanged<String>? onSubmitted;
   final bool enabled;
@@ -38,6 +42,7 @@ class AppTextField extends StatelessWidget {
   final bool obscureText;
   final Widget? suffixIcon;
   final Widget? prefixIcon;
+  final BoxConstraints? prefixIconConstraints;
   final int? maxLines;
   final FocusNode? focusNode;
   final FormFieldValidator<String>? validator;
@@ -57,6 +62,7 @@ class AppTextField extends StatelessWidget {
         focusNode: focusNode,
         keyboardType: keyboardType,
         textInputAction: textInputAction,
+        inputFormatters: inputFormatters,
         onChanged: onChanged,
         onFieldSubmitted: onSubmitted,
         enabled: enabled,
@@ -71,6 +77,7 @@ class AppTextField extends StatelessWidget {
           errorText: errorText,
           suffixIcon: suffixIcon,
           prefixIcon: prefixIcon,
+          prefixIconConstraints: prefixIconConstraints,
           disabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide.none,

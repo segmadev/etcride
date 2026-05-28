@@ -66,4 +66,16 @@ flutter:
     - assets/onboarding/
     - assets/cards/
     - assets/icons/
+    - assets/icons/Nigeria.svg
+    - assets/icons/hugeicons_menu-03.svg
+    - assets/icons/map-pin.svg
+    - assets/icons/no-trip.svg
+    - assets/icons/world-location.svg
+    - assets/icons/car.svg
+    - assets/icons/courier.svg
+    - assets/icons/car-icon.svg
+    - assets/icons/motorbike-icon.svg
     - assets/auth/
+    - assets/logos/
+    - assets/logos/flutterwave-icon 1.svg
+    - assets/splash/

@@ -29,6 +29,11 @@ export const bookingsApi = {
       apiClient.post(`/admin/bookings/${id}/reassign`, { driver_id: driverId, reason }),
     ),
 
+  deassign: (id: string) =>
+    apiRequest<null>(
+      apiClient.post(`/admin/bookings/${id}/deassign`),
+    ),
+
   cancel: (id: string, reason?: string) =>
     apiRequest<null>(
       apiClient.post(`/admin/bookings/${id}/cancel`, { reason }),

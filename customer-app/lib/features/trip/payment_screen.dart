@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
+import '../../core/constants/app_assets.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../core/config/router.dart';
@@ -141,13 +143,11 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
                       // ── Route summary ───────────────────────────────────
                       if (b != null) ...[
                         _RouteRow(
-                          icon: Icons.radio_button_on,
                           color: AppColors.success,
                           address: b.pickupAddress,
                         ),
                         const SizedBox(height: 4),
                         _RouteRow(
-                          icon: Icons.location_on_rounded,
                           color: AppColors.error,
                           address: b.destinationAddress,
                         ),
@@ -184,15 +184,19 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
 }
 
 class _RouteRow extends StatelessWidget {
-  const _RouteRow({required this.icon, required this.color, required this.address});
-  final IconData icon;
+  const _RouteRow({required this.color, required this.address});
   final Color color;
   final String address;
 
   @override
   Widget build(BuildContext context) => Row(
         children: [
-          Icon(icon, size: 16, color: color),
+          SvgPicture.asset(
+            AppAssets.mapPin,
+            width: 16,
+            height: 16,
+            colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(address,

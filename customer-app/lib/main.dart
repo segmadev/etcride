@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/config/router.dart';
 import 'core/theme/app_theme.dart';
+import 'shared/providers/providers.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -23,6 +24,7 @@ class ETCRideApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(authInitProvider);
     return MaterialApp.router(
       title: 'ETC Rides',
       debugShowCheckedModeBanner: false,

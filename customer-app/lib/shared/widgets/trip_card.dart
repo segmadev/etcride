@@ -1,4 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import '../../core/constants/app_assets.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../core/utils/formatters.dart';
@@ -37,7 +40,17 @@ class TripCard extends StatelessWidget {
               color: AppColors.surface,
               borderRadius: BorderRadius.circular(10),
             ),
-            child: const Icon(Icons.directions_car_rounded, color: AppColors.textSecondary, size: 28),
+            child: Center(
+              child: SizedBox(
+                width: 38,
+                height: 38,
+                child: _EmbeddedPngFromSvgAsset(
+                  assetPath: booking.bookingType == BookingType.delivery
+                      ? AppAssets.courierIcon
+                      : AppAssets.carIcon,
+                ),
+              ),
+            ),
           ),
           const SizedBox(width: 12),
           // Route + meta
@@ -92,6 +105,38 @@ class TripCard extends StatelessWidget {
       ),
     ),
   );
+}
+
+class _EmbeddedPngFromSvgAsset extends StatelessWidget {
+  const _EmbeddedPngFromSvgAsset({required this.assetPath});
+
+  final String assetPath;
+
+  static final Map<String, Future<Uint8List>> _cache = {};
+
+  Future<Uint8List> _load() {
+    return _cache.putIfAbsent(assetPath, () async {
+      final svg = await rootBundle.loadString(assetPath);
+      final match = RegExp(r'data:image\/png;base64,([^"]+)').firstMatch(svg);
+      if (match == null) throw const FormatException('No embedded PNG found.');
+      return base64Decode(match.group(1)!);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<Uint8List>(
+      future: _load(),
+      builder: (context, snap) {
+        if (!snap.hasData) return const SizedBox.shrink();
+        return Image.memory(
+          snap.data!,
+          fit: BoxFit.contain,
+          gaplessPlayback: true,
+        );
+      },
+    );
+  }
 }
 
 class _StatusChip extends StatelessWidget {

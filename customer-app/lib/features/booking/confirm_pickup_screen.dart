@@ -1,9 +1,11 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
+import '../../core/constants/app_assets.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../core/constants/app_strings.dart';
@@ -166,6 +168,17 @@ class _ConfirmPickupScreenState extends ConsumerState<ConfirmPickupScreen> {
     }
   }
 
+  Future<void> _openSearch() async {
+    await showSearchDestinationDrawer(
+      context,
+      openSelectRideAfter: false,
+      focusPickupInitially: true,
+      pickupOnly: true,
+    );
+    if (!mounted) return;
+    await _initPickup();
+  }
+
   @override
   Widget build(BuildContext context) {
     final draft = ref.watch(bookingDraftProvider);
@@ -231,6 +244,27 @@ class _ConfirmPickupScreenState extends ConsumerState<ConfirmPickupScreen> {
             ),
           ),
 
+          // ── Search button ───────────────────────────────────────────────
+          Positioned(
+            right: 16,
+            top: MediaQuery.of(context).padding.top + 16,
+            child: GestureDetector(
+              onTap: _openSearch,
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: AppColors.white,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 8),
+                  ],
+                ),
+                child: const Icon(Icons.search_rounded, size: 20, color: AppColors.textPrimary),
+              ),
+            ),
+          ),
+
           // ── Bottom card ───────────────────────────────────────────────────
           Positioned(
             left: 0, right: 0, bottom: 0,
@@ -250,8 +284,12 @@ class _ConfirmPickupScreenState extends ConsumerState<ConfirmPickupScreen> {
                   const SizedBox(height: 12),
                   Row(
                     children: [
-                      const Icon(Icons.location_on_rounded,
-                          color: AppColors.pickupPin, size: 20),
+                      SvgPicture.asset(
+                        AppAssets.mapPin,
+                        width: 20,
+                        height: 20,
+                        colorFilter: const ColorFilter.mode(AppColors.pickupPin, BlendMode.srcIn),
+                      ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: _resolving
@@ -263,14 +301,35 @@ class _ConfirmPickupScreenState extends ConsumerState<ConfirmPickupScreen> {
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis),
                       ),
+                      const SizedBox(width: 10),
+                      GestureDetector(
+                        onTap: _openSearch,
+                        behavior: HitTestBehavior.opaque,
+                        child: Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: AppColors.white,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(color: Colors.black.withValues(alpha: 0.10), blurRadius: 12, offset: const Offset(0, 6)),
+                            ],
+                          ),
+                          child: const Icon(Icons.search_rounded, size: 18, color: AppColors.textPrimary),
+                        ),
+                      ),
                     ],
                   ),
                   if (draft.hasDestination) ...[
                     const SizedBox(height: 8),
                     Row(
                       children: [
-                        const Icon(Icons.location_on_rounded,
-                            color: AppColors.destinationPin, size: 20),
+                        SvgPicture.asset(
+                          AppAssets.mapPin,
+                          width: 20,
+                          height: 20,
+                          colorFilter: const ColorFilter.mode(AppColors.destinationPin, BlendMode.srcIn),
+                        ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(draft.destinationAddress,

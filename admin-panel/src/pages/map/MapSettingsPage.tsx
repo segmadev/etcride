@@ -10,6 +10,7 @@ import {
   Minus, Home, Maximize2, Crosshair,
 } from 'lucide-react';
 import { mapSettingsApi } from '../../api/mapSettings';
+import { getApiErrorMessage } from '../../api';
 import { InfoTooltip } from '../../components/ui/InfoTooltip';
 import { useToast } from '../../components/ui/Toast';
 import { Header } from '../../components/layout/Header';
@@ -569,7 +570,7 @@ export function MapSettingsPage() {
       queryClient.invalidateQueries({ queryKey: ['admin-settings'] });
       toast('Map settings saved.', 'success');
     },
-    onError: (err: Error) => toast(err.message, 'error'),
+    onError: (err: unknown) => toast(getApiErrorMessage(err), 'error'),
   });
 
   const onMapLoad          = useCallback((map: google.maps.Map) => { mapRef.current = map; }, []);

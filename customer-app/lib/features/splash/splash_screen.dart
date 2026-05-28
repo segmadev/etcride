@@ -1,15 +1,15 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'dart:math' as math;
+import '../../core/constants/app_assets.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/constants/app_strings.dart';
 import '../../core/config/router.dart';
 import '../../shared/providers/providers.dart';
 
-/// Three-phase animated splash:
-/// 1. Black screen with logo (0 → 1.2s)
-/// 2. Road/clouds decoration appear (1.2 → 2.4s)
-/// 3. Transition to white (2.4 → 3.0s) then navigate
 class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
 
@@ -20,9 +20,7 @@ class SplashScreen extends ConsumerStatefulWidget {
 class _SplashScreenState extends ConsumerState<SplashScreen>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
-  late final Animation<double> _logoFade;
-  late final Animation<double> _decorFade;
-  late final Animation<double> _bgFade;
+  late final Animation<double> _fade;
 
   @override
   void initState() {
@@ -34,14 +32,11 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
 
     _ctrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 3000),
+      duration: const Duration(milliseconds: 2400),
     );
 
-    _logoFade  = CurvedAnimation(parent: _ctrl, curve: const Interval(0.0, 0.35, curve: Curves.easeIn));
-    _decorFade = CurvedAnimation(parent: _ctrl, curve: const Interval(0.35, 0.70, curve: Curves.easeIn));
-    _bgFade    = CurvedAnimation(parent: _ctrl, curve: const Interval(0.80, 1.0, curve: Curves.easeOut));
-
-    _ctrl.forward().then((_) => _navigate());
+    _fade = CurvedAnimation(parent: _ctrl, curve: Curves.easeIn);
+    _ctrl.forward().whenComplete(_navigate);
   }
 
   Future<void> _navigate() async {
@@ -57,9 +52,11 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     if (!mounted) return;
 
     if (isLoggedIn) {
+      try {
+        await ref.read(authInitProvider.future);
+      } catch (_) {}
       context.go(AppRoutes.home);
     } else {
-      // Check if onboarding was seen (use simple shared prefs alternative)
       context.go(AppRoutes.onboarding);
     }
   }
@@ -69,144 +66,166 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _ctrl,
-      builder: (context, _) {
-        // Interpolate background from black → white
-        final bg = Color.lerp(AppColors.splash, AppColors.white, _bgFade.value)!;
-
-        return Scaffold(
-          backgroundColor: bg,
-          body: Stack(
-            fit: StackFit.expand,
-            children: [
-              // ── Decorative road (top-left) ──────────────────────────────
-              Positioned(
-                top: 0, left: 0,
-                child: FadeTransition(
-                  opacity: _decorFade,
-                  child: _SplashDecoration(isDark: _bgFade.value < 0.5),
-                ),
-              ),
-
-              // ── Logo (center) ───────────────────────────────────────────
-              Center(
-                child: FadeTransition(
-                  opacity: _logoFade,
-                  child: _LogoLockup(isDark: _bgFade.value < 0.5),
-                ),
-              ),
-
-              // ── Tagline (bottom) ────────────────────────────────────────
-              Positioned(
-                bottom: 48, left: 0, right: 0,
-                child: FadeTransition(
-                  opacity: _decorFade,
-                  child: Text(
-                    'Fast. Reliable. ETC.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontFamily: 'Inter',
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: _bgFade.value < 0.5 ? AppColors.white : AppColors.textPrimary,
+    return Scaffold(
+      backgroundColor: AppColors.splash,
+      body: FadeTransition(
+        opacity: _fade,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.only(left: 10, top: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    AnimatedBuilder(
+                      animation: _ctrl,
+                      builder: (context, child) {
+                        final t = _ctrl.value;
+                        final wave = math.sin(t * math.pi * 2);
+                        final dx = wave * 1.2;
+                        final dy = wave * 2.4;
+                        final rot = wave * 0.012;
+                        return Transform.translate(
+                          offset: Offset(dx, dy),
+                          child: Transform.rotate(angle: rot, child: child),
+                        );
+                      },
+                      child: _EmbeddedPngFromSvgAsset(
+                        assetPath: AppAssets.splashRoad,
+                        width: 110,
+                        height: 110,
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: AnimatedBuilder(
+                          animation: _ctrl,
+                          builder: (context, child) {
+                            final t = _ctrl.value;
+                            final wave = math.sin(t * math.pi * 2);
+                            final dy = wave * 2.2;
+                            final drift = math.sin(t * math.pi) * 8;
+                            return ClipRect(
+                              child: Transform.translate(
+                                offset: Offset(drift, dy),
+                                child: child,
+                              ),
+                            );
+                          },
+                          child: SizedBox(
+                            height: 124,
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Opacity(
+                                  opacity: 0.78,
+                                  child: Transform.translate(
+                                    offset: const Offset(0, 22),
+                                    child: const _EmbeddedPngFromSvgAsset(
+                                      assetPath: AppAssets.splashCloud1,
+                                      width: 52,
+                                      height: 52,
+                                    ),
+                                  ),
+                                ),
+                                Opacity(
+                                  opacity: 0.84,
+                                  child: Transform.translate(
+                                    offset: const Offset(0, -10),
+                                    child: const _EmbeddedPngFromSvgAsset(
+                                      assetPath: AppAssets.splashCloud2,
+                                      width: 90,
+                                      height: 90,
+                                    ),
+                                  ),
+                                ),
+                                Opacity(
+                                  opacity: 0.78,
+                                  child: Transform.translate(
+                                    offset: const Offset(20, 30),
+                                    child: const _EmbeddedPngFromSvgAsset(
+                                      assetPath: AppAssets.splashCloud3,
+                                      width: 60,
+                                      height: 60,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
+            ),
+            Center(
+              child: _EmbeddedPngFromSvgAsset(assetPath: AppAssets.logoDark, width: 200),
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 56,
+              child: Text(
+                AppStrings.appTagline,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontFamily: 'Inter',
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.white,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EmbeddedPngFromSvgAsset extends StatelessWidget {
+  const _EmbeddedPngFromSvgAsset({
+    required this.assetPath,
+    this.width,
+    this.height,
+  });
+
+  final String assetPath;
+  final double? width;
+  final double? height;
+
+  static final Map<String, Future<Uint8List>> _cache = {};
+
+  Future<Uint8List> _load() {
+    return _cache.putIfAbsent(assetPath, () async {
+      final svg = await rootBundle.loadString(assetPath);
+      final match = RegExp(r'data:image\/png;base64,([^"]+)').firstMatch(svg);
+      if (match == null) throw const FormatException('No embedded PNG found.');
+      return base64Decode(match.group(1)!);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<Uint8List>(
+      future: _load(),
+      builder: (context, snap) {
+        if (!snap.hasData) return const SizedBox.shrink();
+        return Image.memory(
+          snap.data!,
+          width: width,
+          height: height,
+          fit: BoxFit.contain,
+          gaplessPlayback: true,
         );
       },
     );
   }
-}
-
-class _LogoLockup extends StatelessWidget {
-  const _LogoLockup({required this.isDark});
-  final bool isDark;
-
-  @override
-  Widget build(BuildContext context) => Column(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      // ETC logo text
-      Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text('E', style: _letterStyle(isDark ? AppColors.white : AppColors.textPrimary)),
-          Text('T', style: _letterStyle(AppColors.primary)),
-          Text('C', style: _letterStyle(isDark ? AppColors.white : AppColors.textPrimary)),
-        ],
-      ),
-      const SizedBox(height: 4),
-      Text(
-        'LOGISTICS',
-        style: TextStyle(
-          fontFamily: 'Inter', fontSize: 12, fontWeight: FontWeight.w600,
-          letterSpacing: 3,
-          color: isDark ? AppColors.primary : AppColors.primary,
-        ),
-      ),
-    ],
-  );
-
-  TextStyle _letterStyle(Color color) => TextStyle(
-    fontFamily: 'Inter', fontSize: 52, fontWeight: FontWeight.w800,
-    color: color, height: 1.0,
-  );
-}
-
-class _SplashDecoration extends StatelessWidget {
-  const _SplashDecoration({required this.isDark});
-  final bool isDark;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = isDark ? AppColors.white : AppColors.textPrimary;
-    return SizedBox(
-      width: 160, height: 130,
-      child: CustomPaint(painter: _RoadPainter(color: color)),
-    );
-  }
-}
-
-class _RoadPainter extends CustomPainter {
-  const _RoadPainter({required this.color});
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color.withValues(alpha: 0.7)
-      ..strokeWidth = 2
-      ..style = PaintingStyle.stroke;
-
-    // Road curves
-    final path = Path()
-      ..moveTo(0, size.height * 0.8)
-      ..quadraticBezierTo(size.width * 0.3, size.height * 0.2, size.width, 0);
-    canvas.drawPath(path, paint);
-
-    // Dashed center line
-    final dashPaint = Paint()
-      ..color = color.withValues(alpha: 0.4)
-      ..strokeWidth = 1.5
-      ..style = PaintingStyle.stroke;
-    _drawDashedPath(canvas, path, dashPaint);
-  }
-
-  void _drawDashedPath(Canvas canvas, Path path, Paint paint) {
-    for (final metric in path.computeMetrics()) {
-      double dist = 0;
-      while (dist < metric.length) {
-        final seg = metric.extractPath(dist, dist + 8);
-        canvas.drawPath(seg, paint);
-        dist += 16;
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(_) => false;
 }

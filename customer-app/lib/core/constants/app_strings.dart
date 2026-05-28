@@ -16,12 +16,22 @@ abstract final class AppStrings {
   static const String skip          = 'Skip';
 
   // ── Auth ──────────────────────────────────────────────────────────────────
-  static const String startJourney  = 'Start your journey with ETC Ride.';
+  static const String startJourney  = 'Start your journey with\nETC Ride.';
   static const String continueBtn   = 'CONTINUE';
   static const String loginTitle    = 'Log in to continue';
   static const String emailOrPhone  = 'Email or Phone';
   static const String password      = 'Password';
   static const String loginBtn      = 'LOG IN';
+  static const String alreadyHaveAccount = 'Already have an account?';
+  static const String loginLink = 'Log in';
+  static const String forgotPassword = 'Forgot password?';
+  static const String resetPassword  = 'Reset password';
+  static const String sendResetCode  = 'Send reset code';
+  static const String resetCode      = 'Reset code';
+  static const String newPassword    = 'New password';
+  static const String confirmNewPassword = 'Confirm new password';
+  static const String saveNewPassword = 'Save new password';
+  static const String createAccount = 'Create account';
   static const String enterOtp      = 'Enter the 6-digit code sent to your number';
   static const String verifyOtp     = 'VERIFY & CONTINUE';
   static const String resendCode    = 'Resend code in';

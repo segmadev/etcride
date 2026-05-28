@@ -7,7 +7,7 @@ import { Button } from '../../components/ui/Button';
 import { Input, Select, Textarea } from '../../components/ui/Input';
 import { InfoTooltip } from '../../components/ui/InfoTooltip';
 import { useToast } from '../../components/ui/Toast';
-import { settingsApi } from '../../api';
+import { settingsApi, getApiErrorMessage } from '../../api';
 import { emailTemplatesApi } from '../../api/emailTemplates';
 
 type SettingValues = Record<string, string>;
@@ -188,7 +188,7 @@ export function SettingsPage() {
       qc.invalidateQueries({ queryKey: ['settings'] });
       setDirty({});
     },
-    onError: (e: Error) => toast(e.message, 'error'),
+    onError: (e: unknown) => toast(getApiErrorMessage(e), 'error'),
   });
 
   const handleTestEmail = async () => {

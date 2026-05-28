@@ -119,8 +119,6 @@ CREATE TABLE IF NOT EXISTS `drivers` (
     `password`    VARCHAR(255) NOT NULL,
     `vehicle_id`  VARCHAR(20)  NULL,          -- currently assigned vehicle
     `fcm_token`   TEXT         NULL,
-    `photo`       VARCHAR(500) NULL,
-    `rating`      DECIMAL(3,1) NOT NULL DEFAULT 0.0,
     `is_active`   TINYINT(1)   NOT NULL DEFAULT 1,   -- admin enable/disable
     `is_online`   TINYINT(1)   NOT NULL DEFAULT 0,   -- driver self-toggle
     `last_lat`    DECIMAL(10,8) NULL,
@@ -240,12 +238,11 @@ CREATE TABLE IF NOT EXISTS `bookings` (
     `status`        ENUM(
                         'pending',        -- created, awaiting assignment
                         'assigned',       -- driver assigned (manual or auto)
-                        'accepted',       -- driver accepted job, en route to pickup
-                        'arrived',        -- driver arrived at pickup location
-                        'in_progress',    -- trip started
-                        'payment_pending',-- trip done, awaiting customer payment
-                        'paid',           -- payment confirmed
-                        'completed',      -- fully done
+                        'accepted',       -- driver accepted job
+                        'payment_pending',-- waiting for customer payment
+                        'paid',           -- payment confirmed (or pay_on_completion)
+                        'in_progress',    -- driver started trip
+                        'completed',      -- trip finished
                         'cancelled',      -- cancelled per platform rules
                         'rejected'        -- driver rejected → goes back to pending
                     ) NOT NULL DEFAULT 'pending',
@@ -265,6 +262,9 @@ CREATE TABLE IF NOT EXISTS `bookings` (
     `final_fare`     DECIMAL(10,2) NULL,
     `distance_km`    DECIMAL(8,2)  NULL,  -- server-calculated or app-provided
     `num_stops`      INT           NOT NULL DEFAULT 0,
+    `route_polyline`         LONGTEXT     NULL,
+    `route_distance_meters`  INT          NULL,
+    `route_duration_seconds` INT          NULL,
 
     -- Delivery-only fields (NULL for rides)
     `recipient_name`        VARCHAR(100) NULL,
@@ -275,11 +275,6 @@ CREATE TABLE IF NOT EXISTS `bookings` (
     -- Payment
     `payment_status`    ENUM('pending','paid','failed') NOT NULL DEFAULT 'pending',
     `pay_mode_snapshot` ENUM('pay_on_booking','pay_on_completion') NOT NULL,  -- snapshot at creation
-    `payment_method`    ENUM('cash','bank_transfer','flutterwave') NULL,      -- chosen at payment time
-
-    -- Rating
-    `customer_rating`   TINYINT UNSIGNED NULL,
-    `customer_comment`  TEXT             NULL,
 
     -- Cancellation
     `cancelled_by_role`         ENUM('customer','driver','admin') NULL,

@@ -3,6 +3,11 @@ require_once ROOT . 'functions/BaseController.php';
 
 class Bookings extends BaseController
 {
+    private function normalizeId(string $id): string
+    {
+        return strlen($id) > 20 ? substr($id, 0, 20) : $id;
+    }
+
     // ── GET /admin/bookings ───────────────────────────────────────────────────
     public function index(): void
     {
@@ -28,13 +33,14 @@ class Bookings extends BaseController
         $stmt = $this->db->prepare(
             "SELECT b.id, b.booking_code, b.booking_type, b.status, b.estimated_fare,
                     b.final_fare, b.payment_status, b.pickup_address, b.destination_address,
-                    b.created_at, b.num_stops,
+                    b.created_at, b.num_stops, b.distance_km,
+                    b.vehicle_type_id,
                     u.name AS customer_name, u.phone AS customer_phone,
                     d.name AS driver_name, d.phone AS driver_phone,
-                    vt.name AS vehicle_type
+                    vt.name AS vehicle_type, vt.category AS vehicle_type_category
              FROM bookings b
-             LEFT JOIN users u        ON u.id  = b.customer_id
-             LEFT JOIN drivers d      ON d.id  = b.driver_id
+             LEFT JOIN users u          ON u.id  = b.customer_id
+             LEFT JOIN drivers d        ON d.id  = b.driver_id
              LEFT JOIN vehicle_types vt ON vt.id = b.vehicle_type_id
              $where
              ORDER BY b.created_at DESC
@@ -57,6 +63,7 @@ class Bookings extends BaseController
     // ── GET /admin/bookings/:id ───────────────────────────────────────────────
     public function show(string $id): void
     {
+        $id = $this->normalizeId($id);
         $booking = $this->getall('bookings', 'id = ?', [$id]);
         if (!is_array($booking)) {
             echo utilities::apiMessage('Booking not found.', 404);
@@ -80,6 +87,7 @@ class Bookings extends BaseController
     public function assign(string $id): void
     {
         $me       = BaseController::$authAdmin;
+        $id       = $this->normalizeId($id);
         $driverId = $this->str('driver_id');
 
         if ($driverId === '') {
@@ -130,6 +138,7 @@ class Bookings extends BaseController
     public function reassign(string $id): void
     {
         $me          = BaseController::$authAdmin;
+        $id          = $this->normalizeId($id);
         $newDriverId = $this->str('driver_id');
         $reason      = $this->str('reason', 'Reassigned by admin');
 
@@ -166,6 +175,7 @@ class Bookings extends BaseController
     public function cancel(string $id): void
     {
         $me      = BaseController::$authAdmin;
+        $id      = $this->normalizeId($id);
         $reason  = $this->str('reason', 'Cancelled by admin');
         $booking = $this->getall('bookings', 'id = ?', [$id]);
 
@@ -207,9 +217,40 @@ class Bookings extends BaseController
         echo utilities::apiMessage('Booking cancelled.', 200);
     }
 
+    // ── POST /admin/bookings/:id/deassign ────────────────────────────────────
+    public function deassign(string $id): void
+    {
+        $me      = BaseController::$authAdmin;
+        $id      = $this->normalizeId($id);
+        $booking = $this->getall('bookings', 'id = ?', [$id]);
+
+        if (!is_array($booking)) { echo utilities::apiMessage('Booking not found.', 404); return; }
+
+        if ($booking['status'] !== 'assigned') {
+            echo utilities::apiMessage("Cannot deassign a driver from a booking in '{$booking['status']}' status.", 409);
+            return;
+        }
+
+        $prevDriverId = $booking['driver_id'];
+
+        $this->update('bookings', ['status' => 'pending', 'driver_id' => null], "id = '$id'");
+        $this->recordStatusChange($id, 'assigned', 'pending', 'admin', $me['id'], 'Driver deassigned by admin');
+
+        if ($prevDriverId) {
+            $this->notify('driver', $prevDriverId, 'Job Removed',
+                'A booking that was assigned to you has been unassigned by admin.', 'booking_cancelled', $id);
+        }
+
+        $this->logActivity('admin', $me['id'], 'booking_driver_deassigned',
+            ['booking_id' => $id, 'driver_id' => $prevDriverId]);
+
+        echo utilities::apiMessage('Driver deassigned. Booking is now pending.', 200);
+    }
+
     // ── GET /admin/bookings/:id/track ─────────────────────────────────────────
     public function track(string $id): void
     {
+        $id = $this->normalizeId($id);
         $booking = $this->getall('bookings', 'id = ?', [$id]);
         if (!is_array($booking)) { echo utilities::apiMessage('Booking not found.', 404); return; }
 

@@ -13,6 +13,8 @@ class BaseController extends helper
     protected static ?array $authDriver = null;  // logged-in driver
     protected static ?array $authAdmin  = null;  // logged-in admin
 
+    private array $columnExistsCache = [];
+
     // ── Input helpers ─────────────────────────────────────────────────────────
 
     /** Raw POST value or default */
@@ -74,6 +76,83 @@ class BaseController extends helper
     {
         $row = $this->getall('settings', 'config_key = ?', [$key]);
         return is_array($row) ? (string) $row['config_value'] : $default;
+    }
+
+    protected function tableHasColumn(string $table, string $column): bool
+    {
+        $k = $table . '.' . $column;
+        if (isset($this->columnExistsCache[$k])) return (bool) $this->columnExistsCache[$k];
+        $stmt = $this->db->prepare(
+            'SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?'
+        );
+        $stmt->execute([$table, $column]);
+        $exists = ((int) $stmt->fetchColumn()) > 0;
+        $this->columnExistsCache[$k] = $exists;
+        return $exists;
+    }
+
+    protected function computeRouteSnapshot(
+        float $originLat,
+        float $originLng,
+        float $destLat,
+        float $destLng,
+        array $stops = []
+    ): ?array {
+        $apiKey = $this->setting('google_maps_server_key', '');
+        if ($apiKey === '') $apiKey = $this->setting('google_maps_api_key', '');
+        if ($apiKey === '') return null;
+
+        $waypoints = [];
+        foreach ($stops as $s) {
+            $lat = $s['lat'] ?? null;
+            $lng = $s['lng'] ?? null;
+            if (!is_numeric($lat) || !is_numeric($lng)) continue;
+            $waypoints[] = ((float) $lat) . ',' . ((float) $lng);
+        }
+
+        $q = [
+            'origin' => $originLat . ',' . $originLng,
+            'destination' => $destLat . ',' . $destLng,
+            'mode' => 'driving',
+            'overview' => 'full',
+            'key' => $apiKey,
+        ];
+        if (!empty($waypoints)) $q['waypoints'] = implode('|', $waypoints);
+
+        $url = 'https://maps.googleapis.com/maps/api/directions/json?' . http_build_query($q);
+        $ch2 = curl_init($url);
+        curl_setopt_array($ch2, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => 12,
+            CURLOPT_SSL_VERIFYPEER => true,
+        ]);
+        $resp2 = curl_exec($ch2);
+        $err2  = $resp2 === false ? curl_error($ch2) : null;
+        curl_close($ch2);
+        if ($err2 !== null || $resp2 === false) return null;
+
+        $data2 = json_decode($resp2, true) ?? [];
+        if (($data2['status'] ?? '') !== 'OK') return null;
+        $r2 = ($data2['routes'][0] ?? null);
+        if (!is_array($r2)) return null;
+        $poly2 = $r2['overview_polyline']['points'] ?? '';
+        if (!is_string($poly2) || $poly2 === '') return null;
+
+        $distanceMeters2 = 0;
+        $durationSeconds2 = 0;
+        $legs = ($r2['legs'] ?? []);
+        if (is_array($legs)) {
+            foreach ($legs as $leg) {
+                $distanceMeters2 += (int) (($leg['distance']['value'] ?? 0));
+                $durationSeconds2 += (int) (($leg['duration']['value'] ?? 0));
+            }
+        }
+
+        return [
+            'polyline' => $poly2,
+            'distance_meters' => $distanceMeters2,
+            'duration_seconds' => $durationSeconds2,
+        ];
     }
 
     // ── Notification helper ───────────────────────────────────────────────────

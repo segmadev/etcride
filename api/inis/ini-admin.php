@@ -23,6 +23,7 @@ $router->group('/admin', function ($r) {
     $r->get('/bookings/:id',                 'admin/Bookings@show');
     $r->post('/bookings/:id/assign',         'admin/Bookings@assign');
     $r->post('/bookings/:id/reassign',       'admin/Bookings@reassign');
+    $r->post('/bookings/:id/deassign',       'admin/Bookings@deassign');
     $r->post('/bookings/:id/cancel',         'admin/Bookings@cancel');
     $r->get('/bookings/:id/track',           'admin/Bookings@track');
 

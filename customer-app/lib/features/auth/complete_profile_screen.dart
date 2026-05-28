@@ -1,11 +1,15 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../core/constants/app_assets.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/config/router.dart';
 import '../../core/utils/validators.dart';
+import '../../data/models/user_model.dart';
 import '../../shared/providers/providers.dart';
 import '../../shared/widgets/app_button.dart';
 import '../../shared/widgets/app_text_field.dart';
@@ -33,16 +37,53 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
   bool _obscurePass  = true;
   bool _obscureConf  = true;
 
+  void _autoFillFromUser(UserModel user) {
+    if (_nameCtrl.text.trim().isEmpty && user.name.trim().isNotEmpty) {
+      _nameCtrl.text = user.name.trim();
+    }
+    if (_emailCtrl.text.trim().isEmpty && user.email.trim().isNotEmpty) {
+      _emailCtrl.text = user.email.trim();
+    }
+    if (_phoneCtrl.text.trim().isEmpty && user.phone.trim().isNotEmpty) {
+      _phoneCtrl.text = user.phone.trim();
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     // Pre-fill fields the user already provided
     final user = ref.read(currentUserProvider);
     if (user != null) {
-      if (user.name.isNotEmpty)  _nameCtrl.text  = user.name;
-      if (user.email.isNotEmpty) _emailCtrl.text = user.email;
-      if (user.phone.isNotEmpty) _phoneCtrl.text = user.phone;
+      _autoFillFromUser(user);
     }
+
+    ref.listen(currentUserProvider, (prev, next) {
+      if (next == null) return;
+      _autoFillFromUser(next);
+    });
+  }
+
+  Widget _nigeriaFlag() {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(999),
+      child: SizedBox(
+        width: 22,
+        height: 22,
+        child: FutureBuilder<String>(
+          future: rootBundle.loadString(AppAssets.nigeriaFlag),
+          builder: (context, snap) {
+            final svg = snap.data;
+            if (svg == null) return const SizedBox.shrink();
+            final match =
+                RegExp(r'data:image\/png;base64,([^"]+)').firstMatch(svg);
+            if (match == null) return const SizedBox.shrink();
+            final bytes = base64Decode(match.group(1)!);
+            return Image.memory(bytes, fit: BoxFit.cover, gaplessPlayback: true);
+          },
+        ),
+      ),
+    );
   }
 
   Future<void> _save() async {
@@ -161,6 +202,17 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
                 validator: Validators.phone,
                 enabled: !phoneLocked,
                 readOnly: phoneLocked,
+                prefixIcon: SizedBox(
+                  width: 52,
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 12, right: 8),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: _nigeriaFlag(),
+                    ),
+                  ),
+                ),
+                prefixIconConstraints: const BoxConstraints(minWidth: 52, minHeight: 48),
                 suffixIcon: phoneLocked
                     ? const Icon(Icons.lock_outline_rounded,
                         size: 18, color: AppColors.textHint)

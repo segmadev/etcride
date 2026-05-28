@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
+import '../../../core/constants/app_assets.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/constants/app_strings.dart';
@@ -39,6 +41,7 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen>
     super.initState();
     _tabCtrl = TabController(length: 3, vsync: this);
     _tabCtrl.addListener(() {
+      if (mounted) setState(() {});
       if (!_tabCtrl.indexIsChanging) _fetchTab(_tabCtrl.index);
     });
     _fetchTab(0);
@@ -71,54 +74,161 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.white,
-      appBar: AppBar(
-        backgroundColor: AppColors.white,
-        elevation: 0,
-        leading: const BackButton(color: AppColors.textPrimary),
-        title: Text(AppStrings.tripHistory, style: AppTextStyles.h4),
-        bottom: TabBar(
-          controller: _tabCtrl,
-          labelColor: AppColors.textPrimary,
-          unselectedLabelColor: AppColors.textSecondary,
-          indicatorColor: AppColors.primary,
-          labelStyle: AppTextStyles.labelMedium,
-          tabs: _tabLabels.map((t) => Tab(text: t)).toList(),
-        ),
-      ),
-      body: TabBarView(
-        controller: _tabCtrl,
-        children: List.generate(3, (idx) {
-          if (_loading[idx] == true) {
-            return const Center(
-                child: CircularProgressIndicator(color: AppColors.primary));
-          }
-          if (_errors[idx] != null) {
-            return _ErrorState(
-              message: _errors[idx]!,
-              onRetry: () => _fetchTab(idx),
-            );
-          }
-          final bookings = _cache[idx] ?? [];
-          if (bookings.isEmpty) {
-            return _EmptyState(
-                onBook: () => showSearchDestinationDrawer(context));
-          }
-          return RefreshIndicator(
-            color: AppColors.primary,
-            onRefresh: () => _fetchTab(idx),
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              itemCount: bookings.length,
-              itemBuilder: (_, i) => TripCard(
-                booking: bookings[i],
-                onTap: () => context.push(AppRoutes.tripDetails,
-                    extra: bookings[i].id),
-                onRebook: () => showSearchDestinationDrawer(context),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(22, 14, 22, 0),
+              child: SizedBox(
+                height: 92,
+                child: Stack(
+                  alignment: Alignment.topCenter,
+                  children: [
+                    Align(
+                      alignment: Alignment.topLeft,
+                      child: GestureDetector(
+                        onTap: () {
+                          if (context.canPop()) {
+                            context.pop();
+                          } else {
+                            context.go(AppRoutes.home);
+                          }
+                        },
+                        child: Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: AppColors.white,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.10),
+                                blurRadius: 16,
+                                offset: const Offset(0, 8),
+                              ),
+                            ],
+                          ),
+                          child: Center(
+                            child: const Icon(
+                              Icons.arrow_back_ios_new_rounded,
+                              size: 18,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(AppStrings.tripHistory, style: AppTextStyles.h2),
+                        const SizedBox(height: 4),
+                        Text(
+                          AppStrings.recentRides,
+                          style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
-          );
-        }),
+            const SizedBox(height: 14),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 22),
+              child: _PillTabs(
+                index: _tabCtrl.index,
+                labels: _tabLabels,
+                onChanged: (i) {
+                  _tabCtrl.animateTo(i);
+                  _fetchTab(i);
+                },
+              ),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: TabBarView(
+                controller: _tabCtrl,
+                children: List.generate(3, (idx) {
+                  if (_loading[idx] == true) {
+                    return const Center(
+                        child: CircularProgressIndicator(color: AppColors.primary));
+                  }
+                  if (_errors[idx] != null) {
+                    return _ErrorState(
+                      message: _errors[idx]!,
+                      onRetry: () => _fetchTab(idx),
+                    );
+                  }
+                  final bookings = _cache[idx] ?? [];
+                  if (bookings.isEmpty) {
+                    return _EmptyState(
+                        onBook: () => showSearchDestinationDrawer(context));
+                  }
+                  return RefreshIndicator(
+                    color: AppColors.primary,
+                    onRefresh: () => _fetchTab(idx),
+                    child: ListView.builder(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      itemCount: bookings.length,
+                      itemBuilder: (_, i) => TripCard(
+                        booking: bookings[i],
+                        onTap: () => context.push(AppRoutes.tripDetails,
+                            extra: bookings[i].id),
+                        onRebook: () => showSearchDestinationDrawer(context),
+                      ),
+                    ),
+                  );
+                }),
+              ),
+            ),
+          ],
+        ),
       ),
+    );
+  }
+}
+
+class _PillTabs extends StatelessWidget {
+  const _PillTabs({
+    required this.index,
+    required this.labels,
+    required this.onChanged,
+  });
+
+  final int index;
+  final List<String> labels;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(labels.length, (i) {
+        final selected = i == index;
+        return Padding(
+          padding: EdgeInsets.only(right: i == labels.length - 1 ? 0 : 14),
+          child: GestureDetector(
+            onTap: () => onChanged(i),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 160),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              decoration: BoxDecoration(
+                color: selected ? AppColors.primary : AppColors.disabled,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                labels[i].toUpperCase(),
+                style: AppTextStyles.labelSmall.copyWith(
+                  color: selected ? AppColors.white : AppColors.textSecondary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+        );
+      }),
     );
   }
 }
@@ -134,14 +244,7 @@ class _EmptyState extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
-                width: 80,
-                height: 80,
-                decoration: const BoxDecoration(
-                    color: AppColors.surface, shape: BoxShape.circle),
-                child: const Icon(Icons.history_rounded,
-                    size: 40, color: AppColors.textHint),
-              ),
+              SvgPicture.asset(AppAssets.noTrip, width: 170, height: 170),
               const SizedBox(height: 20),
               Text(AppStrings.noTripsYet, style: AppTextStyles.h4),
               const SizedBox(height: 8),

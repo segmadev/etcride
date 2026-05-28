@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
+import '../../core/constants/app_assets.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../core/config/router.dart';
@@ -9,10 +11,11 @@ import '../../shared/providers/providers.dart';
 // ── Floating map overlay button (circle with shadow) ─────────────────────────
 
 class MapOverlayButton extends StatelessWidget {
-  const MapOverlayButton({super.key, required this.icon, required this.onTap, this.color});
+  const MapOverlayButton({super.key, required this.icon, required this.onTap, this.color, this.iconWidget});
   final IconData icon;
   final VoidCallback onTap;
   final Color? color;
+  final Widget? iconWidget;
 
   @override
   Widget build(BuildContext context) => GestureDetector(
@@ -30,7 +33,8 @@ class MapOverlayButton extends StatelessWidget {
               ),
             ],
           ),
-          child: Icon(icon, size: 20, color: color ?? AppColors.textPrimary),
+          child: iconWidget ??
+              Icon(icon, size: 20, color: color ?? AppColors.textPrimary),
         ),
       );
 }
@@ -50,6 +54,12 @@ class TripTopBar extends StatelessWidget {
             children: [
               MapOverlayButton(
                 icon: Icons.menu_rounded,
+                iconWidget: SvgPicture.asset(
+                  AppAssets.menuIcon,
+                  width: 18,
+                  height: 18,
+                  colorFilter: const ColorFilter.mode(AppColors.textPrimary, BlendMode.srcIn),
+                ),
                 onTap: () => _showQuickNav(context),
               ),
               const Spacer(),

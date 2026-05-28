@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import '../../core/constants/app_assets.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 
@@ -33,9 +35,9 @@ class LocationRouteRow extends StatelessWidget {
         Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _Dot(color: pickupColor),
+            _Pin(color: pickupColor, size: compact ? 14 : 16),
             _DashedLine(height: compact ? 18 : 22),
-            _Dot(color: destinationColor),
+            _Pin(color: destinationColor, size: compact ? 14 : 16),
           ],
         ),
         const SizedBox(width: 12),
@@ -55,15 +57,18 @@ class LocationRouteRow extends StatelessWidget {
   }
 }
 
-class _Dot extends StatelessWidget {
-  const _Dot({required this.color});
+class _Pin extends StatelessWidget {
+  const _Pin({required this.color, required this.size});
   final Color color;
+  final double size;
 
   @override
-  Widget build(BuildContext context) => Container(
-    width: 10, height: 10,
-    decoration: BoxDecoration(shape: BoxShape.circle, color: color),
-  );
+  Widget build(BuildContext context) => SvgPicture.asset(
+        AppAssets.mapPin,
+        width: size,
+        height: size,
+        colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
+      );
 }
 
 class _DashedLine extends StatelessWidget {

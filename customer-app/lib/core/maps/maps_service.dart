@@ -139,8 +139,37 @@ class MapsService {
   static double _toRad(double d) => d * math.pi / 180;
   static double _sin2(double x) { final s = math.sin(x); return s * s; }
 
-  /// Decodes a Google Maps encoded polyline string into a list of [LatLng].
+  static List<LatLng> decodePolylineBest(
+    String encoded, {
+    LatLng? origin,
+    LatLng? destination,
+  }) {
+    final pts5 = _decodePolyline(encoded, 1e5);
+    if (origin == null || destination == null) return pts5;
+    final pts6 = _decodePolyline(encoded, 1e6);
+
+    double score(List<LatLng> pts) {
+      if (pts.length < 2) return double.infinity;
+      final a = pts.first;
+      final b = pts.last;
+      final s1 = _haversineKm(origin.latitude, origin.longitude, a.latitude, a.longitude) +
+          _haversineKm(destination.latitude, destination.longitude, b.latitude, b.longitude);
+      final s2 = _haversineKm(origin.latitude, origin.longitude, b.latitude, b.longitude) +
+          _haversineKm(destination.latitude, destination.longitude, a.latitude, a.longitude);
+      return math.min(s1, s2);
+    }
+
+    final s5 = score(pts5);
+    final s6 = score(pts6);
+    if (s6 + 0.05 < s5) return pts6;
+    return pts5;
+  }
+
   static List<LatLng> decodePolyline(String encoded) {
+    return _decodePolyline(encoded, 1e5);
+  }
+
+  static List<LatLng> _decodePolyline(String encoded, double div) {
     final result = <LatLng>[];
     int index = 0, lat = 0, lng = 0;
     while (index < encoded.length) {
@@ -161,7 +190,7 @@ class MapsService {
       } while (b >= 0x20);
       lng += (result0 & 1) != 0 ? ~(result0 >> 1) : (result0 >> 1);
 
-      result.add(LatLng(lat / 1e5, lng / 1e5));
+      result.add(LatLng(lat / div, lng / div));
     }
     return result;
   }

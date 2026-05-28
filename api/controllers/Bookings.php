@@ -3,6 +3,11 @@ require_once ROOT . 'functions/BaseController.php';
 
 class Bookings extends BaseController
 {
+    private function normalizeId(string $id): string
+    {
+        return strlen($id) > 20 ? substr($id, 0, 20) : $id;
+    }
+
     // ── POST /bookings ────────────────────────────────────────────────────────
     public function create(): void
     {
@@ -66,8 +71,15 @@ class Bookings extends BaseController
         $calcMethod = $this->setting('calc_method', 'server');
         $distanceKm = 0.0;
 
+        $routeSnap = null;
+        if ($calcMethod !== 'app') {
+            $routeSnap = $this->computeRouteSnapshot($pickupLat, $pickupLng, $destLat, $destLng, $stops);
+        }
+
         if ($calcMethod === 'app' && isset($_POST['distance_km'])) {
             $distanceKm = (float) $_POST['distance_km'];
+        } elseif (is_array($routeSnap) && !empty($routeSnap['distance_meters'])) {
+            $distanceKm = round(((float) $routeSnap['distance_meters']) / 1000, 2);
         } else {
             $allPoints = array_merge(
                 [['lat' => $pickupLat, 'lng' => $pickupLng]],
@@ -115,6 +127,15 @@ class Bookings extends BaseController
             'payment_status'      => 'pending',
             'pay_mode_snapshot'   => $payMode,
         ];
+        if (is_array($routeSnap) && $this->tableHasColumn('bookings', 'route_polyline')) {
+            $insertData['route_polyline'] = $routeSnap['polyline'] ?? null;
+            if ($this->tableHasColumn('bookings', 'route_distance_meters')) {
+                $insertData['route_distance_meters'] = $routeSnap['distance_meters'] ?? null;
+            }
+            if ($this->tableHasColumn('bookings', 'route_duration_seconds')) {
+                $insertData['route_duration_seconds'] = $routeSnap['duration_seconds'] ?? null;
+            }
+        }
 
         // Optional nullable columns
         if ($zoneId)                          $insertData['zone_id'] = $zoneId;
@@ -177,6 +198,9 @@ class Bookings extends BaseController
 
         // Return the data we already have — no re-fetch needed
         echo utilities::apiMessage('Booking created successfully.', 201, array_merge($insertData, [
+            'route_polyline'          => is_array($routeSnap) ? ($routeSnap['polyline'] ?? null) : null,
+            'route_distance_meters'   => is_array($routeSnap) ? ($routeSnap['distance_meters'] ?? null) : null,
+            'route_duration_seconds'  => is_array($routeSnap) ? ($routeSnap['duration_seconds'] ?? null) : null,
             'driver'         => $assignedDriver,
             'vehicle_type'   => $vt['name'] ?? null,
             'created_at'     => date('Y-m-d H:i:s'),
@@ -214,6 +238,7 @@ class Bookings extends BaseController
     public function show(string $id): void
     {
         $me = BaseController::$authUser;
+        $id = $this->normalizeId($id);
 
         try {
             $stmt = $this->db->prepare("
@@ -239,7 +264,52 @@ class Bookings extends BaseController
                 return;
             }
 
-            $booking['stops'] = $this->getStops($id);
+            $stops = $this->getStops($id);
+            $hasRouteCols = $this->tableHasColumn('bookings', 'route_polyline');
+            if ($hasRouteCols) {
+                $force = $this->query('recompute_route', '0') === '1';
+                $poly = $booking['route_polyline'] ?? '';
+                if ($force || !is_string($poly) || trim($poly) === '') {
+                    $pickupLat = (float) ($booking['pickup_lat'] ?? 0);
+                    $pickupLng = (float) ($booking['pickup_lng'] ?? 0);
+                    $destLat   = (float) ($booking['destination_lat'] ?? 0);
+                    $destLng   = (float) ($booking['destination_lng'] ?? 0);
+                    if ($pickupLat !== 0.0 && $pickupLng !== 0.0 && $destLat !== 0.0 && $destLng !== 0.0) {
+                        $snap = $this->computeRouteSnapshot($pickupLat, $pickupLng, $destLat, $destLng, $stops);
+                        if (is_array($snap) && !empty($snap['polyline'])) {
+                            $update = ['route_polyline' => $snap['polyline']];
+                            if ($this->tableHasColumn('bookings', 'route_distance_meters')) {
+                                $update['route_distance_meters'] = $snap['distance_meters'] ?? null;
+                            }
+                            if ($this->tableHasColumn('bookings', 'route_duration_seconds')) {
+                                $update['route_duration_seconds'] = $snap['duration_seconds'] ?? null;
+                            }
+                            $this->update('bookings', $update, "id = '$id'");
+                            $booking['route_polyline'] = $update['route_polyline'];
+                            if (isset($update['route_distance_meters'])) {
+                                $booking['route_distance_meters'] = $update['route_distance_meters'];
+                            }
+                            if (isset($update['route_duration_seconds'])) {
+                                $booking['route_duration_seconds'] = $update['route_duration_seconds'];
+                            }
+                        }
+                    }
+                }
+            } else {
+                $pickupLat = (float) ($booking['pickup_lat'] ?? 0);
+                $pickupLng = (float) ($booking['pickup_lng'] ?? 0);
+                $destLat   = (float) ($booking['destination_lat'] ?? 0);
+                $destLng   = (float) ($booking['destination_lng'] ?? 0);
+                if ($pickupLat !== 0.0 && $pickupLng !== 0.0 && $destLat !== 0.0 && $destLng !== 0.0) {
+                    $snap = $this->computeRouteSnapshot($pickupLat, $pickupLng, $destLat, $destLng, $stops);
+                    if (is_array($snap) && !empty($snap['polyline'])) {
+                        $booking['route_polyline'] = $snap['polyline'];
+                        $booking['route_distance_meters'] = $snap['distance_meters'] ?? null;
+                        $booking['route_duration_seconds'] = $snap['duration_seconds'] ?? null;
+                    }
+                }
+            }
+            $booking['stops'] = $stops;
 
             // Payments may not exist yet — guard against missing table
             try {
@@ -259,6 +329,7 @@ class Bookings extends BaseController
     public function cancel(string $id): void
     {
         $me      = BaseController::$authUser;
+        $id      = $this->normalizeId($id);
         $booking = $this->getall('bookings', 'id = ? AND customer_id = ?', [$id, $me['id']]);
 
         if (!is_array($booking)) {
@@ -318,6 +389,7 @@ class Bookings extends BaseController
     public function track(string $id): void
     {
         $me      = BaseController::$authUser;
+        $id      = $this->normalizeId($id);
         $booking = $this->getall('bookings', 'id = ? AND customer_id = ?', [$id, $me['id']]);
 
         if (!is_array($booking)) {
@@ -352,6 +424,7 @@ class Bookings extends BaseController
     public function confirmDelivery(string $id): void
     {
         $me      = BaseController::$authUser;
+        $id      = $this->normalizeId($id);
         $booking = $this->getall('bookings', 'id = ? AND customer_id = ?', [$id, $me['id']]);
 
         if (!is_array($booking)) {
@@ -429,6 +502,7 @@ class Bookings extends BaseController
     public function updatePaymentMethod(string $id): void
     {
         $me      = BaseController::$authUser;
+        $id      = $this->normalizeId($id);
         $booking = $this->getall('bookings', 'id = ? AND customer_id = ?', [$id, $me['id']]);
 
         if (!is_array($booking)) {
@@ -462,6 +536,7 @@ class Bookings extends BaseController
     public function rateDriver(string $id): void
     {
         $me      = BaseController::$authUser;
+        $id      = $this->normalizeId($id);
         $booking = $this->getall('bookings', 'id = ? AND customer_id = ?', [$id, $me['id']]);
 
         if (!is_array($booking)) {
@@ -513,6 +588,7 @@ class Bookings extends BaseController
     public function cancelIfNotStarted(string $id): void
     {
         $me      = BaseController::$authUser;
+        $id      = $this->normalizeId($id);
         $booking = $this->getall('bookings', 'id = ? AND customer_id = ?', [$id, $me['id']]);
 
         if (!is_array($booking)) {

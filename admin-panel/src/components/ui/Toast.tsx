@@ -45,7 +45,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             )}
           >
             {icons[t.type]}
-            <span className="flex-1">{t.message}</span>
+            <span className="flex-1 whitespace-pre-line">{t.message}</span>
             <button
               onClick={() => setToasts(prev => prev.filter(x => x.id !== t.id))}
               className="text-slate-400 hover:text-slate-600"

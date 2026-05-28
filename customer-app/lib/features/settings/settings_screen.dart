@@ -14,89 +14,106 @@ class SettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
       backgroundColor: AppColors.white,
-      appBar: AppBar(
-        backgroundColor: AppColors.white,
-        elevation: 0,
-        leading: const BackButton(color: AppColors.textPrimary),
-        title: Text(AppStrings.settingsTitle, style: AppTextStyles.h4),
-      ),
-      body: ListView(
-        children: [
-          // ── Account ────────────────────────────────────────────────────────
-          _SectionHeader('Account'),
-          _SettingsTile(
-            Icons.person_rounded,
-            AppStrings.profile,
-            () => context.push(AppRoutes.profile),
-          ),
-          _SettingsTile(
-            Icons.notifications_rounded,
-            AppStrings.notifications,
-            () => context.push(AppRoutes.notifications),
-          ),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(22, 14, 22, 28),
+          children: [
+            _Header(
+              title: AppStrings.settingsTitle,
+              onMenu: () {
+                if (Navigator.of(context).canPop()) {
+                  context.pop();
+                } else {
+                  context.go(AppRoutes.home);
+                }
+              },
+            ),
+            const SizedBox(height: 22),
 
-          // ── Payments ───────────────────────────────────────────────────────
-          _SectionHeader('Payments'),
-          _SettingsTile(
-            Icons.account_balance_wallet_rounded,
-            AppStrings.walletPayments,
-            () => _comingSoon(context),
-            trailing: _ComingSoonBadge(),
-          ),
+            _SectionTitle('Account'),
+            const SizedBox(height: 10),
+            Padding(
+              padding: const EdgeInsets.only(left: 18),
+              child: _SettingsRow(
+                icon: Icons.person_outline_rounded,
+                label: AppStrings.profile,
+                onTap: () => context.push(AppRoutes.profile),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Padding(
+              padding: const EdgeInsets.only(left: 18),
+              child: _SettingsRow(
+                icon: Icons.account_balance_wallet_outlined,
+                label: AppStrings.walletPayments,
+                badge: const _ComingSoonPill(),
+                onTap: () => _comingSoon(context),
+              ),
+            ),
 
-          // ── Support ────────────────────────────────────────────────────────
-          _SectionHeader('Support'),
-          _SettingsTile(
-            Icons.help_outline_rounded,
-            AppStrings.helpSupport,
-            () => context.push(AppRoutes.help),
-          ),
-          _SettingsTile(
-            Icons.gavel_rounded,
-            AppStrings.legalDocuments,
-            () => context.push(AppRoutes.legalDocuments),
-          ),
+            const SizedBox(height: 26),
+            _SectionTitle('Preferences'),
+            const SizedBox(height: 10),
+            Padding(
+              padding: const EdgeInsets.only(left: 18),
+              child: _SettingsRow(
+                icon: Icons.notifications_none_rounded,
+                label: AppStrings.notifications,
+                onTap: () => context.push(AppRoutes.notifications),
+              ),
+            ),
 
-          // ── App ────────────────────────────────────────────────────────────
-          _SectionHeader('App'),
-          _SettingsTile(
-            Icons.info_outline_rounded,
-            AppStrings.appVersion,
-            null,
-            trailing: Text('1.0.0',
-                style: AppTextStyles.bodySmall
-                    .copyWith(color: AppColors.textSecondary)),
-          ),
+            const SizedBox(height: 26),
+            _SectionTitle('About'),
+            const SizedBox(height: 10),
+            Padding(
+              padding: const EdgeInsets.only(left: 18),
+              child: _SettingsRow(
+                icon: Icons.description_outlined,
+                label: AppStrings.legalDocuments,
+                onTap: () => context.push(AppRoutes.legalDocuments),
+              ),
+            ),
+            const SizedBox(height: 14),
+            const Padding(
+              padding: EdgeInsets.only(left: 18),
+              child: _SettingsRow(
+                icon: Icons.grid_view_rounded,
+                label: AppStrings.appVersion,
+                subtitle: '1.0',
+                showChevron: false,
+              ),
+            ),
 
-          const SizedBox(height: 24),
-          const Divider(),
-
-          // ── Logout ─────────────────────────────────────────────────────────
-          ListTile(
-            leading:
-                const Icon(Icons.logout_rounded, color: AppColors.error),
-            title: Text(AppStrings.logout,
-                style: AppTextStyles.bodyLarge
-                    .copyWith(color: AppColors.error)),
-            onTap: () async {
-              await ref.read(authRepositoryProvider).logout();
-              ref.read(currentUserProvider.notifier).state = null;
-              if (context.mounted) context.go(AppRoutes.phone);
-            },
-          ),
-
-          // ── Delete account ─────────────────────────────────────────────────
-          ListTile(
-            leading: const Icon(Icons.delete_forever_rounded,
-                color: AppColors.error),
-            title: Text(AppStrings.deleteAccount,
-                style: AppTextStyles.bodySmall
-                    .copyWith(color: AppColors.error)),
-            onTap: () => _showDeleteDialog(context, ref),
-          ),
-
-          const SizedBox(height: 32),
-        ],
+            const SizedBox(height: 26),
+            _SectionTitle('Security'),
+            const SizedBox(height: 10),
+            Padding(
+              padding: const EdgeInsets.only(left: 18),
+              child: _SettingsRow(
+                icon: Icons.logout_rounded,
+                label: AppStrings.logout,
+                onTap: () async {
+                  await ref.read(authRepositoryProvider).logout();
+                  ref.read(currentUserProvider.notifier).state = null;
+                  if (context.mounted) context.go(AppRoutes.phone);
+                },
+              ),
+            ),
+            const SizedBox(height: 14),
+            Padding(
+              padding: const EdgeInsets.only(left: 18),
+              child: _SettingsRow(
+                icon: Icons.delete_outline_rounded,
+                label: AppStrings.deleteAccount,
+                labelColor: AppColors.error,
+                iconColor: AppColors.error,
+                chevronColor: AppColors.error,
+                onTap: () => _showDeleteDialog(context, ref),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -138,47 +155,164 @@ class SettingsScreen extends ConsumerWidget {
   }
 }
 
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader(this.title);
+class _Header extends StatelessWidget {
+  const _Header({
+    required this.title,
+    required this.onMenu,
+  });
+
+  final String title;
+  final VoidCallback onMenu;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 56,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Align(
+            alignment: Alignment.centerLeft,
+            child: GestureDetector(
+              onTap: onMenu,
+              child: Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: AppColors.white,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.10),
+                      blurRadius: 16,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: Center(
+                  child: const Icon(
+                    Icons.arrow_back_ios_new_rounded,
+                    size: 18,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Text(title, style: AppTextStyles.h2),
+        ],
+      ),
+    );
+  }
+}
+
+class _SectionTitle extends StatelessWidget {
+  const _SectionTitle(this.title);
   final String title;
 
   @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
-        child: Text(title,
-            style: AppTextStyles.labelSmall
-                .copyWith(color: AppColors.textSecondary)),
-      );
+  Widget build(BuildContext context) => Text(title, style: AppTextStyles.h4.copyWith(fontWeight: FontWeight.w700));
 }
 
-class _SettingsTile extends StatelessWidget {
-  const _SettingsTile(this.icon, this.label, this.onTap, {this.trailing});
+class _SettingsRow extends StatelessWidget {
+  const _SettingsRow({
+    required this.icon,
+    required this.label,
+    this.subtitle,
+    this.badge,
+    this.onTap,
+    this.showChevron = true,
+    this.labelColor = AppColors.textPrimary,
+    this.iconColor = AppColors.textPrimary,
+    this.chevronColor = AppColors.textHint,
+  });
+
   final IconData icon;
   final String label;
+  final String? subtitle;
+  final Widget? badge;
   final VoidCallback? onTap;
-  final Widget? trailing;
+  final bool showChevron;
+  final Color labelColor;
+  final Color iconColor;
+  final Color chevronColor;
 
   @override
-  Widget build(BuildContext context) => ListTile(
-        leading: Icon(icon, size: 22, color: AppColors.textPrimary),
-        title: Text(label, style: AppTextStyles.bodyLarge),
-        trailing: trailing ??
-            const Icon(Icons.chevron_right_rounded, color: AppColors.textHint),
-        onTap: onTap,
-      );
+  Widget build(BuildContext context) {
+    final row = SizedBox(
+      height: 46,
+      child: Row(
+        children: [
+          SizedBox(
+            width: 34,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Icon(icon, size: 20, color: iconColor),
+            ),
+          ),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          fontWeight: FontWeight.w500,
+                          color: labelColor,
+                        ),
+                      ),
+                    ),
+                    if (badge != null) ...[
+                      const SizedBox(width: 10),
+                      badge!,
+                    ],
+                  ],
+                ),
+                if (subtitle != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle!,
+                    style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (showChevron)
+            Icon(Icons.chevron_right_rounded, color: chevronColor, size: 22),
+        ],
+      ),
+    );
+
+    if (onTap == null) return row;
+    return GestureDetector(onTap: onTap, behavior: HitTestBehavior.opaque, child: row);
+  }
 }
 
-class _ComingSoonBadge extends StatelessWidget {
+class _ComingSoonPill extends StatelessWidget {
+  const _ComingSoonPill();
+
   @override
   Widget build(BuildContext context) => Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         decoration: BoxDecoration(
-          color: AppColors.primaryLight,
+          color: AppColors.success,
           borderRadius: BorderRadius.circular(100),
         ),
-        child: Text('Soon',
-            style:
-                AppTextStyles.caption.copyWith(color: AppColors.primary)),
+        child: Text(
+          'COMING SOON!',
+          style: AppTextStyles.caption.copyWith(
+            color: AppColors.white,
+            fontWeight: FontWeight.w700,
+            height: 1,
+            letterSpacing: 0.2,
+          ),
+        ),
       );
 }

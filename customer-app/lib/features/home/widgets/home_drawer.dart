@@ -12,14 +12,32 @@ import '../../../shared/providers/providers.dart';
 class HomeDrawer extends ConsumerWidget {
   const HomeDrawer({super.key});
 
+  String _titleCaseName(String v) {
+    final cleaned = v.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (cleaned.isEmpty) return '';
+    return cleaned
+        .split(' ')
+        .map((w) => w.isEmpty
+            ? ''
+            : (w.length == 1
+                ? w.toUpperCase()
+                : (w[0].toUpperCase() + w.substring(1).toLowerCase())))
+        .join(' ');
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final init = ref.watch(authInitProvider);
     final user = ref.watch(currentUserProvider);
-    final isComplete = user != null && user.name.isNotEmpty;
+    final initializing = init.isLoading && user == null;
+    final isComplete = user != null &&
+        user.name.isNotEmpty &&
+        (user.phone.isNotEmpty || user.email.isNotEmpty);
 
     return Drawer(
       backgroundColor: AppColors.white,
       width: MediaQuery.of(context).size.width * 0.72,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
       child: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -33,8 +51,8 @@ class HomeDrawer extends ConsumerWidget {
                   // Avatar
                   CircleAvatar(
                     radius: 32,
-                    backgroundColor: AppColors.surface,
-                    child: Icon(Icons.person_rounded, size: 36, color: AppColors.textSecondary),
+                    backgroundColor: AppColors.primaryLight,
+                    child: const Icon(Icons.person_rounded, size: 36, color: AppColors.primary),
                   ),
                   const SizedBox(height: 12),
 
@@ -44,58 +62,66 @@ class HomeDrawer extends ConsumerWidget {
                     ],
                   ),
 
-                  if (isComplete) ...[
+                  if (!initializing && isComplete) ...[
                     const SizedBox(height: 4),
-                    Text(user.name, style: AppTextStyles.h4),
+                    Text(_titleCaseName(user.name), style: AppTextStyles.h4),
                     Text('Passenger', style: AppTextStyles.bodySmall),
                   ] else ...[
                     const SizedBox(height: 8),
-                    GestureDetector(
-                      onTap: () { Navigator.pop(context); showCompleteProfileDrawer(context); },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                        decoration: BoxDecoration(
-                          color: AppColors.success,
-                          borderRadius: BorderRadius.circular(100),
+                    if (!initializing)
+                      GestureDetector(
+                        onTap: () { Navigator.pop(context); showCompleteProfileDrawer(context); },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: AppColors.success,
+                            borderRadius: BorderRadius.circular(100),
+                          ),
+                          child: Text(AppStrings.completeYourProfile,
+                            style: const TextStyle(fontFamily: 'Inter', fontSize: 11,
+                                fontWeight: FontWeight.w600, color: AppColors.white)),
                         ),
-                        child: Text(AppStrings.completeYourProfile,
-                          style: const TextStyle(fontFamily: 'Inter', fontSize: 11,
-                              fontWeight: FontWeight.w600, color: AppColors.white)),
                       ),
-                    ),
                   ],
                 ],
               ),
             ),
 
-            const Divider(height: 24),
+            const Divider(height: 30),
 
             // ── Nav items ────────────────────────────────────────────────────
             Expanded(
               child: ListView(
                 padding: EdgeInsets.zero,
                 children: [
-                  _DrawerItem(AppStrings.bookATrip, Icons.directions_car_outlined, () {
-                    Navigator.pop(context);
-                    showSearchDestinationDrawer(context);
-                  }),
-                  _DrawerItem(AppStrings.sendAPackage, Icons.inventory_2_outlined, () {
-                    Navigator.pop(context);
-                    context.push(AppRoutes.courier);
-                  }),
-                  _DrawerItem(AppStrings.myTripHistory, Icons.history_rounded, () {
+                  const SizedBox(height: 10),
+                  _DrawerItem.svg(
+                    AppStrings.bookATrip,
+                    onTap: () {
+                      Navigator.pop(context);
+                      showSearchDestinationDrawer(context);
+                    },
+                  ),
+                  _DrawerItem.svg(
+                    AppStrings.sendAPackage,
+                    onTap: () {
+                      Navigator.pop(context);
+                      context.push(AppRoutes.courier);
+                    },
+                  ),
+                  _DrawerItem(AppStrings.myTripHistory, null, () {
                     Navigator.pop(context);
                     context.push(AppRoutes.tripHistory);
                   }),
-                  _DrawerItem(AppStrings.settings, Icons.settings_outlined, () {
+                  _DrawerItem(AppStrings.settings, null, () {
                     Navigator.pop(context);
                     context.push(AppRoutes.settings);
                   }),
-                  _DrawerItem(AppStrings.help, Icons.help_outline_rounded, () {
+                  _DrawerItem(AppStrings.help, null, () {
                     Navigator.pop(context);
                     context.push(AppRoutes.help);
                   }),
-                  _DrawerItem(AppStrings.support, Icons.headset_mic_outlined, () {
+                  _DrawerItem(AppStrings.support, null, () {
                     Navigator.pop(context);
                     context.push(AppRoutes.contactSupport);
                   }),
@@ -117,7 +143,7 @@ class HomeDrawer extends ConsumerWidget {
                     const Icon(Icons.logout_rounded, size: 20, color: AppColors.error),
                     const SizedBox(width: 12),
                     Text(AppStrings.logout,
-                      style: AppTextStyles.bodyMedium.copyWith(color: AppColors.error)),
+                      style: AppTextStyles.bodyMedium.copyWith(color: AppColors.error, fontWeight: FontWeight.w800)),
                   ],
                 ),
               ),
@@ -130,16 +156,35 @@ class HomeDrawer extends ConsumerWidget {
 }
 
 class _DrawerItem extends StatelessWidget {
-  const _DrawerItem(this.label, this.icon, this.onTap);
+  const _DrawerItem(
+    this.label,
+    this.icon,
+    this.onTap,
+  ) : iconWidget = null;
+
+  const _DrawerItem.svg(
+    this.label, {
+    required this.onTap,
+  })  : icon = null,
+        iconWidget = null;
+
   final String label;
-  final IconData icon;
+  final IconData? icon;
+  final Widget? iconWidget;
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => ListTile(
-    leading: Icon(icon, size: 22, color: AppColors.textPrimary),
-    title: Text(label, style: AppTextStyles.bodyLarge),
-    onTap: onTap,
-    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
-  );
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+        child: Text(
+          label,
+          style: AppTextStyles.bodyLarge.copyWith(fontWeight: FontWeight.w800),
+        ),
+      ),
+    );
+  }
 }

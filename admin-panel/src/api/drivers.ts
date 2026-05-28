@@ -3,9 +3,11 @@ import type { Driver, KycStatus, PaginatedResponse } from '../types';
 
 export interface DriversFilter {
   page?: number;
+  per_page?: number;
   search?: string;
   status?: string;
   is_online?: number;
+  sort?: string;
 }
 
 export interface CreateDriverPayload {

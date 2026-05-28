@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../core/constants/app_assets.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../core/constants/app_strings.dart';
@@ -45,6 +48,7 @@ class _SelectRideScreenState extends ConsumerState<SelectRideScreen> {
   @override
   void initState() {
     super.initState();
+    _paymentMethod = ref.read(selectedPaymentMethodProvider);
     _loadVehicleTypes();
   }
 
@@ -96,17 +100,20 @@ class _SelectRideScreenState extends ConsumerState<SelectRideScreen> {
   }
 
   Future<void> _confirm() async {
-    // Profile gate — name and phone are sufficient; email is optional.
-    final user = ref.read(currentUserProvider);
-    final isComplete = user != null &&
-        user.name.isNotEmpty &&
-        user.phone.isNotEmpty;
+    var user = ref.read(currentUserProvider);
+    if (user == null) {
+      try {
+        await ref.read(authInitProvider.future);
+      } catch (_) {}
+      user = ref.read(currentUserProvider);
+    }
+    final isComplete = user != null && (user.phone.isNotEmpty || user.email.isNotEmpty);
 
     if (!isComplete) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please complete your profile before booking'),
+          content: Text(AppStrings.profileIncomplete),
           backgroundColor: AppColors.error,
         ),
       );
@@ -174,6 +181,13 @@ class _SelectRideScreenState extends ConsumerState<SelectRideScreen> {
         packageDescription:  draft.packageDescription,
       );
 
+      try {
+        await ref.read(bookingRepositoryProvider).updatePaymentMethod(
+              booking.id,
+              _paymentMethod,
+            );
+      } catch (_) {}
+
       if (!mounted) return;
       if (widget.asSheet) {
         Navigator.of(context).pop(booking.id);
@@ -203,6 +217,23 @@ class _SelectRideScreenState extends ConsumerState<SelectRideScreen> {
       _loadVehicleTypes();
     }
   }
+
+  Future<void> _editPaymentMethod() async {
+    final selected = await context.push<String>(
+      AppRoutes.paymentMethods,
+      extra: _paymentMethod,
+    );
+    if (!mounted) return;
+    if (selected == null) return;
+    setState(() => _paymentMethod = selected);
+    ref.read(selectedPaymentMethodProvider.notifier).state = selected;
+  }
+
+  String get _paymentLabel => switch (_paymentMethod) {
+    'bank_transfer' => AppStrings.bankTransfer,
+    'flutterwave' => AppStrings.payWithFlutterwave,
+    _ => AppStrings.cash,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -285,9 +316,12 @@ class _SelectRideScreenState extends ConsumerState<SelectRideScreen> {
           ),
         ),
         const Divider(height: 1),
-        _PaymentPicker(
-          selected: _paymentMethod,
-          onChanged: (v) => setState(() => _paymentMethod = v),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+          child: _PaymentOptionTile(
+            label: _paymentLabel,
+            onTap: _editPaymentMethod,
+          ),
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
@@ -352,14 +386,11 @@ class _RouteBar extends StatelessWidget {
           children: [
             Column(
               children: [
-                Container(width: 10, height: 10,
-                    decoration: const BoxDecoration(
-                        color: AppColors.pickupPin, shape: BoxShape.circle)),
-                Container(width: 2, height: 24, color: AppColors.divider),
-                Container(width: 10, height: 10,
-                    decoration: BoxDecoration(
-                        color: AppColors.destinationPin,
-                        borderRadius: BorderRadius.circular(2))),
+                _markerDot(width: 18, height: 18),
+                const SizedBox(height: 6),
+                const _AnimatedDashedVLine(height: 26),
+                const SizedBox(height: 6),
+                _markerDot(width: 14, height: 14),
               ],
             ),
             const SizedBox(width: 12),
@@ -427,18 +458,13 @@ class _VehicleCard extends StatelessWidget {
           ),
           child: Row(
             children: [
-              Container(
-                width: 48, height: 48,
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  vt.category == 'delivery'
-                      ? Icons.delivery_dining_rounded
-                      : Icons.directions_car_rounded,
-                  color: AppColors.textSecondary,
-                  size: 28,
+              SizedBox(
+                width: 70,
+                height: 70,
+                child: _EmbeddedPngFromSvgAsset(
+                  assetPath: vt.category == 'delivery'
+                      ? AppAssets.courierIcon
+                      : AppAssets.carIcon,
                 ),
               ),
               const SizedBox(width: 12),
@@ -471,59 +497,205 @@ class _VehicleCard extends StatelessWidget {
       );
 }
 
-class _PaymentPicker extends StatelessWidget {
-  const _PaymentPicker({required this.selected, required this.onChanged});
-  final String selected;
-  final ValueChanged<String> onChanged;
+Widget _markerDot({double width = 14, double height = 14}) => Container(
+      width: width,
+      height: height,
+      decoration: const BoxDecoration(
+        color: AppColors.black,
+        shape: BoxShape.circle,
+      ),
+    );
+
+class _AnimatedDashedVLine extends StatefulWidget {
+  const _AnimatedDashedVLine({this.height = 24});
+  final double height;
 
   @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          children: [
-            Text('Payment:', style: AppTextStyles.bodyMedium),
-            const SizedBox(width: 12),
-            _Chip('Cash',    'cash',         selected, onChanged, Icons.payments_outlined),
-            const SizedBox(width: 8),
-            _Chip('Transfer','bank_transfer', selected, onChanged, Icons.account_balance_rounded),
-          ],
-        ),
-      );
+  State<_AnimatedDashedVLine> createState() => _AnimatedDashedVLineState();
 }
 
-class _Chip extends StatelessWidget {
-  const _Chip(this.label, this.value, this.selected, this.onChanged, this.icon);
-  final String label, value, selected;
-  final ValueChanged<String> onChanged;
-  final IconData icon;
+class _AnimatedDashedVLineState extends State<_AnimatedDashedVLine>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final active = value == selected;
-    return GestureDetector(
-      onTap: () => onChanged(value),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: active ? AppColors.black : AppColors.inputFill,
-          borderRadius: BorderRadius.circular(100),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 14,
-                color: active ? AppColors.white : AppColors.textSecondary),
-            const SizedBox(width: 6),
-            Text(label,
-                style: TextStyle(
-                  fontFamily: 'Inter', fontSize: 12, fontWeight: FontWeight.w600,
-                  color: active ? AppColors.white : AppColors.textSecondary,
-                )),
-          ],
+    return SizedBox(
+      width: 20,
+      height: widget.height,
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (_, __) => CustomPaint(
+          painter: _MovingDashesPainter(phase: _controller.value),
         ),
       ),
     );
+  }
+}
+
+class _MovingDashesPainter extends CustomPainter {
+  _MovingDashesPainter({required this.phase});
+  final double phase;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = AppColors.black.withValues(alpha: 0.65)
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
+
+    const dash = 6.0;
+    const gap = 5.0;
+    final step = dash + gap;
+
+    final x = size.width / 2;
+    final offset = ((1.0 - phase) * step) % step;
+    var y = -offset;
+    while (y < size.height) {
+      final y1 = y.clamp(0.0, size.height);
+      final y2 = (y + dash).clamp(0.0, size.height);
+      canvas.drawLine(Offset(x, y1), Offset(x, y2), paint);
+      y += step;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _MovingDashesPainter oldDelegate) =>
+      oldDelegate.phase != phase;
+}
+
+class _EmbeddedPngFromSvgAsset extends StatelessWidget {
+  const _EmbeddedPngFromSvgAsset({
+    required this.assetPath,
+  });
+
+  final String assetPath;
+
+  static final Map<String, Future<Uint8List>> _cache = {};
+
+  Future<Uint8List> _load() {
+    return _cache.putIfAbsent(assetPath, () async {
+      final svg = await rootBundle.loadString(assetPath);
+      final match = RegExp(r'data:image\/png;base64,([^"]+)').firstMatch(svg);
+      if (match == null) throw const FormatException('No embedded PNG found.');
+      return base64Decode(match.group(1)!);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<Uint8List>(
+      future: _load(),
+      builder: (context, snap) {
+        if (!snap.hasData) return const SizedBox.shrink();
+        return Image.memory(
+          snap.data!,
+          fit: BoxFit.contain,
+          gaplessPlayback: true,
+        );
+      },
+    );
+  }
+}
+
+class _PaymentOptionTile extends StatelessWidget {
+  const _PaymentOptionTile({
+    required this.label,
+    required this.onTap,
+  });
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: CustomPaint(
+        painter: _DashedRoundedRectPainter(
+          color: AppColors.textSecondary.withValues(alpha: 0.95),
+          strokeWidth: 2,
+          radius: 12,
+          dash: 7,
+          gap: 5,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(label, style: AppTextStyles.bodyMedium),
+              ),
+              const Icon(Icons.chevron_right_rounded, color: AppColors.textHint),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DashedRoundedRectPainter extends CustomPainter {
+  _DashedRoundedRectPainter({
+    required this.color,
+    required this.strokeWidth,
+    required this.radius,
+    required this.dash,
+    required this.gap,
+  });
+
+  final Color color;
+  final double strokeWidth;
+  final double radius;
+  final double dash;
+  final double gap;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth;
+
+    final rrect = RRect.fromRectAndRadius(
+      Offset.zero & size,
+      Radius.circular(radius),
+    );
+
+    final path = Path()..addRRect(rrect);
+    for (final metric in path.computeMetrics()) {
+      var distance = 0.0;
+      while (distance < metric.length) {
+        final len = (distance + dash).clamp(0.0, metric.length);
+        canvas.drawPath(metric.extractPath(distance, len), paint);
+        distance += dash + gap;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DashedRoundedRectPainter oldDelegate) {
+    return oldDelegate.color != color ||
+        oldDelegate.strokeWidth != strokeWidth ||
+        oldDelegate.radius != radius ||
+        oldDelegate.dash != dash ||
+        oldDelegate.gap != gap;
   }
 }
 

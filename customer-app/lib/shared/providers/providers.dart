@@ -49,7 +49,7 @@ final authInitProvider = FutureProvider<UserModel?>((ref) async {
 /// Holds the current booking being assembled across multiple screens.
 final bookingDraftProvider = StateProvider<BookingDraft>((ref) => const BookingDraft());
 
-final activeBookingProvider = FutureProvider.family<BookingModel?, String>((ref, bookingType) async {
+final activeBookingProvider = FutureProvider.autoDispose.family<BookingModel?, String>((ref, bookingType) async {
   final all = await ref.read(bookingRepositoryProvider).getMyBookings();
   for (final b in all) {
     if (b.bookingType.apiValue == bookingType && b.status.isActive) return b;

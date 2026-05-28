@@ -31,8 +31,9 @@ class Drivers extends BaseController
         $search  = $this->query('search', '');
         $status  = $this->query('status', '');
         $online  = $this->query('online', '');
+        $sort    = $this->query('sort', '');
         $page    = max(1, (int) $this->query('page', 1));
-        $perPage = 25;
+        $perPage = min(100, max(1, (int) $this->query('per_page', 25)));
         $offset  = ($page - 1) * $perPage;
 
         $conditions = [];
@@ -48,15 +49,21 @@ class Drivers extends BaseController
 
         $where = $conditions ? 'WHERE ' . implode(' AND ', $conditions) : '';
 
+        $orderBy = ($sort === 'assign')
+            ? 'd.is_online DESC, d.name ASC'
+            : 'd.created_at DESC';
+
         $stmt = $this->db->prepare(
             "SELECT d.id, d.name, d.email, d.phone, d.photo, d.license_number,
                     d.is_active, d.is_online, d.kyc_status, d.last_seen, d.created_at,
                     v.id AS vehicle_id, v.plate_number, v.make, v.model, v.color,
-                    vt.name AS vehicle_type
+                    vt.id AS driver_vehicle_type_id,
+                    vt.name AS vehicle_type,
+                    vt.category AS vehicle_type_category
              FROM drivers d
              LEFT JOIN vehicles v       ON v.id  = d.vehicle_id
              LEFT JOIN vehicle_types vt ON vt.id = v.vehicle_type_id
-             $where ORDER BY d.created_at DESC LIMIT $perPage OFFSET $offset"
+             $where ORDER BY $orderBy LIMIT $perPage OFFSET $offset"
         );
         $stmt->execute($params);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);

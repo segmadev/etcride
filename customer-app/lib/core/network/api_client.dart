@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:pretty_dio_logger/pretty_dio_logger.dart';
 import '../config/app_config.dart';
+import '../errors/app_exception.dart';
 import 'interceptors/auth_interceptor.dart';
 import 'interceptors/error_interceptor.dart';
 
@@ -54,12 +55,19 @@ class ApiClient {
     dynamic data,
     T Function(dynamic json)? fromJson,
   }) async {
-    final response = await _dio.request<Map<String, dynamic>>(
-      path,
-      queryParameters: queryParameters,
-      data: data,
-      options: Options(method: method),
-    );
+    late final Response<Map<String, dynamic>> response;
+    try {
+      response = await _dio.request<Map<String, dynamic>>(
+        path,
+        queryParameters: queryParameters,
+        data: data,
+        options: Options(method: method),
+      );
+    } on DioException catch (e) {
+      final err = e.error;
+      if (err is AppException) throw err;
+      rethrow;
+    }
 
     final body = response.data!;
     final payload = body['data'];

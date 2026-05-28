@@ -13,14 +13,40 @@ class AuthRepository {
   static String _encodePassword(String password) =>
       base64Encode(utf8.encode(password));
 
-  UserModel _mapUser(Map<String, dynamic> json) => UserModel(
-        id:           json['id']?.toString() ?? '',
-        phone:        json['phone']?.toString() ?? '',
-        name:         json['name']?.toString() ?? '',
-        email:        json['email']?.toString() ?? '',
-        isVerified:   (json['status']?.toString() ?? '') == '1',
-        createdAt:    json['created_at']?.toString(),
-      );
+  UserModel _mapUser(Map<String, dynamic> json) {
+    final first = json['first_name']?.toString() ?? '';
+    final last = json['last_name']?.toString() ?? '';
+    final fullFromParts = '${first.trim()} ${last.trim()}'.trim();
+    final name = (json['name'] ??
+            json['full_name'] ??
+            json['fullname'] ??
+            (fullFromParts.isNotEmpty ? fullFromParts : null))
+        ?.toString() ??
+        '';
+
+    final phone =
+        (json['phone'] ?? json['phone_number'] ?? json['mobile'])?.toString() ??
+            '';
+
+    final email = (json['email'] ?? json['mail'])?.toString() ?? '';
+
+    final photo = (json['profilePhoto'] ??
+            json['profile_photo'] ??
+            json['photo'] ??
+            json['avatar'])
+        ?.toString() ??
+        '';
+
+    return UserModel(
+      id: json['id']?.toString() ?? '',
+      phone: phone,
+      name: name,
+      email: email,
+      profilePhoto: photo,
+      isVerified: (json['status']?.toString() ?? '') == '1',
+      createdAt: json['created_at']?.toString(),
+    );
+  }
 
   // ── OTP flow ──────────────────────────────────────────────────────────────
 
@@ -80,6 +106,28 @@ class AuthRepository {
     await _storage.saveToken(token);
     await _storage.saveUser(jsonEncode(user.toJson()));
     return user;
+  }
+
+  Future<void> forgotPassword(String email) async {
+    await _client.post<void>(
+      ApiEndpoints.forgotPassword,
+      body: {'email': email},
+    );
+  }
+
+  Future<void> resetPassword({
+    required String email,
+    required String code,
+    required String password,
+  }) async {
+    await _client.post<void>(
+      ApiEndpoints.resetPassword,
+      body: {
+        'email': email,
+        'code': code,
+        'password': _encodePassword(password),
+      },
+    );
   }
 
   // ── Profile ───────────────────────────────────────────────────────────────

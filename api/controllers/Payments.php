@@ -3,10 +3,16 @@ require_once ROOT . 'functions/BaseController.php';
 
 class Payments extends BaseController
 {
+    private function normalizeId(string $id): string
+    {
+        return strlen($id) > 20 ? substr($id, 0, 20) : $id;
+    }
+
     // ── POST /bookings/:id/pay ────────────────────────────────────────────────
     public function initiate(string $bookingId): void
     {
         $me      = BaseController::$authUser;
+        $bookingId = $this->normalizeId($bookingId);
         $booking = $this->getall('bookings', 'id = ? AND customer_id = ?', [$bookingId, $me['id']]);
 
         if (!is_array($booking)) {
@@ -74,6 +80,7 @@ class Payments extends BaseController
     public function status(string $bookingId): void
     {
         $me      = BaseController::$authUser;
+        $bookingId = $this->normalizeId($bookingId);
         $booking = $this->getall('bookings', 'id = ? AND customer_id = ?', [$bookingId, $me['id']]);
 
         if (!is_array($booking)) {

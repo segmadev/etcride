@@ -1,8 +1,12 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:geolocator/geolocator.dart';
+import '../../../core/constants/app_assets.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/constants/app_strings.dart';
@@ -165,8 +169,16 @@ class _CourierScreenState extends ConsumerState<CourierScreen> {
                       color: AppColors.primaryLight,
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Icons.inventory_2_rounded,
-                        size: 40, color: AppColors.primary),
+                    child: Center(
+                      child: SizedBox(
+                        width: 40,
+                        height: 40,
+                        child: _EmbeddedPngFromSvgAsset(
+                          assetPath: AppAssets.courierIcon,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -181,8 +193,12 @@ class _CourierScreenState extends ConsumerState<CourierScreen> {
                   controller: _pickupCtrl,
                   label: 'Pickup Location',
                   hint: 'Your current location',
-                  suffixIcon: const Icon(Icons.location_on_rounded,
-                      color: AppColors.pickupPin, size: 20),
+                  suffixIcon: SvgPicture.asset(
+                    AppAssets.mapPin,
+                    width: 20,
+                    height: 20,
+                    colorFilter: const ColorFilter.mode(AppColors.pickupPin, BlendMode.srcIn),
+                  ),
                 ),
                 const SizedBox(height: 16),
 
@@ -194,8 +210,12 @@ class _CourierScreenState extends ConsumerState<CourierScreen> {
                   textInputAction: TextInputAction.done,
                   onChanged: (_) => setState(() => _error = null),
                   onSubmitted: (_) => _continue(),
-                  suffixIcon: const Icon(Icons.location_on_rounded,
-                      color: AppColors.destinationPin, size: 20),
+                  suffixIcon: SvgPicture.asset(
+                    AppAssets.mapPin,
+                    width: 20,
+                    height: 20,
+                    colorFilter: const ColorFilter.mode(AppColors.destinationPin, BlendMode.srcIn),
+                  ),
                 ),
 
                 if (_error != null) ...[
@@ -212,4 +232,42 @@ class _CourierScreenState extends ConsumerState<CourierScreen> {
           ),
         ),
       );
+}
+
+class _EmbeddedPngFromSvgAsset extends StatelessWidget {
+  const _EmbeddedPngFromSvgAsset({
+    required this.assetPath,
+    this.color,
+  });
+
+  final String assetPath;
+  final Color? color;
+
+  static final Map<String, Future<Uint8List>> _cache = {};
+
+  Future<Uint8List> _load() {
+    return _cache.putIfAbsent(assetPath, () async {
+      final svg = await rootBundle.loadString(assetPath);
+      final match = RegExp(r'data:image\/png;base64,([^"]+)').firstMatch(svg);
+      if (match == null) throw const FormatException('No embedded PNG found.');
+      return base64Decode(match.group(1)!);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<Uint8List>(
+      future: _load(),
+      builder: (context, snap) {
+        if (!snap.hasData) return const SizedBox.shrink();
+        return Image.memory(
+          snap.data!,
+          fit: BoxFit.contain,
+          gaplessPlayback: true,
+          color: color,
+          colorBlendMode: BlendMode.srcIn,
+        );
+      },
+    );
+  }
 }

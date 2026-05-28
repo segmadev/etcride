@@ -5,6 +5,7 @@ import { Header } from '../../components/layout/Header';
 import { useToast } from '../../components/ui/Toast';
 import { useAuthStore } from '../../store/authStore';
 import { profileApi } from '../../api/profile';
+import { getApiErrorMessage } from '../../api';
 
 // ── Shared UI helpers ─────────────────────────────────────────────────────────
 function Card({ children }: { children: React.ReactNode }) {
@@ -72,7 +73,7 @@ function ProfileInfo() {
       qc.invalidateQueries({ queryKey: ['admin-profile'] });
       toast('Profile updated.', 'success');
     },
-    onError: (err: Error) => toast(err.message, 'error'),
+    onError: (err: unknown) => toast(getApiErrorMessage(err), 'error'),
   });
 
   const dirty = name.trim() !== admin?.name || email.trim() !== admin?.email;
@@ -149,7 +150,7 @@ function ChangePassword() {
       toast('Password changed successfully.', 'success');
       setCurrent(''); setNext(''); setConfirm('');
     },
-    onError: (err: Error) => toast(err.message, 'error'),
+    onError: (err: unknown) => toast(getApiErrorMessage(err), 'error'),
   });
 
   const mismatch = next !== '' && confirm !== '' && next !== confirm;

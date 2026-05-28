@@ -10,18 +10,39 @@ class ErrorInterceptor extends Interceptor {
       case DioExceptionType.receiveTimeout:
       case DioExceptionType.sendTimeout:
       case DioExceptionType.connectionError:
-        throw const NetworkException();
+        handler.next(err.copyWith(error: const NetworkException()));
+        return;
 
       case DioExceptionType.badResponse:
         final status = err.response?.statusCode ?? 0;
         final msg = _extractMessage(err.response);
 
-        if (status == 401) throw const UnauthorizedException();
-        if (status >= 500) throw ServerException(msg);
-        throw ApiException(msg, statusCode: status);
+        if (status == 401) {
+          final path = err.requestOptions.path;
+          final isPublicAuth = path.startsWith('/auth/') &&
+              path != '/auth/logout' &&
+              path != '/auth/profile';
+          handler.next(
+            err.copyWith(
+              error: isPublicAuth
+                  ? ApiException(msg, statusCode: status)
+                  : UnauthorizedException(msg),
+            ),
+          );
+          return;
+        }
+
+        if (status >= 500) {
+          handler.next(err.copyWith(error: ServerException(msg)));
+          return;
+        }
+
+        handler.next(err.copyWith(error: ApiException(msg, statusCode: status)));
+        return;
 
       default:
-        throw ServerException(err.message ?? 'Unexpected error.');
+        handler.next(err.copyWith(error: ServerException(err.message ?? 'Unexpected error.')));
+        return;
     }
   }
 

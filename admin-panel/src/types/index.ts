@@ -53,6 +53,7 @@ export interface BookingStatusHistory {
 
 export interface Booking {
   id: string;
+  booking_code?: string | null;
   booking_type: BookingType;
   status: BookingStatus;
   payment_status: PaymentStatus;
@@ -67,12 +68,23 @@ export interface Booking {
   dropoff_lng: number;
   note: string | null;
   created_at: string;
+  vehicle_type_id?: string | null;
+  vehicle_type?: string | null;
+  vehicle_type_category?: string | null;
+  customer_id?: string | null;
   customer_name?: string;
   customer_phone?: string;
-  driver_name?: string;
-  driver_id?: string;
+  customer_email?: string | null;
+  driver_id?: string | null;
+  driver_name?: string | null;
+  driver_phone?: string | null;
   stops?: BookingStop[];
   status_history?: BookingStatusHistory[];
+  // full detail (from show endpoint)
+  customer?: { id: string; name: string; phone: string; email: string | null } | null;
+  driver?: { id: string; name: string; phone: string; last_seen: string | null; vehicle_id: string | null } | null;
+  payment?: { id: string; provider: string; amount: number; status: string; created_at: string } | null;
+  history?: BookingStatusHistory[];
 }
 
 // ── Driver ────────────────────────────────────────────────────────────────
@@ -112,7 +124,9 @@ export interface Driver {
   make?: string | null;
   model?: string | null;
   color?: string | null;
+  driver_vehicle_type_id?: string | null;
   vehicle_type?: string | null;
+  vehicle_type_category?: string | null;
   vehicle?: Vehicle | null;
   stats?: { total: number; completed: number; cancelled: number };
   created_at: string;

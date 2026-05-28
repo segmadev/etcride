@@ -33,6 +33,54 @@ SET @col := (
   SELECT COUNT(*)
   FROM INFORMATION_SCHEMA.COLUMNS
   WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'bookings'
+    AND COLUMN_NAME = 'route_polyline'
+);
+SET @sql := IF(
+  @col = 0,
+  'ALTER TABLE bookings ADD COLUMN route_polyline LONGTEXT NULL AFTER num_stops',
+  'SELECT 1'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @col := (
+  SELECT COUNT(*)
+  FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'bookings'
+    AND COLUMN_NAME = 'route_distance_meters'
+);
+SET @sql := IF(
+  @col = 0,
+  'ALTER TABLE bookings ADD COLUMN route_distance_meters INT NULL AFTER route_polyline',
+  'SELECT 1'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @col := (
+  SELECT COUNT(*)
+  FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'bookings'
+    AND COLUMN_NAME = 'route_duration_seconds'
+);
+SET @sql := IF(
+  @col = 0,
+  'ALTER TABLE bookings ADD COLUMN route_duration_seconds INT NULL AFTER route_distance_meters',
+  'SELECT 1'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @col := (
+  SELECT COUNT(*)
+  FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE()
     AND TABLE_NAME = 'vehicle_types'
     AND COLUMN_NAME = 'sort_order'
 );

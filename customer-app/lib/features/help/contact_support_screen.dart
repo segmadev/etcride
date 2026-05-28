@@ -1,192 +1,161 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
-import '../../../core/constants/app_strings.dart';
-import '../../../shared/providers/providers.dart';
-import '../../../shared/widgets/app_button.dart';
-import '../../../shared/widgets/app_text_field.dart';
+import 'package:go_router/go_router.dart';
+import '../../../core/config/router.dart';
 
-class ContactSupportScreen extends ConsumerStatefulWidget {
+class ContactSupportScreen extends StatelessWidget {
   const ContactSupportScreen({super.key});
 
   @override
-  ConsumerState<ContactSupportScreen> createState() =>
-      _ContactSupportScreenState();
-}
+  Widget build(BuildContext context) {
+    const active = [
+      (
+        'How satisfied are you with our support?',
+        'It is clear that the situation was certainly the fault of the ...',
+        'Apr 22 • 9:03AM',
+      ),
+      (
+        'How satisfied are you with our support?',
+        'It is clear that the situation was certainly the fault of the ...',
+        'Apr 22 • 9:03AM',
+      ),
+      (
+        'How satisfied are you with our support?',
+        'It is clear that the situation was certainly the fault of the ...',
+        'Apr 22 • 9:03AM',
+      ),
+      (
+        'How satisfied are you with our support?',
+        'It is clear that the situation was certainly the fault of the ...',
+        'Apr 22 • 9:03AM',
+      ),
+    ];
 
-class _ContactSupportScreenState
-    extends ConsumerState<ContactSupportScreen> {
-  final _msgCtrl = TextEditingController();
-  String _supportEmail = 'support@etcride.ng';
-  String _supportPhone = '';
+    const closed = [
+      (
+        'How satisfied are you with our support?',
+        'It is clear that the situation was certainly the fault of the ...',
+        'Apr 22 • 9:03AM',
+      ),
+      (
+        'How satisfied are you with our support?',
+        'It is clear that the situation was certainly the fault of the ...',
+        'Apr 22 • 9:03AM',
+      ),
+    ];
 
-  @override
-  void initState() {
-    super.initState();
-    _loadCommonDetails();
-  }
-
-  Future<void> _loadCommonDetails() async {
-    try {
-      final data =
-          await ref.read(contentRepositoryProvider).getCommonDetails();
-      if (mounted) {
-        setState(() {
-          _supportEmail =
-              data['support_email']?.toString().isNotEmpty == true
-                  ? data['support_email']!.toString()
-                  : _supportEmail;
-          _supportPhone =
-              data['support_phone']?.toString() ?? '';
-        });
-      }
-    } catch (_) {}
-  }
-
-  @override
-  void dispose() {
-    _msgCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => Scaffold(
-        backgroundColor: AppColors.white,
-        appBar: AppBar(
-          backgroundColor: AppColors.white,
-          elevation: 0,
-          leading: const BackButton(color: AppColors.textPrimary),
-          title: Text(AppStrings.contactSupport, style: AppTextStyles.h4),
-        ),
-        body: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            children: [
-              // Illustration
-              Container(
-                width: 80,
-                height: 80,
-                decoration: const BoxDecoration(
-                  color: AppColors.primaryLight,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.headset_mic_rounded,
-                    size: 40, color: AppColors.primary),
+    return Scaffold(
+      backgroundColor: AppColors.white,
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(22, 14, 22, 28),
+          children: [
+            SizedBox(
+              height: 74,
+              child: Stack(
+                alignment: Alignment.topCenter,
+                children: [
+                  Align(
+                    alignment: Alignment.topLeft,
+                    child: _CircleIconButton(
+                      icon: Icons.arrow_back_ios_new_rounded,
+                      onTap: () {
+                        if (context.canPop()) {
+                          context.pop();
+                        } else {
+                          context.go(AppRoutes.home);
+                        }
+                      },
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 14),
+                    child: Text('All Messages', style: AppTextStyles.h2),
+                  ),
+                ],
               ),
-              const SizedBox(height: 16),
-              Text(AppStrings.getHelpFast,
-                  style: AppTextStyles.h3, textAlign: TextAlign.center),
-              const SizedBox(height: 8),
-              Text(
-                'Our team is ready to assist you with any questions or issues.',
-                style: AppTextStyles.bodyMedium
-                    .copyWith(color: AppColors.textSecondary),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 32),
-
-              // Phone
-              if (_supportPhone.isNotEmpty) ...[
-                _ContactOption(
-                  icon: Icons.call_rounded,
-                  label: 'Call Support',
-                  subtitle: _supportPhone,
-                  color: AppColors.success,
-                  onTap: () =>
-                      launchUrl(Uri.parse('tel:$_supportPhone')),
-                ),
-                const SizedBox(height: 12),
-              ],
-
-              // Email
-              _ContactOption(
-                icon: Icons.email_rounded,
-                label: 'Email Support',
-                subtitle: _supportEmail,
-                color: AppColors.primary,
-                onTap: () =>
-                    launchUrl(Uri.parse('mailto:$_supportEmail')),
-              ),
-
-              const SizedBox(height: 32),
-
-              // Compose
-              AppTextField(
-                controller: _msgCtrl,
-                label: 'Send a message',
-                hint: 'Describe your issue...',
-                keyboardType: TextInputType.multiline,
-                textInputAction: TextInputAction.newline,
-              ),
-              const SizedBox(height: 16),
-
-              AppButton(
-                label: 'SEND VIA EMAIL',
-                onPressed: () {
-                  final body =
-                      Uri.encodeComponent(_msgCtrl.text.trim());
-                  launchUrl(Uri.parse(
-                      'mailto:$_supportEmail?subject=Support%20Request&body=$body'));
-                },
-              ),
+            ),
+            const SizedBox(height: 8),
+            Text('Active', style: AppTextStyles.h4.copyWith(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 10),
+            for (final m in active) ...[
+              _MessageRow(title: m.$1, subtitle: m.$2, date: m.$3),
+              const Divider(height: 1),
             ],
-          ),
+            const SizedBox(height: 22),
+            Text('Closed', style: AppTextStyles.h4.copyWith(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 10),
+            Opacity(
+              opacity: 0.35,
+              child: Column(
+                children: [
+                  for (final m in closed) ...[
+                    _MessageRow(title: m.$1, subtitle: m.$2, date: m.$3),
+                    const Divider(height: 1),
+                  ],
+                ],
+              ),
+            ),
+          ],
         ),
-      );
+      ),
+    );
+  }
 }
 
-class _ContactOption extends StatelessWidget {
-  const _ContactOption({
-    required this.icon,
-    required this.label,
-    required this.subtitle,
-    required this.color,
-    required this.onTap,
-  });
+class _MessageRow extends StatelessWidget {
+  const _MessageRow({required this.title, required this.subtitle, required this.date});
+  final String title;
+  final String subtitle;
+  final String date;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: AppTextStyles.bodyLarge.copyWith(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 4),
+          Text(subtitle, style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary)),
+          const SizedBox(height: 6),
+          Text(date, style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
+        ],
+      ),
+    );
+  }
+}
+
+class _CircleIconButton extends StatelessWidget {
+  const _CircleIconButton({required this.icon, required this.onTap});
   final IconData icon;
-  final String label, subtitle;
-  final Color color;
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => GestureDetector(
-        onTap: onTap,
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            border: Border.all(color: AppColors.divider),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(icon, color: color, size: 22),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(label, style: AppTextStyles.bodyLarge),
-                    Text(subtitle,
-                        style: AppTextStyles.bodySmall
-                            .copyWith(color: AppColors.textSecondary)),
-                  ],
-                ),
-              ),
-              const Icon(Icons.chevron_right_rounded,
-                  color: AppColors.textHint),
-            ],
-          ),
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: AppColors.white,
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.10),
+              blurRadius: 16,
+              offset: const Offset(0, 8),
+            ),
+          ],
         ),
-      );
+        child: Center(
+          child: Icon(icon, size: 18, color: AppColors.textPrimary),
+        ),
+      ),
+    );
+  }
 }

@@ -1,9 +1,11 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import '../../core/constants/app_assets.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../core/constants/app_strings.dart';
@@ -40,12 +42,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<Position?> _getPosition() async {
     if (kIsWeb) {
       try {
+        final perm = await Geolocator.checkPermission();
+        if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
+          return null;
+        }
         return await Geolocator.getCurrentPosition(
           locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
         );
-      } catch (_) {
-        return null;
-      }
+      } catch (_) { return null; }
     }
 
     final enabled = await Geolocator.isLocationServiceEnabled();
@@ -69,15 +73,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       final pos = await _getPosition();
       if (pos == null) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Enable location permission in your browser/device settings.'),
-            backgroundColor: AppColors.error,
-          ),
-        );
-        if (!kIsWeb) {
+        Future.delayed(const Duration(milliseconds: 250), () {
+          if (!mounted) return;
           context.push(AppRoutes.locationPermission);
-        }
+        });
         return;
       }
       final ll = LatLng(pos.latitude, pos.longitude);
@@ -148,7 +147,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     shape: BoxShape.circle,
                     boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 8)],
                   ),
-                  child: const Icon(Icons.menu_rounded, size: 20, color: AppColors.textPrimary),
+                  child: Center(
+                    child: SvgPicture.asset(
+                      AppAssets.menuIcon,
+                      width: 18,
+                      height: 18,
+                      colorFilter: const ColorFilter.mode(AppColors.textPrimary, BlendMode.srcIn),
+                    ),
+                  ),
                 ),
               ),
             ),

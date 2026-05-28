@@ -8,7 +8,7 @@ import { Input } from '../../components/ui/Input';
 import { InfoTooltip } from '../../components/ui/InfoTooltip';
 import { useToast } from '../../components/ui/Toast';
 import { emailTemplatesApi, type EmailTemplate } from '../../api/emailTemplates';
-import { settingsApi } from '../../api';
+import { settingsApi, getApiErrorMessage } from '../../api';
 
 // ── Preview modal ──────────────────────────────────────────────────────────────
 
@@ -242,7 +242,7 @@ export function EmailTemplatesPage() {
       toast(`Template saved.`, 'success');
       qc.invalidateQueries({ queryKey: ['email-templates'] });
     },
-    onError: (e: Error) => toast(e.message, 'error'),
+    onError: (e: unknown) => toast(getApiErrorMessage(e), 'error'),
   });
 
   return (

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,7 +7,6 @@ import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
-import '../../core/constants/app_strings.dart';
 import '../../core/config/router.dart';
 import '../../core/maps/google_maps_js_loader.dart';
 import '../../core/maps/maps_service.dart';
@@ -66,7 +66,13 @@ class _RequestingScreenState extends ConsumerState<RequestingScreen> {
       LatLng(b.pickupLat, b.pickupLng),
       LatLng(b.destinationLat, b.destinationLng),
     ];
-    final points = encoded.isNotEmpty ? MapsService.decodePolyline(encoded) : fallbackPts;
+    final points = encoded.isNotEmpty
+        ? MapsService.decodePolylineBest(
+            encoded,
+            origin: fallbackPts.first,
+            destination: fallbackPts.last,
+          )
+        : fallbackPts;
 
     final distKm = b.distanceKm > 0 ? b.distanceKm : (b.routeDistanceMeters > 0 ? (b.routeDistanceMeters / 1000) : 0.0);
     final durationSec = b.routeDurationSeconds > 0
@@ -74,6 +80,9 @@ class _RequestingScreenState extends ConsumerState<RequestingScreen> {
         : (distKm > 0 ? ((distKm / 30) * 3600).round() : 0);
 
     if (!mounted) return;
+    if (encoded.isNotEmpty && !_routeLooksValid(points, fallbackPts.first, fallbackPts.last)) {
+      return;
+    }
     setState(() {
       _routePoints = points.length >= 2 ? points : fallbackPts;
       _durationSec = durationSec;
@@ -123,6 +132,8 @@ class _RequestingScreenState extends ConsumerState<RequestingScreen> {
       context.go(AppRoutes.payment, extra: widget.bookingId);
     } else if (b.status == BookingStatus.cancelled) {
       _stop();
+      ref.invalidate(activeBookingProvider('ride'));
+      ref.invalidate(activeBookingProvider('delivery'));
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Booking was cancelled.'),
           backgroundColor: AppColors.error));
@@ -132,9 +143,33 @@ class _RequestingScreenState extends ConsumerState<RequestingScreen> {
 
   // ── Map helpers ─────────────────────────────────────────────────────────────
 
+  double _haversineKm(LatLng a, LatLng b) {
+    const r = 6371.0;
+    final dLat = (b.latitude - a.latitude) * (3.141592653589793 / 180);
+    final dLng = (b.longitude - a.longitude) * (3.141592653589793 / 180);
+    final lat1 = a.latitude * (3.141592653589793 / 180);
+    final lat2 = b.latitude * (3.141592653589793 / 180);
+    final s1 = math.sin(dLat / 2);
+    final s2 = math.sin(dLng / 2);
+    final h = s1 * s1 + math.cos(lat1) * math.cos(lat2) * s2 * s2;
+    return r * 2 * math.asin(math.sqrt(h));
+  }
+
+  bool _routeLooksValid(List<LatLng> pts, LatLng origin, LatLng dest) {
+    if (pts.length < 2) return false;
+    final a = pts.first;
+    final b = pts.last;
+    final s1 = _haversineKm(origin, a) + _haversineKm(dest, b);
+    final s2 = _haversineKm(origin, b) + _haversineKm(dest, a);
+    return (s1 < 2.0) || (s2 < 2.0);
+  }
+
   void _fitRoute() {
     final bounds = _routeBounds;
     if (bounds == null) return;
+    final spanLat = (bounds.northeast.latitude - bounds.southwest.latitude).abs();
+    final spanLng = (bounds.northeast.longitude - bounds.southwest.longitude).abs();
+    if (spanLat > 1.5 || spanLng > 1.5) return;
     final version = _mapVersion;
     Future.delayed(const Duration(milliseconds: 500), () {
       if (!mounted) return;
@@ -168,25 +203,89 @@ class _RequestingScreenState extends ConsumerState<RequestingScreen> {
   // ── Cancel ──────────────────────────────────────────────────────────────────
 
   Future<void> _cancel() async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showModalBottomSheet<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(AppStrings.cancelRide, style: AppTextStyles.h4),
-        content: Text(AppStrings.cancelRideConfirm, style: AppTextStyles.bodyMedium),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(AppStrings.keepSearching,
-                style: AppTextStyles.labelMedium
-                    .copyWith(color: AppColors.textSecondary)),
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) {
+        final bottom = MediaQuery.of(ctx).padding.bottom;
+        return Container(
+          padding: EdgeInsets.fromLTRB(20, 10, 20, bottom + 22),
+          decoration: const BoxDecoration(
+            color: AppColors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(AppStrings.cancel,
-                style: AppTextStyles.labelMedium.copyWith(color: AppColors.error)),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Center(
+                child: Container(
+                  width: 52,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 20),
+                  decoration: BoxDecoration(
+                    color: AppColors.divider,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              Text('Cancel ride?', style: AppTextStyles.h4),
+              const SizedBox(height: 20),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Are you sure you want to cancel?',
+                  style: AppTextStyles.bodyLarge.copyWith(fontWeight: FontWeight.w700),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  "We’re still finding you a driver. Are you sure you want to cancel?",
+                  style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+                ),
+              ),
+              const SizedBox(height: 18),
+              SizedBox(
+                width: double.infinity,
+                height: 54,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFD9D9D9),
+                    foregroundColor: const Color(0xFF6B6B6B),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+                  ),
+                  child: Text(
+                    'CANCEL REQUEST',
+                    style: AppTextStyles.labelLarge.copyWith(letterSpacing: 0.6),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                height: 54,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.black,
+                    foregroundColor: AppColors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+                  ),
+                  child: Text(
+                    'KEEP SEARCHING',
+                    style: AppTextStyles.labelLarge.copyWith(letterSpacing: 0.6),
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
     if (confirmed != true || !mounted) return;
     setState(() => _cancelling = true);
@@ -195,6 +294,8 @@ class _RequestingScreenState extends ConsumerState<RequestingScreen> {
       await ref
           .read(bookingRepositoryProvider)
           .cancelBooking(widget.bookingId, reason: 'Cancelled by customer');
+      ref.invalidate(activeBookingProvider('ride'));
+      ref.invalidate(activeBookingProvider('delivery'));
       if (mounted) context.go(AppRoutes.home);
     } catch (e) {
       if (mounted) {
@@ -268,8 +369,20 @@ class _RequestingScreenState extends ConsumerState<RequestingScreen> {
             },
           ),
 
-          // ── Top bar: [menu]  ···  [home] ─────────────────────────────────
-          const TripTopBar(),
+          // ── Back button ────────────────────────────────────────────────
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: Row(
+                children: [
+                  MapOverlayButton(
+                    icon: Icons.arrow_back_ios_new_rounded,
+                    onTap: () => context.go(AppRoutes.home),
+                  ),
+                ],
+              ),
+            ),
+          ),
 
           // ── Info sheet ───────────────────────────────────────────────────
           Positioned(
@@ -421,51 +534,12 @@ class _InfoSheet extends StatefulWidget {
 }
 
 class _InfoSheetState extends State<_InfoSheet> {
-  Timer? _timer;
-  int    _elapsed = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() => _elapsed++);
-    });
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  String get _elapsedLabel {
-    final m = _elapsed ~/ 60;
-    final s = _elapsed % 60;
-    return m == 0 ? '${s}s' : '${m}m ${s}s';
-  }
-
-  String get _statusHeading => switch (widget.status) {
-    BookingStatus.assigned => 'Driver found!',
-    BookingStatus.accepted => 'Driver accepted!',
-    BookingStatus.arrived  => 'Driver has arrived!',
-    _                      => AppStrings.findingDriver,
-  };
-
-  String get _statusSubheading => switch (widget.status) {
-    BookingStatus.assigned => 'Waiting for driver to confirm the trip…',
-    BookingStatus.accepted => 'Your driver is on the way to you.',
-    BookingStatus.arrived  => 'Your driver is waiting at the pickup point.',
-    _                      => AppStrings.findingDriverSub,
-  };
-
-  // Use Google's duration when available; fall back to distance-based estimate
-  String get _etaLabel {
-    if (widget.durationSec > 0) {
-      return AppFormatters.duration(widget.durationSec ~/ 60);
-    }
-    if (widget.distanceKm <= 0) return '—';
-    final mins = (widget.distanceKm / 25 * 60).round().clamp(2, 9999);
-    return AppFormatters.duration(mins);
+  String get _pickupInCompact {
+    final sec = widget.durationSec;
+    if (sec <= 0) return '—';
+    final m = sec ~/ 60;
+    final s = sec % 60;
+    return '${m}m ${s}s';
   }
 
   String get _scheduledTime {
@@ -507,174 +581,93 @@ class _InfoSheetState extends State<_InfoSheet> {
             ),
           ),
 
-          // ── Status row ────────────────────────────────────────────────
+          Text('Finding your driver…', style: AppTextStyles.h4, textAlign: TextAlign.center),
+          const SizedBox(height: 6),
+          Text(
+            'This usually takes a few seconds',
+            style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 20),
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(_statusHeading, style: AppTextStyles.h4),
-                    const SizedBox(height: 2),
-                    Text(_statusSubheading,
-                        style: AppTextStyles.bodySmall
-                            .copyWith(color: AppColors.textSecondary)),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(100)),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _PulsingDot(),
-                    const SizedBox(width: 5),
-                    Text(_elapsedLabel,
-                        style: AppTextStyles.labelSmall
-                            .copyWith(color: AppColors.textSecondary)),
-                  ],
+              Text('Pick Up in', style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.w700)),
+              const SizedBox(width: 8),
+              Text(
+                _pickupInCompact,
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.primary,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ],
           ),
-
+          const SizedBox(height: 14),
+          const Divider(height: 1),
+          const SizedBox(height: 14),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'To ${_short(widget.destAddress)}',
+              style: AppTextStyles.bodyLarge.copyWith(fontWeight: FontWeight.w700),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'at $_scheduledTime from ${_short(widget.pickupAddress)}',
+              style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(height: 14),
+          const Divider(height: 1),
+          const SizedBox(height: 14),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              '${widget.vehicleType.toUpperCase()} ~${AppFormatters.naira(widget.fare)}',
+              style: AppTextStyles.bodyLarge.copyWith(fontWeight: FontWeight.w800),
+            ),
+          ),
           const SizedBox(height: 14),
           const Divider(height: 1),
           const SizedBox(height: 12),
-
-          // ── ETA row ───────────────────────────────────────────────────
           Row(
             children: [
-              Container(
-                width: 36, height: 36,
-                decoration: BoxDecoration(
-                    color: AppColors.primaryLight,
-                    borderRadius: BorderRadius.circular(10)),
-                child: const Icon(Icons.access_time_rounded,
-                    size: 18, color: AppColors.primary),
-              ),
-              const SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Pick Up in ~$_etaLabel',
-                      style: AppTextStyles.labelMedium),
-                  Text('at $_scheduledTime from ${_short(widget.pickupAddress)}',
-                      style: AppTextStyles.caption
-                          .copyWith(color: AppColors.textSecondary)),
-                ],
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 12),
-
-          // ── Destination row ───────────────────────────────────────────
-          Row(
-            children: [
-              Container(
-                width: 36, height: 36,
-                decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(10)),
-                child: const Icon(Icons.location_on_rounded,
-                    size: 18, color: AppColors.destinationPin),
-              ),
-              const SizedBox(width: 12),
+              const Icon(Icons.share_outlined, size: 18, color: AppColors.textPrimary),
+              const SizedBox(width: 10),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('To ${_short(widget.destAddress)}',
-                        style: AppTextStyles.labelMedium,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis),
-                    if (widget.distanceKm > 0)
-                      Text(AppFormatters.distance(widget.distanceKm),
-                          style: AppTextStyles.caption
-                              .copyWith(color: AppColors.textSecondary)),
-                  ],
+                child: Text('Share trip status', style: AppTextStyles.bodyMedium),
+              ),
+              Text(
+                'Share',
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.primary,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ],
           ),
-
-          const SizedBox(height: 12),
-          const Divider(height: 1),
-          const SizedBox(height: 12),
-
-          // ── Vehicle + fare ────────────────────────────────────────────
-          Row(
-            children: [
-              Icon(
-                widget.isDelivery
-                    ? Icons.delivery_dining_rounded
-                    : Icons.directions_car_rounded,
-                size: 20,
-                color: AppColors.textSecondary,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  '${widget.vehicleType}  ·  ${AppFormatters.naira(widget.fare)}',
-                  style: AppTextStyles.bodyLarge
-                      .copyWith(fontWeight: FontWeight.w700),
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 12),
-          const Divider(height: 1),
-          const SizedBox(height: 10),
-
-          // ── Share ─────────────────────────────────────────────────────
-          Row(
-            children: [
-              const Icon(Icons.share_outlined,
-                  size: 18, color: AppColors.textSecondary),
-              const SizedBox(width: 10),
-              Expanded(
-                  child: Text(AppStrings.shareTripStatus,
-                      style: AppTextStyles.bodyMedium)),
-              TextButton(
-                onPressed: () {/* TODO: share */},
-                style: TextButton.styleFrom(
-                    padding: EdgeInsets.zero,
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    foregroundColor: AppColors.primary),
-                child: Text(AppStrings.share,
-                    style: AppTextStyles.labelMedium
-                        .copyWith(color: AppColors.primary)),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 14),
-
-          // ── Cancel ────────────────────────────────────────────────────
+          const SizedBox(height: 18),
           SizedBox(
             width: double.infinity,
-            child: OutlinedButton(
+            height: 54,
+            child: ElevatedButton(
               onPressed: widget.cancelling ? null : widget.onCancel,
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                side: const BorderSide(color: AppColors.divider, width: 1.5),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14)),
-                foregroundColor: AppColors.error,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFD9D9D9),
+                foregroundColor: const Color(0xFF6B6B6B),
+                elevation: 0,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
               ),
               child: Text(
-                widget.cancelling ? 'Cancelling...' : AppStrings.cancelRequest,
-                style: AppTextStyles.labelMedium.copyWith(
-                    color: widget.cancelling
-                        ? AppColors.textHint
-                        : AppColors.error),
+                widget.cancelling ? '...' : 'CANCEL REQUEST',
+                style: AppTextStyles.labelLarge.copyWith(letterSpacing: 0.6),
               ),
             ),
           ),
@@ -682,40 +675,4 @@ class _InfoSheetState extends State<_InfoSheet> {
       ),
     );
   }
-}
-
-// ── Pulsing dot ───────────────────────────────────────────────────────────────
-
-class _PulsingDot extends StatefulWidget {
-  @override
-  State<_PulsingDot> createState() => _PulsingDotState();
-}
-
-class _PulsingDotState extends State<_PulsingDot>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _ctrl;
-  late Animation<double>   _anim;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 900))
-      ..repeat(reverse: true);
-    _anim = Tween<double>(begin: 0.3, end: 1.0)
-        .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut));
-  }
-
-  @override
-  void dispose() { _ctrl.dispose(); super.dispose(); }
-
-  @override
-  Widget build(BuildContext context) => FadeTransition(
-        opacity: _anim,
-        child: Container(
-          width: 7, height: 7,
-          decoration: const BoxDecoration(
-              color: AppColors.primary, shape: BoxShape.circle),
-        ),
-      );
 }

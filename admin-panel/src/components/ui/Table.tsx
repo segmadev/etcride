@@ -17,6 +17,7 @@ interface TableProps<T> {
   emptyMessage?: string;
   onRowClick?: (row: T) => void;
   keyExtractor: (row: T) => string;
+  rowClassName?: (row: T) => string;
 }
 
 export function Table<T>({
@@ -26,6 +27,7 @@ export function Table<T>({
   emptyMessage = 'No records found.',
   onRowClick,
   keyExtractor,
+  rowClassName,
 }: TableProps<T>) {
   return (
     <div className="overflow-x-auto">
@@ -66,6 +68,7 @@ export function Table<T>({
                 className={cn(
                   'bg-white hover:bg-slate-50 transition-colors',
                   onRowClick && 'cursor-pointer',
+                  rowClassName?.(row),
                 )}
               >
                 {columns.map(col => (

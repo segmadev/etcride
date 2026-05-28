@@ -66,7 +66,14 @@ class utilities
     static function genID($prefix = '', $length = 8)
     {
         $random = substr(str_shuffle('0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'), 0, $length);
-        return $prefix . time() . $random;
+        $n = (int) time();
+        $alphabet = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        $ts = '';
+        do {
+            $ts = $alphabet[$n % 62] . $ts;
+            $n = intdiv($n, 62);
+        } while ($n > 0);
+        return $prefix . $ts . $random;
     }
     function loadSession()
     {

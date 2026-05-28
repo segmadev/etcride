@@ -1,4 +1,5 @@
-export { apiClient } from './client';
+export { apiClient, getApiErrorMessage } from './client';
+export type { ApiError } from './client';
 export { authApi } from './auth';
 export { bookingsApi } from './bookings';
 export { driversApi } from './drivers';

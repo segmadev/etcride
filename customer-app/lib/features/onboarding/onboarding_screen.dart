@@ -200,8 +200,14 @@ class _OnboardingPageView extends StatelessWidget {
             final absDelta = delta.abs().clamp(0.0, 1.0);
             final focus = (1.0 - absDelta).clamp(0.0, 1.0);
 
-            final textOpacity = Curves.easeOut.transform(focus);
-            final textTranslateY = 16 * (1 - focus);
+            final titleFocus = focus;
+            final subtitleFocus = ((focus - 0.18) / 0.82).clamp(0.0, 1.0);
+
+            final titleOpacity = Curves.easeOutCubic.transform(titleFocus);
+            final subtitleOpacity = Curves.easeOutCubic.transform(subtitleFocus);
+
+            final titleTranslateY = 18 * (1 - titleFocus);
+            final subtitleTranslateY = 14 * (1 - subtitleFocus);
             final phoneScale = 1 - (0.04 * absDelta);
             final phoneParallaxX = -18 * delta;
             final phoneParallaxY = 10 * absDelta;
@@ -223,15 +229,15 @@ class _OnboardingPageView extends StatelessWidget {
                     top: 0,
                     left: 24,
                     right: 24,
-                    child: Transform.translate(
-                      offset: Offset(0, textTranslateY),
-                      child: Opacity(
-                        opacity: textOpacity,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const SizedBox(height: 18),
-                            Text(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 18),
+                        Transform.translate(
+                          offset: Offset(0, titleTranslateY),
+                          child: Opacity(
+                            opacity: titleOpacity,
+                            child: Text(
                               page.title,
                               style: const TextStyle(
                                 fontFamily: 'Inter',
@@ -241,9 +247,15 @@ class _OnboardingPageView extends StatelessWidget {
                                 color: AppColors.textPrimary,
                               ),
                             ),
-                            const SizedBox(height: 14),
-                            ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 320),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 320),
+                          child: Transform.translate(
+                            offset: Offset(0, subtitleTranslateY),
+                            child: Opacity(
+                              opacity: subtitleOpacity,
                               child: Text(
                                 page.subtitle,
                                 style: const TextStyle(
@@ -255,9 +267,9 @@ class _OnboardingPageView extends StatelessWidget {
                                 ),
                               ),
                             ),
-                          ],
+                          ),
                         ),
-                      ),
+                      ],
                     ),
                   ),
 
@@ -290,7 +302,7 @@ class _OnboardingPageView extends StatelessWidget {
                       child: Transform.translate(
                         offset: Offset(-22 * (1 - focus), (18 * (1 - focus)) + bob),
                         child: Opacity(
-                          opacity: textOpacity,
+                          opacity: titleOpacity,
                           child: _FareCard(
                             title: 'ETC Courier',
                             subtitle: 'Send and receive packages',
@@ -308,7 +320,7 @@ class _OnboardingPageView extends StatelessWidget {
                       child: Transform.translate(
                         offset: Offset(0, (-14 * (1 - focus)) - bob),
                         child: Opacity(
-                          opacity: textOpacity,
+                          opacity: titleOpacity,
                           child: _FareCard(
                             title: 'ETC Premium',
                             subtitle: 'Faster Pickup',

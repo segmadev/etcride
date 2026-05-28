@@ -1,6 +1,9 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../core/constants/app_assets.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/constants/app_strings.dart';
@@ -58,8 +61,13 @@ class _HomeBottomSheetState extends ConsumerState<HomeBottomSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final init = ref.watch(authInitProvider);
     final user = ref.watch(currentUserProvider);
-    final isComplete = user != null && user.name.isNotEmpty;
+    final initializing = init.isLoading && user == null;
+    final isComplete = !initializing &&
+        user != null &&
+        user.name.isNotEmpty &&
+        (user.phone.isNotEmpty || user.email.isNotEmpty);
     final greeting = user != null && user.name.isNotEmpty
         ? AppFormatters.greeting(user.name)
         : AppFormatters.greeting('');
@@ -100,7 +108,7 @@ class _HomeBottomSheetState extends ConsumerState<HomeBottomSheet> {
                 Expanded(
                   child: Text(greeting, style: AppTextStyles.h3),
                 ),
-                if (!isComplete)
+                if (!initializing && !isComplete)
                   GestureDetector(
                     onTap: () => showCompleteProfileDrawer(context),
                     child: Container(
@@ -178,82 +186,103 @@ class _HomeBottomSheetState extends ConsumerState<HomeBottomSheet> {
               error: (_, __) => const SizedBox(height: 8),
             ),
 
-            // ── Search bar + Schedule delivery ────────────────────────────
-            Row(
-              children: [
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () {
-                      final b = active.valueOrNull;
-                      if (b != null) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('You already have an active trip. Resuming it.'),
-                            backgroundColor: AppColors.primary,
-                          ),
-                        );
-                        _resumeBooking(b);
-                        return;
-                      }
-                      ref.read(bookingDraftProvider.notifier).state =
-                          BookingDraft(bookingType: bookingType);
-                      showSearchDestinationDrawer(context);
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                      decoration: BoxDecoration(
-                        color: AppColors.inputFill,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.search_rounded, size: 18, color: AppColors.textHint),
-                          const SizedBox(width: 8),
-                          Text(AppStrings.whereTo,
-                            style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textHint)),
-                        ],
-                      ),
+            GestureDetector(
+              onTap: () {
+                final b = active.valueOrNull;
+                if (b != null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('You already have an active trip. Resuming it.'),
+                      backgroundColor: AppColors.primary,
                     ),
-                  ),
+                  );
+                  _resumeBooking(b);
+                  return;
+                }
+                ref.read(bookingDraftProvider.notifier).state =
+                    BookingDraft(bookingType: bookingType);
+                showSearchDestinationDrawer(context);
+              },
+              child: Container(
+                height: 56,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: BoxDecoration(
+                  color: AppColors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.10),
+                      blurRadius: 18,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 10),
-                GestureDetector(
-                  onTap: () {}, // TODO: schedule delivery
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary,
-                      borderRadius: BorderRadius.circular(12),
+                child: Row(
+                  children: [
+                    const Icon(Icons.search_rounded, size: 20, color: AppColors.textHint),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        AppStrings.whereTo,
+                        style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textHint),
+                      ),
                     ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.calendar_today_rounded, size: 14, color: AppColors.white),
-                        const SizedBox(width: 6),
-                        Text(AppStrings.scheduleDelivery,
-                          style: AppTextStyles.labelSmall.copyWith(color: AppColors.white, fontSize: 11)),
-                      ],
+                    const SizedBox(width: 10),
+                    GestureDetector(
+                      onTap: () {},
+                      behavior: HitTestBehavior.opaque,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.calendar_today_rounded, size: 14, color: AppColors.white),
+                            const SizedBox(width: 8),
+                            Text(
+                              AppStrings.scheduleDelivery,
+                              style: AppTextStyles.labelSmall.copyWith(color: AppColors.white),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
-              ],
+              ),
             ),
             const SizedBox(height: 14),
 
             // ── Ride / Couriers toggle ────────────────────────────────────
             Row(
               children: [
-                _ToggleChip(
-                  label: AppStrings.rideTab,
-                  icon: Icons.directions_car_rounded,
-                  active: _isRide,
-                  onTap: () => setState(() => _isRide = true),
+                Expanded(
+                  child: _ToggleChip(
+                    label: AppStrings.rideTab,
+                    iconWidget: const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: _EmbeddedPngFromSvgAsset(assetPath: AppAssets.carTabIcon),
+                    ),
+                    active: _isRide,
+                    onTap: () => setState(() => _isRide = true),
+                  ),
                 ),
-                const SizedBox(width: 10),
-                _ToggleChip(
-                  label: AppStrings.couriersTab,
-                  icon: Icons.delivery_dining_rounded,
-                  active: !_isRide,
-                  onTap: () => setState(() => _isRide = false),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _ToggleChip(
+                    label: AppStrings.couriersTab,
+                    iconWidget: const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: _EmbeddedPngFromSvgAsset(assetPath: AppAssets.motorbikeTabIcon),
+                    ),
+                    active: !_isRide,
+                    onTap: () => setState(() => _isRide = false),
+                  ),
                 ),
               ],
             ),
@@ -270,7 +299,9 @@ class _HomeBottomSheetState extends ConsumerState<HomeBottomSheet> {
                     );
                   },
             ),
+            const SizedBox(height: 10),
             const Divider(height: 1),
+            const SizedBox(height: 10),
             _QuickAction(
               icon: Icons.map_outlined,
               label: AppStrings.chooseOnMap,
@@ -302,12 +333,12 @@ class _HomeBottomSheetState extends ConsumerState<HomeBottomSheet> {
 class _ToggleChip extends StatelessWidget {
   const _ToggleChip({
     required this.label,
-    required this.icon,
+    this.iconWidget,
     required this.active,
     required this.onTap,
   });
   final String label;
-  final IconData icon;
+  final Widget? iconWidget;
   final bool active;
   final VoidCallback onTap;
 
@@ -316,25 +347,68 @@ class _ToggleChip extends StatelessWidget {
     onTap: onTap,
     child: AnimatedContainer(
       duration: const Duration(milliseconds: 180),
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+      height: 48,
+      padding: const EdgeInsets.symmetric(horizontal: 18),
       decoration: BoxDecoration(
-        color: active ? AppColors.black : AppColors.inputFill,
-        borderRadius: BorderRadius.circular(100),
+        color: active ? AppColors.black : Colors.transparent,
+        borderRadius: BorderRadius.circular(999),
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, size: 16, color: active ? AppColors.white : AppColors.textSecondary),
-          const SizedBox(width: 6),
-          Text(label,
-            style: TextStyle(
-              fontFamily: 'Inter', fontSize: 13, fontWeight: FontWeight.w600,
-              color: active ? AppColors.white : AppColors.textSecondary,
-            )),
+          IconTheme(
+            data: IconThemeData(
+              size: 20,
+              color: active ? AppColors.white : AppColors.textPrimary,
+            ),
+            child: iconWidget ?? const SizedBox.shrink(),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            label,
+            style: AppTextStyles.bodyMedium.copyWith(
+              fontWeight: FontWeight.w700,
+              color: active ? AppColors.white : AppColors.textPrimary,
+            ),
+          ),
         ],
       ),
     ),
   );
+}
+
+class _EmbeddedPngFromSvgAsset extends StatelessWidget {
+  const _EmbeddedPngFromSvgAsset({required this.assetPath});
+
+  final String assetPath;
+
+  static final Map<String, Future<Uint8List>> _cache = {};
+
+  Future<Uint8List> _load() {
+    return _cache.putIfAbsent(assetPath, () async {
+      final svg = await rootBundle.loadString(assetPath);
+      final match = RegExp(r'data:image\/png;base64,([^"]+)').firstMatch(svg);
+      if (match == null) throw const FormatException('No embedded PNG found.');
+      return base64Decode(match.group(1)!);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<Uint8List>(
+      future: _load(),
+      builder: (context, snap) {
+        if (!snap.hasData) return const SizedBox.shrink();
+        return Image.memory(
+          snap.data!,
+          fit: BoxFit.contain,
+          gaplessPlayback: true,
+          color: IconTheme.of(context).color,
+          colorBlendMode: BlendMode.srcIn,
+        );
+      },
+    );
+  }
 }
 
 class _QuickAction extends StatelessWidget {
