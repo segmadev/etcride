@@ -107,7 +107,9 @@ class _SelectRideScreenState extends ConsumerState<SelectRideScreen> {
       } catch (_) {}
       user = ref.read(currentUserProvider);
     }
-    final isComplete = user != null && (user.phone.isNotEmpty || user.email.isNotEmpty);
+    final isComplete = user != null &&
+        user.name.isNotEmpty &&
+        (user.phone.isNotEmpty || user.email.isNotEmpty);
 
     if (!isComplete) {
       if (!mounted) return;

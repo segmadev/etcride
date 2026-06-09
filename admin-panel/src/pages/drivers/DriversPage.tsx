@@ -146,7 +146,7 @@ function QuickAddVehicleModal({ open, onClose, onCreated }: {
       footer={<><Button variant="outline" onClick={onClose}>Cancel</Button><Button loading={mutation.isPending} disabled={!form.plate_number || !form.make || !form.model || !form.vehicle_type_id} onClick={() => mutation.mutate()}>Create & Select</Button></>}
     >
       <div className="space-y-3">
-        <Select label="Vehicle Type *" value={form.vehicle_type_id} onChange={sf('vehicle_type_id')} placeholder="Select type…" options={(types?.data ?? []).map(t => ({ value: t.id, label: t.name }))} />
+        <Select label="Vehicle Type *" value={form.vehicle_type_id} onChange={sf('vehicle_type_id')} placeholder="Select type…" options={(types ?? []).map((t: { id: string; name: string }) => ({ value: t.id, label: t.name }))} />
         <div className="grid grid-cols-2 gap-3">
           <Input label="Plate Number *" value={form.plate_number} onChange={sf('plate_number')} placeholder="KWR-123-AB" />
           <Input label="Year"           value={form.year}         onChange={sf('year')}         placeholder="2020" />
@@ -333,11 +333,176 @@ function KycPanel({ driver, onUpdated }: { driver: Driver; onUpdated: () => void
   );
 }
 
+// ── Edit Driver Panel ─────────────────────────────────────────────────────────
+function EditDriverPanel({ driver, onUpdated }: { driver: Driver; onUpdated: () => void }) {
+  const { toast } = useToast();
+  const qc        = useQueryClient();
+
+  const [form, setForm] = useState({
+    name:           driver.name,
+    phone:          driver.phone,
+    email:          driver.email ?? '',
+    license_number: driver.license_number ?? '',
+    password:       '',
+  });
+  const [photo,       setPhoto]       = useState<File | null>(null);
+  const [showPass,    setShowPass]    = useState(false);
+  const [vehicleId,   setVehicleId]   = useState('');
+  const [addVehicleOpen, setAddVehicleOpen] = useState(false);
+  const [extraVehicles,  setExtraVehicles]  = useState<{ value: string; label: string }[]>([]);
+
+  const sf = (k: keyof typeof form) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+      setForm(p => ({ ...p, [k]: e.target.value }));
+
+  const { data: vehicles } = useQuery({
+    queryKey: ['vehicles', 'active'],
+    queryFn:  () => vehiclesApi.list({ status: 'active' }),
+  });
+
+  // Build options with assignment status — free vehicles first, then assigned to others.
+  const vehicleOptions = [
+    ...(vehicles?.data ?? [])
+      .slice()
+      .sort((a, b) => {
+        if (a.driver_id === driver.id)              return -1; // this driver's current vehicle → top
+        if (b.driver_id === driver.id)              return  1;
+        if (!a.driver_id && b.driver_id)            return -1; // free before assigned-to-other
+        if (a.driver_id && !b.driver_id)            return  1;
+        return 0;
+      })
+      .map(v => {
+        const base = `${v.plate_number} — ${v.make} ${v.model}${v.color ? ` (${v.color})` : ''}`;
+        if (v.driver_id === driver.id)
+          return { value: v.id, label: `✓ ${base} · this driver` };
+        if (v.driver_id && v.driver_name)
+          return { value: v.id, label: `⚠ ${base} · assigned to ${v.driver_name}` };
+        return { value: v.id, label: `● ${base} · free` };
+      }),
+    ...extraVehicles,
+  ];
+
+  const updateMutation = useMutation({
+    mutationFn: () => driversApi.update(driver.id, {
+      name:           form.name           || undefined,
+      email:          form.email          || undefined,
+      license_number: form.license_number || undefined,
+      photo:          photo               || undefined,
+      ...(form.password ? { password: form.password } : {}),
+    } as Parameters<typeof driversApi.update>[1]),
+    onSuccess: () => { toast('Driver updated.', 'success'); qc.invalidateQueries({ queryKey: ['drivers'] }); onUpdated(); },
+    onError: (e: unknown) => toast(getApiErrorMessage(e), 'error'),
+  });
+
+  const assignMutation = useMutation({
+    mutationFn: (vid: string) => driversApi.assignVehicle(driver.id, vid),
+    onSuccess: (_r, vid) => {
+      toast(vid ? 'Vehicle assigned.' : 'Vehicle detached.', 'success');
+      qc.invalidateQueries({ queryKey: ['drivers'] });
+      onUpdated();
+      setVehicleId('');
+    },
+    onError: (e: unknown) => toast(getApiErrorMessage(e), 'error'),
+  });
+
+  const hasVehicle = !!(driver.plate_number || driver.vehicle_id);
+
+  return (
+    <>
+      <div className="space-y-5">
+        {/* Photo */}
+        <PhotoUpload value={photo} onChange={setPhoto} label="Driver Photo" />
+
+        {/* Basic fields */}
+        <div>
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Basic Information</p>
+          <div className="grid grid-cols-2 gap-3">
+            <Input label="Full Name *"    value={form.name}           onChange={sf('name')}           placeholder="Musa Aliyu" />
+            <Input label="Phone *"        value={form.phone}          onChange={sf('phone')}          placeholder="08055555555" />
+            <Input label="Email"          value={form.email}          onChange={sf('email')}          type="email" placeholder="driver@email.com" />
+            <Input label="License Number" value={form.license_number} onChange={sf('license_number')} placeholder="KWR-DL-123456" />
+          </div>
+          <div className="mt-3 relative">
+            <Input label="New Password (leave blank to keep current)" value={form.password} onChange={sf('password')} type={showPass ? 'text' : 'password'} placeholder="Min 6 characters" />
+            <button type="button" onClick={() => setShowPass(s => !s)} className="absolute right-3 top-7 text-xs text-slate-400 hover:text-slate-600">
+              {showPass ? 'Hide' : 'Show'}
+            </button>
+          </div>
+        </div>
+
+        <Button loading={updateMutation.isPending} disabled={!form.name || !form.phone} onClick={() => updateMutation.mutate()}>
+          Save Changes
+        </Button>
+
+        {/* Vehicle assignment / detach */}
+        <div className="border-t border-slate-100 pt-5">
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3 flex items-center gap-1.5">
+            <Car size={13} /> Vehicle Assignment
+          </p>
+
+          {hasVehicle && (
+            <div className="mb-3 flex items-center justify-between rounded-xl bg-blue-50 border border-blue-100 px-3 py-2.5">
+              <div>
+                <p className="text-xs text-blue-500 font-medium">Currently Assigned</p>
+                <p className="text-sm font-semibold text-blue-900">
+                  {driver.plate_number} — {driver.make} {driver.model}
+                </p>
+              </div>
+              <button
+                onClick={() => assignMutation.mutate('')}
+                disabled={assignMutation.isPending}
+                className="flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-100 transition-colors disabled:opacity-60"
+              >
+                <X size={11} /> Detach
+              </button>
+            </div>
+          )}
+
+          <div className="flex items-end gap-2">
+            <div className="flex-1">
+              <Select
+                label={hasVehicle ? 'Replace Vehicle' : 'Assign Vehicle'}
+                value={vehicleId}
+                onChange={e => setVehicleId(e.target.value)}
+                placeholder="Select a vehicle…"
+                options={vehicleOptions}
+              />
+            </div>
+            <button type="button" onClick={() => setAddVehicleOpen(true)}
+              className="mb-0.5 flex items-center gap-1.5 rounded-xl border border-brand-500 px-3 py-2 text-sm text-brand-600 hover:bg-brand-50 transition-colors whitespace-nowrap">
+              <Plus size={14} /> New
+            </button>
+          </div>
+          {vehicleId && (
+            <Button
+              className="mt-2 w-full"
+              loading={assignMutation.isPending}
+              onClick={() => assignMutation.mutate(vehicleId)}
+            >
+              {hasVehicle ? 'Replace Vehicle' : 'Assign Vehicle'}
+            </Button>
+          )}
+        </div>
+      </div>
+
+      <QuickAddVehicleModal
+        open={addVehicleOpen}
+        onClose={() => setAddVehicleOpen(false)}
+        onCreated={(id, label) => {
+          setExtraVehicles(prev => [...prev, { value: id, label }]);
+          setVehicleId(id);
+          setAddVehicleOpen(false);
+        }}
+      />
+    </>
+  );
+}
+
 // ── Driver Detail Modal ───────────────────────────────────────────────────────
 function DriverDetailModal({ driverId, onClose }: { driverId: string; onClose: () => void }) {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState<'info' | 'kyc'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'kyc' | 'edit'>('info');
 
   const { data, isLoading, refetch } = useQuery({ queryKey: ['driver', driverId], queryFn: () => driversApi.show(driverId) });
 
@@ -370,7 +535,7 @@ function DriverDetailModal({ driverId, onClose }: { driverId: string; onClose: (
       </div>
 
       <div className="flex border-b border-slate-200 mb-5 -mx-1">
-        {([['info', 'Profile & Stats'], ['kyc', 'KYC Documents']] as const).map(([key, label]) => (
+        {([['info', 'Profile & Stats'], ['edit', 'Edit Driver'], ['kyc', 'KYC Documents']] as const).map(([key, label]) => (
           <button key={key} onClick={() => setActiveTab(key)}
             className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${activeTab === key ? 'border-brand-500 text-brand-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
             {label}
@@ -415,7 +580,8 @@ function DriverDetailModal({ driverId, onClose }: { driverId: string; onClose: (
           )}
         </div>
       )}
-      {activeTab === 'kyc' && <KycPanel driver={data} onUpdated={() => { refetch(); qc.invalidateQueries({ queryKey: ['drivers'] }); }} />}
+      {activeTab === 'edit' && <EditDriverPanel driver={data} onUpdated={() => { refetch(); qc.invalidateQueries({ queryKey: ['drivers'] }); }} />}
+      {activeTab === 'kyc'  && <KycPanel driver={data} onUpdated={() => { refetch(); qc.invalidateQueries({ queryKey: ['drivers'] }); }} />}
     </Modal>
   );
 }

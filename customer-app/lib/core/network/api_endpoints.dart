@@ -27,6 +27,7 @@ abstract final class ApiEndpoints {
   static String paymentStatus(String id)  => '/bookings/$id/payment-status';
   static String paymentMethod(String id)  => '/bookings/$id/payment-method';
   static String rateBooking(String id)    => '/bookings/$id/rate';
+  static String findDriver(String id)     => '/bookings/$id/find-driver';
 
   // ── Notifications ─────────────────────────────────────────────────────────
   static const String notifications        = '/notifications';

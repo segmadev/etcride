@@ -44,6 +44,14 @@ export const bookingsApi = {
       apiClient.get(`/admin/bookings/${id}/track`),
     ),
 
+  suggestDrivers: (id: string) =>
+    apiRequest<{
+      online:  Array<{ id: string; name: string; phone: string; distance_km: number; plate_number: string; vehicle_type_name: string }>;
+      offline: Array<{ id: string; name: string; phone: string; distance_km: number; plate_number: string; vehicle_type_name: string }>;
+    }>(
+      apiClient.get(`/admin/bookings/${id}/suggest-drivers`),
+    ),
+
   notifications: () =>
     apiRequest<Array<{ id: string; title: string; body: string; is_read: boolean; created_at: string }>>(
       apiClient.get('/admin/bookings/notifications'),

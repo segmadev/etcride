@@ -41,6 +41,10 @@ const SECTIONS = [
     title: 'Notifications',
     keys: ['email_notifications_enabled', 'fcm_enabled'],
   },
+  {
+    title: 'Driver App',
+    keys: ['driver_auth_mode', 'driver_locations_json'],
+  },
 ];
 
 const APP_CONTENT_SECTION = {
@@ -75,9 +79,10 @@ const SELECT_FIELDS: Record<string, { value: string; label: string }[]> = {
   fcm_enabled:              [{ value: '1', label: 'Enabled' }, { value: '0', label: 'Disabled' }],
   smtp_enabled:             [{ value: '1', label: 'Enabled' }, { value: '0', label: 'Disabled' }],
   smtp_encryption:          [{ value: 'tls', label: 'TLS (STARTTLS) — recommended' }, { value: 'ssl', label: 'SSL (SMTPS)' }, { value: 'none', label: 'None — not recommended' }],
+  driver_auth_mode:         [{ value: 'both', label: 'Both (Password + OTP)' }, { value: 'password', label: 'Password only' }, { value: 'otp', label: 'OTP only' }],
 };
 
-const TEXTAREA_FIELDS = new Set(['about_text', 'terms_and_conditions', 'privacy_policy']);
+const TEXTAREA_FIELDS = new Set(['about_text', 'terms_and_conditions', 'privacy_policy', 'driver_locations_json']);
 const PASSWORD_FIELDS = new Set(['smtp_password']);
 
 // ── Help text ──────────────────────────────────────────────────────────────────
@@ -106,6 +111,9 @@ const HELP: Record<string, string> = {
   about_text:         'About Us text shown in the app\'s About screen. Supports plain text. Keep it concise.',
   terms_and_conditions: 'Full Terms & Conditions text shown in the app. Customers must accept this during registration.',
   privacy_policy:     'Full Privacy Policy text shown in the app. Required for app store compliance.',
+  // Driver app
+  driver_auth_mode:         'Controls how drivers can sign in. "Both" lets them choose between password and OTP. Set to "OTP only" for phone-verification-first onboarding.',
+  driver_locations_json:    'JSON array of states and LGAs shown during driver registration. Format: [{"state":"Lagos","lgas":["Ikeja","Victoria Island"]}, ...]. Leave empty to skip location selection.',
   // SMTP
   smtp_enabled:       'Enable or disable sending transactional emails (booking confirmations, cancellations, etc.).',
   smtp_host:          'Your email server hostname (e.g. smtp.gmail.com, mail.your-domain.com). Provided by your email host.',
@@ -141,6 +149,9 @@ const LABELS: Record<string, string> = {
   about_text:           'About Us Text',
   terms_and_conditions: 'Terms & Conditions',
   privacy_policy:       'Privacy Policy',
+  // Driver app
+  driver_auth_mode:       'Driver Sign-In Mode',
+  driver_locations_json:  'States & LGAs (JSON)',
   // SMTP
   smtp_enabled:     'SMTP Emails',
   smtp_host:        'SMTP Host',

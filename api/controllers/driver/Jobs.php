@@ -15,23 +15,36 @@ class Jobs extends BaseController
         $activeStatuses = ['assigned', 'accepted', 'arrived', 'in_progress', 'payment_pending'];
 
         if ($status !== '') {
-            $where = "driver_id = ? AND status = ? LIMIT $perPage OFFSET $offset";
+            // Explicit status filter requested — return exactly that
+            $sql = "SELECT b.*, u.name AS customer_name, u.phone AS customer_phone,
+                        vt.name AS vehicle_type_name
+                    FROM bookings b
+                    LEFT JOIN users u  ON u.id  = b.customer_id
+                    LEFT JOIN vehicle_types vt ON vt.id = b.vehicle_type_id
+                    WHERE b.driver_id = ? AND b.status = ?
+                    ORDER BY b.created_at DESC LIMIT $perPage OFFSET $offset";
             $params = [$me['id'], $status];
         } else {
+            // Return active jobs AND jobs cancelled in the last 10 min so the
+            // app can detect a customer-initiated cancellation before the job
+            // disappears completely from the list.
             $placeholders = implode(',', array_fill(0, count($activeStatuses), '?'));
-            $where = "driver_id = ? AND status IN ($placeholders) LIMIT $perPage OFFSET $offset";
+            $sql = "SELECT b.*, u.name AS customer_name, u.phone AS customer_phone,
+                        vt.name AS vehicle_type_name
+                    FROM bookings b
+                    LEFT JOIN users u  ON u.id  = b.customer_id
+                    LEFT JOIN vehicle_types vt ON vt.id = b.vehicle_type_id
+                    WHERE b.driver_id = ?
+                      AND (
+                        b.status IN ($placeholders)
+                        OR (b.status = 'cancelled'
+                            AND b.updated_at >= DATE_SUB(NOW(), INTERVAL 10 MINUTE))
+                      )
+                    ORDER BY b.created_at DESC LIMIT $perPage OFFSET $offset";
             $params = array_merge([$me['id']], $activeStatuses);
         }
 
-        $stmt = $this->db->prepare("SELECT b.*, u.name AS customer_name, u.phone AS customer_phone,
-            vt.name AS vehicle_type_name
-            FROM bookings b
-            LEFT JOIN users u ON u.id = b.customer_id
-            LEFT JOIN vehicle_types vt ON vt.id = b.vehicle_type_id
-            WHERE b.driver_id = ?
-            " . ($status !== '' ? "AND b.status = ?" : "AND b.status IN (" . implode(',', array_fill(0, count($activeStatuses), '?')) . ")")
-            . " ORDER BY b.created_at DESC LIMIT $perPage OFFSET $offset");
-
+        $stmt = $this->db->prepare($sql);
         $stmt->execute($params);
         $jobs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -55,6 +68,8 @@ class Jobs extends BaseController
 
         $job['stops']    = $this->getStops($id);
         $job['customer'] = $this->getall('users', 'id = ?', [$job['customer_id']], 'id, name, phone');
+        $job['free_waiting_minutes']   = (int)   $this->setting('free_waiting_minutes',   '3');
+        $job['waiting_charge_per_min'] = (float) $this->setting('waiting_charge_per_min', '0');
 
         echo utilities::apiMessage('Job retrieved.', 200, $job);
     }
@@ -95,14 +110,136 @@ class Jobs extends BaseController
             return;
         }
 
-        // Return to pending for admin to reassign
+        // Step 1: unassign — return booking to pending, record the rejection
         $this->update('bookings', ['status' => 'pending', 'driver_id' => null], "id = '$id'");
         $this->recordStatusChange($id, 'assigned', 'rejected', 'driver', $me['id'], $reason);
-
-        // Notify admin (log only — admin gets notified via dashboard polling)
         $this->logActivity('driver', $me['id'], 'job_rejected', ['booking_id' => $id, 'reason' => $reason]);
 
-        echo utilities::apiMessage('Job rejected. Admin has been notified to reassign.', 200);
+        // Step 2: notify customer that the driver declined
+        $this->notify(
+            'customer',
+            $job['customer_id'],
+            'Driver Declined',
+            'Your assigned driver declined the trip. We\'re finding you another driver.',
+            'driver_declined',
+            $id
+        );
+
+        // Step 3: attempt to auto-reassign to the next closest available driver
+        $reassigned = $this->tryReassignBooking($id, $job);
+
+        echo utilities::apiMessage(
+            $reassigned
+                ? 'Job rejected. Another nearby driver has been assigned.'
+                : 'Job rejected. Admin has been notified to reassign.',
+            200
+        );
+    }
+
+    /**
+     * After a driver rejection, find the next closest eligible driver and assign them.
+     *
+     * Reads booking_status_history to collect all previously-tried driver IDs, then
+     * calls findNearestDriverExcluding() to skip them.
+     *
+     * Hard cap: give up after MAX_REASSIGN_RETRIES total rejections and let admin handle it.
+     */
+    private const MAX_REASSIGN_RETRIES = 5;
+
+    private function tryReassignBooking(string $bookingId, array $job): bool
+    {
+        // Gather all driver IDs who have already rejected this booking
+        $histStmt = $this->db->prepare(
+            "SELECT DISTINCT changed_by_id
+             FROM booking_status_history
+             WHERE booking_id      = ?
+               AND to_status       = 'rejected'
+               AND changed_by_role = 'driver'
+               AND changed_by_id   IS NOT NULL"
+        );
+        $histStmt->execute([$bookingId]);
+        $rejectedIds = $histStmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
+
+        // Hard cap — prevent infinite reassignment loops
+        if (count($rejectedIds) >= self::MAX_REASSIGN_RETRIES) {
+            $this->logActivity('system', null, 'booking_unassignable', [
+                'booking_id' => $bookingId,
+                'reason'     => 'Exceeded max driver rejection retries (' . self::MAX_REASSIGN_RETRIES . ')',
+            ]);
+            return false;
+        }
+
+        $pickupLat = (float) ($job['pickup_lat']    ?? 0);
+        $pickupLng = (float) ($job['pickup_lng']    ?? 0);
+        $vtId      =         ($job['vehicle_type_id'] ?? '');
+
+        // Try to find a new online driver (excluding those who already rejected)
+        $nextDriver = $this->findNearestDriverExcluding($pickupLat, $pickupLng, $vtId, $rejectedIds);
+
+        if ($nextDriver) {
+            $this->assignDriver($bookingId, $nextDriver['id'], $job);
+            return true;
+        }
+
+        // No online driver available — soft-notify nearby offline drivers
+        // (skip any who already rejected)
+        $bookingType  = $job['booking_type'] ?? 'booking';
+        $offlineDrivers = $this->findNearbyOfflineDrivers($pickupLat, $pickupLng, $vtId);
+        foreach ($offlineDrivers as $od) {
+            if (!in_array($od['id'], $rejectedIds, true)) {
+                $this->notify(
+                    'driver', $od['id'],
+                    'New Trip Available — Are You Available?',
+                    "A $bookingType trip near you needs a driver. Go online to accept it.",
+                    'trip_interest_request', $bookingId
+                );
+            }
+        }
+
+        return false;
+    }
+
+    // ── POST /driver/jobs/:id/cancel ─────────────────────────────────────────
+    public function cancel(string $id): void
+    {
+        $me  = BaseController::$authDriver;
+        $job = $this->getall('bookings', 'id = ? AND driver_id = ?', [$id, $me['id']]);
+
+        if (!is_array($job)) {
+            echo utilities::apiMessage('Job not found.', 404);
+            return;
+        }
+
+        // Drivers may only cancel before the trip is in progress
+        $cancellable = ['accepted', 'arrived'];
+        if (!in_array($job['status'], $cancellable)) {
+            echo utilities::apiMessage(
+                "Cannot cancel a job in '{$job['status']}' status.", 409);
+            return;
+        }
+
+        $reason = $this->str('reason', 'Cancelled by driver');
+
+        $this->update('bookings', [
+            'status'              => 'cancelled',
+            'cancelled_by_role'   => 'driver',
+            'cancelled_by_id'     => $me['id'],
+            'cancellation_reason' => $reason,
+        ], "id = '$id'");
+
+        $this->recordStatusChange($id, $job['status'], 'cancelled', 'driver', $me['id'], $reason);
+        $this->logActivity('driver', $me['id'], 'job_cancelled',
+            ['booking_id' => $id, 'reason' => $reason]);
+
+        // Notify the customer
+        if (!empty($job['customer_id'])) {
+            $this->notify('customer', $job['customer_id'],
+                'Trip Cancelled by Driver',
+                'Your driver has cancelled the trip. We\'re looking for another driver.',
+                'booking_cancelled', $id);
+        }
+
+        echo utilities::apiMessage('Job cancelled.', 200);
     }
 
     // ── POST /driver/jobs/:id/arrive ─────────────────────────────────────────
@@ -117,7 +254,31 @@ class Jobs extends BaseController
             return;
         }
 
-        $this->update('bookings', ['status' => 'arrived'], "id = '$id'");
+        // ── GPS proximity check ──────────────────────────────────────────────
+        $driverLat    = $this->flt('lat');
+        $driverLng    = $this->flt('lng');
+        $gpsAccuracy  = abs($this->flt('gps_accuracy_m'));   // metres, ≥ 0
+
+        if ($driverLat !== 0.0 && $driverLng !== 0.0) {
+            $pickupLat  = (float) ($job['pickup_lat'] ?? 0);
+            $pickupLng  = (float) ($job['pickup_lng'] ?? 0);
+            $thresholdM = (float) $this->setting('auto_arrive_radius_m', '20');
+            $effectiveM = $thresholdM + $gpsAccuracy;
+
+            $distM = $this->haversine($driverLat, $driverLng, $pickupLat, $pickupLng) * 1000;
+
+            if ($distM > $effectiveM) {
+                $remaining = round($distM - $thresholdM);
+                echo utilities::apiMessage(
+                    "You are {$remaining}m away from the pickup point. "
+                    . "Get closer to mark your arrival.",
+                    422
+                );
+                return;
+            }
+        }
+
+        $this->update('bookings', ['status' => 'arrived', 'arrived_at' => date('Y-m-d H:i:s')], "id = '$id'");
         $this->recordStatusChange($id, 'accepted', 'arrived', 'driver', $me['id']);
 
         $this->notify('customer', $job['customer_id'], 'Driver Arrived',
@@ -141,7 +302,18 @@ class Jobs extends BaseController
 
         $now = date('Y-m-d H:i:s');
 
-        $this->update('bookings', ['status' => 'in_progress'], "id = '$id'");
+        // ── Waiting time charge ────────────────────────────────────────────────
+        $waitingExtraCharge = 0.0;
+        $arrivedAt = $job['arrived_at'] ?? null;
+        if ($arrivedAt && $job['status'] === 'arrived') {
+            $freeMinutes  = (int)   $this->setting('free_waiting_minutes',   '3');
+            $chargePerMin = (float) $this->setting('waiting_charge_per_min', '0');
+            $elapsedSecs  = max(0, time() - strtotime($arrivedAt));
+            $billableMins = max(0.0, ($elapsedSecs / 60) - $freeMinutes);
+            $waitingExtraCharge = round($billableMins * $chargePerMin, 2);
+        }
+
+        $this->update('bookings', ['status' => 'in_progress', 'waiting_extra_charge' => $waitingExtraCharge], "id = '$id'");
         $this->recordStatusChange($id, $job['status'], 'in_progress', 'driver', $me['id']);
 
         // Create trip record
@@ -228,6 +400,46 @@ class Jobs extends BaseController
         $this->logActivity('driver', $me['id'], 'trip_completed', ['booking_id' => $id]);
 
         echo utilities::apiMessage('Trip completed.', 200, ['completed_at' => $now]);
+    }
+
+    // ── POST /driver/jobs/:id/confirm-payment ─────────────────────────────────
+    // Called by the driver after physically collecting cash (or confirming
+    // receipt). Transitions payment_pending → completed.
+    public function confirmPayment(string $id): void
+    {
+        $me  = BaseController::$authDriver;
+        $job = $this->getall('bookings', 'id = ? AND driver_id = ?', [$id, $me['id']]);
+
+        if (!is_array($job)) { echo utilities::apiMessage('Job not found.', 404); return; }
+        if ($job['status'] !== 'payment_pending') {
+            echo utilities::apiMessage(
+                "Payment can only be confirmed for jobs in 'payment_pending' status (current: '{$job['status']}').",
+                409
+            );
+            return;
+        }
+
+        $now = date('Y-m-d H:i:s');
+
+        $this->update('bookings', [
+            'status'         => 'completed',
+            'payment_status' => 'paid',
+        ], "id = '$id'");
+        $this->recordStatusChange($id, 'payment_pending', 'completed', 'driver', $me['id'], 'Payment confirmed by driver');
+
+        // Update trip record if exists
+        $trip = $this->getall('trips', 'booking_id = ?', [$id]);
+        if (is_array($trip)) {
+            $this->update('trips', ['completed_at' => $now, 'status' => 'completed'], "id = '{$trip['id']}'");
+        }
+
+        $this->notify('customer', $job['customer_id'], 'Payment Confirmed',
+            'Your payment has been received. Thank you for riding with us!',
+            'trip_completed', $id);
+
+        $this->logActivity('driver', $me['id'], 'payment_confirmed', ['booking_id' => $id]);
+
+        echo utilities::apiMessage('Payment confirmed. Trip completed.', 200, ['completed_at' => $now]);
     }
 
     // ── PUT /driver/jobs/:id/payment-method ──────────────────────────────────

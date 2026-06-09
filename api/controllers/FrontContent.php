@@ -3,6 +3,28 @@ require_once ROOT . 'functions/BaseController.php';
 
 class FrontContent extends BaseController
 {
+    public function driverAuthConfig(): void
+    {
+        $mode = strtolower(trim($this->setting('driver_auth_mode', 'both')));
+        if (!in_array($mode, ['otp', 'password', 'both'], true)) $mode = 'both';
+        echo utilities::apiMessage('Driver auth config retrieved.', 200, [
+            'mode' => $mode,
+        ]);
+    }
+
+    public function driverLocations(): void
+    {
+        $raw = trim($this->setting('driver_locations_json', ''));
+        if ($raw === '') {
+            echo utilities::apiMessage('Driver locations retrieved.', 200, ['states' => []]);
+            return;
+        }
+        $decoded = json_decode($raw, true);
+        echo utilities::apiMessage('Driver locations retrieved.', 200, [
+            'states' => is_array($decoded) ? $decoded : [],
+        ]);
+    }
+
     public function commonDetails(): void
     {
         echo utilities::apiMessage('Common details retrieved.', 200, [
@@ -12,7 +34,11 @@ class FrontContent extends BaseController
             'support_email'   => $this->setting('support_email',   ''),
             'support_phone'   => $this->setting('support_phone',   ''),
             'currency'        => $this->setting('currency',        'NGN'),
-            'currency_symbol' => $this->setting('currency_symbol', '₦'),
+            'currency_symbol'       => $this->setting('currency_symbol', '₦'),
+            'auto_arrive_radius_m'   => (int)   $this->setting('auto_arrive_radius_m',   '20'),
+            'driver_avg_speed_kmh'   => (int)   $this->setting('driver_avg_speed_kmh',   '30'),
+            'free_waiting_minutes'   => (int)   $this->setting('free_waiting_minutes',   '3'),
+            'waiting_charge_per_min' => (float) $this->setting('waiting_charge_per_min', '0'),
         ]);
     }
 

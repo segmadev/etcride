@@ -1,5 +1,9 @@
 import 'dart:math' as math;
+import 'package:dio/dio.dart' show Dio;
+import 'package:flutter/foundation.dart';
+import 'package:geocoding/geocoding.dart' as geo;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import '../config/app_config.dart';
 import '../network/api_client.dart';
 import '../network/api_endpoints.dart';
 
@@ -64,14 +68,46 @@ class MapsService {
   }
 
   // ── Reverse geocoding: LatLng → address string ──────────────────────────────
+  //
+  // Strategy:
+  //   • Web    → call Google Maps REST API directly from the browser.
+  //              Backend proxy fails in dev (XAMPP has no internet access).
+  //   • Native → OS geocoder via `geocoding` package (no API key, no server).
+  //              Falls back to direct Google API call if OS geocoder fails.
 
   static Future<String?> reverseGeocode(double lat, double lng) async {
+    if (kIsWeb) return _reverseGeocodeGoogleApi(lat, lng);
+    return _reverseGeocodeNative(lat, lng);
+  }
+
+  static Future<String?> _reverseGeocodeNative(double lat, double lng) async {
     try {
-      final data = await _c.get<Map<String, dynamic>>(
-        ApiEndpoints.geocode,
-        params: {'latlng': '$lat,$lng'},
+      final marks = await geo.placemarkFromCoordinates(lat, lng);
+      if (marks.isEmpty) return _reverseGeocodeGoogleApi(lat, lng);
+      final p = marks.first;
+      final parts = <String>[
+        if ((p.name ?? '').isNotEmpty && p.name != p.street) p.name!,
+        if ((p.street ?? '').isNotEmpty) p.street!,
+        if ((p.subLocality ?? '').isNotEmpty) p.subLocality!,
+        if ((p.locality ?? '').isNotEmpty) p.locality!,
+        if ((p.administrativeArea ?? '').isNotEmpty) p.administrativeArea!,
+      ];
+      if (parts.isEmpty) return _reverseGeocodeGoogleApi(lat, lng);
+      return parts.join(', ');
+    } catch (_) {
+      return _reverseGeocodeGoogleApi(lat, lng);
+    }
+  }
+
+  static Future<String?> _reverseGeocodeGoogleApi(double lat, double lng) async {
+    final key = AppConfig.googleMapsKey;
+    if (key.isEmpty) return null;
+    try {
+      final resp = await Dio().get<Map<String, dynamic>>(
+        'https://maps.googleapis.com/maps/api/geocode/json',
+        queryParameters: {'latlng': '$lat,$lng', 'key': key},
       );
-      final results = data?['results'] as List?;
+      final results = resp.data?['results'] as List?;
       if (results == null || results.isEmpty) return null;
       for (final r in results) {
         final types = (r['types'] as List?)?.cast<String>() ?? [];

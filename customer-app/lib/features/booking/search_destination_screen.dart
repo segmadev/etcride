@@ -284,7 +284,10 @@ class _SearchDestinationScreenState extends ConsumerState<SearchDestinationScree
       } catch (_) { return null; }
     }
     final enabled = await Geolocator.isLocationServiceEnabled();
-    if (!enabled) return null;
+    if (!enabled) {
+      await Geolocator.openLocationSettings();
+      return null;
+    }
     var perm = await Geolocator.checkPermission();
     if (perm == LocationPermission.denied) perm = await Geolocator.requestPermission();
     if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) return null;
@@ -299,13 +302,46 @@ class _SearchDestinationScreenState extends ConsumerState<SearchDestinationScree
       final pos = await _getPosition();
       if (pos == null) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Enable location permission in your browser/device settings.'),
-              backgroundColor: AppColors.error,
-            ),
-          );
-          if (!kIsWeb) context.push(AppRoutes.locationPermission);
+          if (kIsWeb) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Enable location permission in your browser settings.'),
+                backgroundColor: AppColors.error,
+              ),
+            );
+          } else {
+            await context.push(AppRoutes.locationPermission);
+          }
+        }
+        final retry = await _getPosition();
+        if (retry == null) return;
+
+        if (!_checkBoundary(retry.latitude, retry.longitude)) {
+          setState(() => _error = 'Your current location is outside our service area.');
+          return;
+        }
+
+        final address = await MapsService.reverseGeocode(retry.latitude, retry.longitude);
+        final label   = address ?? 'My Location';
+
+        _setPickupText(label);
+        ref.read(bookingDraftProvider.notifier).update((d) => d.copyWith(
+          pickupAddress: label,
+          pickupLat:     retry.latitude,
+          pickupLng:     retry.longitude,
+        ));
+
+        if (!mounted) return;
+        final draft = ref.read(bookingDraftProvider);
+        if (draft.hasDestination) {
+          if (widget.asSheet) {
+            Navigator.of(context).pop(SearchDestinationResult.openSelectRide);
+          } else {
+            showSelectRideDrawer(context);
+          }
+        } else {
+          _destFocus.requestFocus();
+          setState(() => _active = _ActiveField.destination);
         }
         return;
       }

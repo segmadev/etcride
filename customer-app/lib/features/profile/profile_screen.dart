@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/constants/app_strings.dart';
+import '../../../core/errors/app_exception.dart';
 import '../../../core/utils/validators.dart';
 import '../../../shared/providers/providers.dart';
 import '../../../shared/widgets/app_button.dart';
@@ -45,9 +46,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       }
     } catch (e) {
       if (mounted) {
+        final msg = (e is AppException) ? e.message : e.toString();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text(e.toString()),
+              content: Text(msg),
               backgroundColor: AppColors.error),
         );
       }

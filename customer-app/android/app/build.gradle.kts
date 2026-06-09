@@ -12,15 +12,6 @@ android {
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
-    val mapsApiKey = project.findProperty("MAPS_API_KEY")?.toString() ?: ""
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17.toString()
     val localProps = Properties().apply {
         val f = rootProject.file("local.properties")
         if (f.exists()) {
@@ -31,6 +22,21 @@ android {
         localProps.getProperty("MAPS_API_KEY")
             ?: project.findProperty("MAPS_API_KEY")?.toString()
             ?: ""
+    if (mapsApiKey.isBlank()) {
+        throw GradleException(
+            "MAPS_API_KEY is missing. Add MAPS_API_KEY=YOUR_KEY to android/local.properties " +
+                "(recommended) or set it in android/gradle.properties."
+        )
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = JavaVersion.VERSION_17.toString()
+    }
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).

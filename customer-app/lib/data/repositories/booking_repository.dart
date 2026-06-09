@@ -63,6 +63,16 @@ class BookingRepository {
       'cancellationReason': raw['cancellation_reason'],
       'createdAt':          raw['created_at'],
       'updatedAt':          raw['updated_at'],
+      // Live tracking / search fields (computed server-side on each show() call)
+      'driverEtaMinutes':   _toInt(raw['driver_eta_minutes']),
+      'driverDistanceKm':   _toDouble(raw['driver_distance_km']),
+      'lastEvent':          raw['last_event']?.toString(),
+      'alternativeTypes':   (raw['alternative_types'] as List?) ?? const [],
+      // Waiting time
+      'arrivedAt':          raw['arrived_at']?.toString(),
+      'freeWaitingMinutes': _toInt(raw['free_waiting_minutes'] ?? 3),
+      'waitingChargePerMin': _toDouble(raw['waiting_charge_per_min'] ?? 0),
+      'waitingExtraCharge': _toDouble(raw['waiting_extra_charge'] ?? 0),
     };
   }
 
@@ -172,6 +182,14 @@ class BookingRepository {
   }
 
   /// Cancel a booking.
+  /// Trigger a new driver search (unassigns current driver and re-searches).
+  Future<void> findAnotherDriver(String id) async {
+    await _client.post<void>(
+      ApiEndpoints.findDriver(id),
+      body: {},
+    );
+  }
+
   Future<void> cancelBooking(String id, {String reason = 'Cancelled by user'}) async {
     await _client.post<void>(
       ApiEndpoints.cancelBooking(id),

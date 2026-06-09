@@ -238,7 +238,7 @@ export function EmailTemplatesPage() {
         [`tpl_${key}_subject`]: subject,
         [`tpl_${key}_body`]:    body,
       }),
-    onSuccess: (data) => {
+    onSuccess: () => {
       toast(`Template saved.`, 'success');
       qc.invalidateQueries({ queryKey: ['email-templates'] });
     },

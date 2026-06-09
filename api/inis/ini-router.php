@@ -13,6 +13,8 @@ $router->get('/content/directions',          'FrontContent@directions');
 $router->get('/content/places',        'FrontContent@placesAutocomplete');
 $router->get('/content/place-details', 'FrontContent@placeDetails');
 $router->get('/content/geocode',       'FrontContent@geocode');
+$router->get('/content/driver-auth-config', 'FrontContent@driverAuthConfig');
+$router->get('/content/driver-locations',   'FrontContent@driverLocations');
 
 // ── Customer auth (public) ────────────────────────────────────────────────────
 $router->post('/auth/register',             'auth@register');
@@ -39,6 +41,7 @@ $router->group('/bookings', function ($r) {
     $r->get('/',                           'Bookings@index');
     $r->get('/:id',                        'Bookings@show');
     $r->post('/:id/cancel',                'Bookings@cancelIfNotStarted');
+    $r->post('/:id/find-driver',           'Bookings@findDriver');
     $r->get('/:id/track',                  'Bookings@track');
     $r->post('/:id/confirm-delivery',      'Bookings@confirmDelivery');
     $r->post('/:id/pay',                   'Payments@initiate');
@@ -60,12 +63,16 @@ $router->post('/payments/webhook/monnify',     'payments/Webhook@monnify');
 
 // ── Driver auth (public) ──────────────────────────────────────────────────────
 $router->post('/driver/auth/login', 'driver/Auth@login');
+$router->post('/driver/auth/register',   'driver/Auth@register');
+$router->post('/driver/auth/send-otp',   'driver/Auth@sendOtp');
+$router->post('/driver/auth/verify-otp', 'driver/Auth@verifyOtp');
 
 // ── Driver protected routes ───────────────────────────────────────────────────
 $router->group('/driver', function ($r) {
 
     // Auth
     $r->post('/auth/logout',           'driver/Auth@logout');
+    $r->get('/auth/profile',           'driver/Auth@getProfile');
     $r->put('/auth/profile',           'driver/Auth@updateProfile');
 
     // Availability
@@ -74,15 +81,19 @@ $router->group('/driver', function ($r) {
     // Location ping
     $r->post('/location',              'driver/Location@ping');
 
+    $r->post('/kyc',                   'driver/Kyc@submit');
+
     // Jobs
     $r->get('/jobs',                   'driver/Jobs@index');
     $r->get('/jobs/:id',               'driver/Jobs@show');
     $r->post('/jobs/:id/accept',       'driver/Jobs@accept');
     $r->post('/jobs/:id/reject',       'driver/Jobs@reject');
+    $r->post('/jobs/:id/cancel',       'driver/Jobs@cancel');
     $r->post('/jobs/:id/arrive',       'driver/Jobs@arrive');
     $r->post('/jobs/:id/start',        'driver/Jobs@start');
-    $r->post('/jobs/:id/complete',     'driver/Jobs@complete');
-    $r->put('/jobs/:id/payment-method','driver/Jobs@updatePaymentMethod');
+    $r->post('/jobs/:id/complete',          'driver/Jobs@complete');
+    $r->post('/jobs/:id/confirm-payment',   'driver/Jobs@confirmPayment');
+    $r->put('/jobs/:id/payment-method',     'driver/Jobs@updatePaymentMethod');
     $r->post('/jobs/:id/stops/:stop_id/reach', 'driver/Jobs@reachStop');
 
     // History

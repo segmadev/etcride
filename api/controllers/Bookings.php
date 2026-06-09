@@ -179,20 +179,36 @@ class Bookings extends BaseController
         $this->recordStatusChange($id, null, 'pending', 'system');
         $this->logActivity('customer', $me['id'], 'booking_created', ['booking_id' => $id]);
 
-        // Auto-assign nearest driver matching the chosen vehicle type
+        // Auto-assign nearest online driver matching the chosen vehicle type
         $assignedDriver = null;
         $autoAssign = $this->setting('auto_assign_enabled', '1') === '1';
         if ($autoAssign) {
             $driver = $this->findNearestDriver($pickupLat, $pickupLng, $vtId);
             if ($driver) {
+                // ── Online driver found — assign immediately ───────────────
                 $this->assignDriver($id, $driver['id'], $insertData);
                 $assignedDriver = [
-                    'id'   => $driver['id'],
-                    'name' => $driver['name'],
-                    'phone'=> $driver['phone'],
+                    'id'    => $driver['id'],
+                    'name'  => $driver['name'],
+                    'phone' => $driver['phone'],
                 ];
                 $insertData['status']    = 'assigned';
                 $insertData['driver_id'] = $driver['id'];
+            } else {
+                // ── No online driver — soft-notify nearby offline drivers ──
+                $offlineDrivers = $this->findNearbyOfflineDrivers($pickupLat, $pickupLng, $vtId);
+                $pickupSummary  = $insertData['pickup_address'] ?? 'a nearby location';
+                foreach ($offlineDrivers as $od) {
+                    $this->notify(
+                        'driver',
+                        $od['id'],
+                        'New Trip Nearby — Are You Available?',
+                        "A {$insertData['booking_type']} has been requested from $pickupSummary. "
+                        . "Go online to accept this trip.",
+                        'trip_interest_request',
+                        $id
+                    );
+                }
             }
         }
 
@@ -318,10 +334,156 @@ class Bookings extends BaseController
                 $booking['payment'] = null;
             }
 
+            // ── last_event: most recent status-history entry ─────────────────
+            try {
+                $evtStmt = $this->db->prepare(
+                    "SELECT to_status, changed_by_role, note
+                     FROM booking_status_history
+                     WHERE booking_id = ?
+                     ORDER BY created_at DESC LIMIT 1"
+                );
+                $evtStmt->execute([$id]);
+                $evtRow = $evtStmt->fetch(PDO::FETCH_ASSOC);
+                if ($evtRow) {
+                    // Map DB status to semantic event name the app can understand
+                    $lastEvent = match($evtRow['to_status']) {
+                        'rejected' => 'driver_declined',
+                        'assigned' => 'driver_assigned',
+                        'accepted' => 'driver_accepted',
+                        'arrived'  => 'driver_arrived',
+                        default    => $evtRow['to_status'],
+                    };
+                    $booking['last_event'] = $lastEvent;
+                }
+            } catch (\Throwable $e) {
+                $booking['last_event'] = null;
+            }
+
+            // ── driver ETA (only when a driver is assigned and has a location) ─
+            $driverId = $booking['driver_id'] ?? null;
+            if ($driverId) {
+                $driverLocStmt = $this->db->prepare(
+                    "SELECT last_lat, last_lng FROM drivers WHERE id = ? AND last_lat IS NOT NULL"
+                );
+                $driverLocStmt->execute([$driverId]);
+                $driverLoc = $driverLocStmt->fetch(PDO::FETCH_ASSOC);
+                if ($driverLoc) {
+                    $eta = $this->calculateDriverEta(
+                        (float) $driverLoc['last_lat'],
+                        (float) $driverLoc['last_lng'],
+                        (float) ($booking['pickup_lat'] ?? 0),
+                        (float) ($booking['pickup_lng'] ?? 0)
+                    );
+                    $booking['driver_eta_minutes']  = $eta['driver_eta_minutes'];
+                    $booking['driver_distance_km']  = $eta['driver_distance_km'];
+                }
+            }
+
+            // ── alternative_types: show when pending with no driver ───────────
+            if (($booking['status'] ?? '') === 'pending' && !$driverId) {
+                $vtId = $booking['vehicle_type_id'] ?? '';
+                $booking['alternative_types'] = $vtId
+                    ? $this->findAlternativeVehicleTypes(
+                          (float) ($booking['pickup_lat'] ?? 0),
+                          (float) ($booking['pickup_lng'] ?? 0),
+                          $vtId
+                      )
+                    : [];
+            } else {
+                $booking['alternative_types'] = [];
+            }
+
+            // ── Waiting time settings (used by customer app live timer) ──────
+            $booking['free_waiting_minutes']   = (int)   $this->setting('free_waiting_minutes',   '3');
+            $booking['waiting_charge_per_min'] = (float) $this->setting('waiting_charge_per_min', '0');
+            // arrived_at and waiting_extra_charge come automatically from SELECT b.*
+
             echo utilities::apiMessage('Booking retrieved.', 200, $booking);
 
         } catch (\Throwable $e) {
             echo utilities::apiMessage('Failed to retrieve booking: ' . $e->getMessage(), 500);
+        }
+    }
+
+    // ── POST /bookings/:id/find-driver ───────────────────────────────────────
+    /**
+     * Customer-triggered "find another driver".
+     * Unassigns the current driver (if any) and triggers reassignment,
+     * excluding previously tried drivers.
+     */
+    public function findDriver(string $id): void
+    {
+        $me      = BaseController::$authUser;
+        $id      = $this->normalizeId($id);
+        $booking = $this->getall('bookings', 'id = ? AND customer_id = ?', [$id, $me['id']]);
+
+        if (!is_array($booking)) {
+            echo utilities::apiMessage('Booking not found.', 404);
+            return;
+        }
+
+        $allowedStatuses = ['pending', 'assigned'];
+        if (!in_array($booking['status'], $allowedStatuses)) {
+            echo utilities::apiMessage(
+                "Cannot search for a new driver when booking is '{$booking['status']}'.", 409
+            );
+            return;
+        }
+
+        // If a driver is currently assigned, unassign them first
+        $currentDriverId = $booking['driver_id'] ?? null;
+        if ($currentDriverId) {
+            $this->update('bookings', ['status' => 'pending', 'driver_id' => null], "id = '$id'");
+            $this->recordStatusChange($id, $booking['status'], 'pending', 'customer', $me['id'], 'Customer requested a new driver');
+        }
+
+        // Notify customer we're searching
+        $this->notify('customer', $me['id'], 'Searching for Driver',
+            'We\'re finding you another driver.', 'driver_search', $id);
+
+        // Gather all previously tried drivers (rejected OR previously assigned)
+        $histStmt = $this->db->prepare(
+            "SELECT DISTINCT changed_by_id
+             FROM booking_status_history
+             WHERE booking_id      = ?
+               AND to_status       = 'rejected'
+               AND changed_by_role = 'driver'
+               AND changed_by_id   IS NOT NULL"
+        );
+        $histStmt->execute([$id]);
+        $excludeIds = $histStmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
+
+        // Also exclude the current driver (who was just unassigned)
+        if ($currentDriverId && !in_array($currentDriverId, $excludeIds)) {
+            $excludeIds[] = $currentDriverId;
+        }
+
+        $vtId       = $booking['vehicle_type_id'] ?? '';
+        $pickupLat  = (float) ($booking['pickup_lat'] ?? 0);
+        $pickupLng  = (float) ($booking['pickup_lng'] ?? 0);
+
+        $nextDriver = $this->findNearestDriverExcluding($pickupLat, $pickupLng, $vtId, $excludeIds);
+
+        if ($nextDriver) {
+            // Refresh the booking row (status is now 'pending' after unassign)
+            $freshBooking = $this->getall('bookings', 'id = ?', [$id]);
+            $this->assignDriver($id, $nextDriver['id'], $freshBooking ?: $booking);
+            echo utilities::apiMessage('New driver found and assigned.', 200);
+        } else {
+            // Soft-notify nearby offline drivers
+            $offlineDrivers = $this->findNearbyOfflineDrivers($pickupLat, $pickupLng, $vtId);
+            $pickup = $booking['pickup_address'] ?? 'your location';
+            foreach ($offlineDrivers as $od) {
+                if (!in_array($od['id'], $excludeIds)) {
+                    $this->notify(
+                        'driver', $od['id'],
+                        'New Trip Nearby',
+                        "A {$booking['booking_type']} near $pickup is waiting. Go online to accept.",
+                        'trip_interest_request', $id
+                    );
+                }
+            }
+            echo utilities::apiMessage('Searching for available drivers. Please wait.', 200);
         }
     }
 
@@ -487,16 +649,7 @@ class Bookings extends BaseController
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    private function assignDriver(string $bookingId, string $driverId, array $booking): void
-    {
-        $prev = $booking['status'] ?? 'pending';
-        $this->update('bookings', ['status' => 'assigned', 'driver_id' => $driverId], "id = '$bookingId'");
-        $this->recordStatusChange($bookingId, $prev, 'assigned', 'system', null, 'Auto-assigned');
-        $this->notify('driver', $driverId, 'New Job Assigned',
-            "You have been assigned a new {$booking['booking_type']} booking.", 'driver_assigned', $bookingId);
-        $this->notify('customer', $booking['customer_id'], 'Driver Found',
-            'A driver has been assigned to your booking.', 'driver_assigned', $bookingId);
-    }
+    // assignDriver() is inherited from BaseController (protected)
 
     // ── PUT /bookings/:id/payment-method ──────────────────────────────────────
     public function updatePaymentMethod(string $id): void

@@ -105,6 +105,16 @@ class BookingModel with _$BookingModel {
     String? cancellationReason,
     String? createdAt,
     String? updatedAt,
+    // ── Live tracking fields (not stored in DB, computed on every show() call) ──
+    @Default(0) int driverEtaMinutes,
+    @Default(0.0) double driverDistanceKm,
+    String? lastEvent,
+    @Default([]) List<dynamic> alternativeTypes,
+    // ── Waiting time ──────────────────────────────────────────────────────────
+    String? arrivedAt,
+    @Default(3) int freeWaitingMinutes,
+    @Default(0.0) double waitingChargePerMin,
+    @Default(0.0) double waitingExtraCharge,
   }) = _BookingModel;
 
   factory BookingModel.fromJson(Map<String, dynamic> json) =>

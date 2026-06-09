@@ -69,7 +69,23 @@ class ApiClient {
       rethrow;
     }
 
-    final body = response.data!;
+    final body = response.data;
+    if (body == null) throw const ParseException('Empty server response.');
+
+    final codeRaw = body['code'];
+    final code = switch (codeRaw) {
+      int v => v,
+      String v => int.tryParse(v),
+      _ => null,
+    };
+    if (code != null && code >= 400) {
+      final msg = body['message']?.toString().trim();
+      throw ApiException(
+        (msg == null || msg.isEmpty) ? 'Request failed.' : msg,
+        statusCode: code,
+      );
+    }
+
     final payload = body['data'];
     if (payload == null) return null;
     return fromJson != null ? fromJson(payload) : payload as T;

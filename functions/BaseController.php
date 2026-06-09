@@ -274,6 +274,73 @@ class BaseController extends helper
         return $R * 2 * atan2(sqrt($a), sqrt(1 - $a));
     }
 
+    // ── Driver ETA calculation ───────────────────────────────────────────────
+
+    /**
+     * Calculate driver ETA to pickup using Haversine × 1.3 road factor ÷ avg speed.
+     * Returns ['driver_distance_km' => float, 'driver_eta_minutes' => int]
+     */
+    protected function calculateDriverEta(
+        float $driverLat, float $driverLng,
+        float $pickupLat, float $pickupLng
+    ): array {
+        $distKm      = $this->haversine($driverLat, $driverLng, $pickupLat, $pickupLng);
+        $roadDistKm  = $distKm * 1.3;
+        $avgSpeedKmh = (float) $this->setting('driver_avg_speed_kmh', '30');
+        $etaMins     = $avgSpeedKmh > 0 ? (int) round($roadDistKm / $avgSpeedKmh * 60) : 0;
+        return [
+            'driver_distance_km' => round($distKm, 2),
+            'driver_eta_minutes' => max(1, $etaMins),
+        ];
+    }
+
+    /**
+     * Find available drivers in OTHER vehicle types near a given location.
+     * Returns array of vehicle type rows, each with an 'available_count'.
+     */
+    protected function findAlternativeVehicleTypes(
+        float  $lat,
+        float  $lng,
+        string $excludeVehicleTypeId
+    ): array {
+        $radius = (float) $this->setting('driver_search_radius_km', '50');
+
+        $sql = "
+            SELECT vt.id, vt.name, vt.icon, COUNT(DISTINCT d.id) AS available_count
+            FROM vehicle_types vt
+            INNER JOIN vehicles v  ON v.vehicle_type_id = vt.id
+            INNER JOIN drivers  d  ON d.vehicle_id = v.id
+                AND d.is_online  = 1
+                AND d.is_active  = 1
+                AND d.last_lat   IS NOT NULL
+                AND d.last_lng   IS NOT NULL
+                AND (6371 * ACOS(
+                    LEAST(1.0, COS(RADIANS(:lat)) * COS(RADIANS(d.last_lat))
+                    * COS(RADIANS(d.last_lng) - RADIANS(:lng))
+                    + SIN(RADIANS(:lat)) * SIN(RADIANS(d.last_lat)))
+                )) <= :radius
+            WHERE vt.is_active = 1
+              AND vt.id <> :exclude_id
+              AND d.id NOT IN (
+                  SELECT b.driver_id FROM bookings b
+                  WHERE b.driver_id IS NOT NULL
+                    AND b.status IN ('assigned','accepted','arrived','in_progress','payment_pending')
+              )
+            GROUP BY vt.id, vt.name, vt.icon
+            HAVING available_count > 0
+            ORDER BY available_count DESC
+        ";
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute([
+            ':lat'        => $lat,
+            ':lng'        => $lng,
+            ':radius'     => $radius,
+            ':exclude_id' => $excludeVehicleTypeId,
+        ]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    }
+
     // ── Fare calculation ──────────────────────────────────────────────────────
 
     /**
@@ -306,6 +373,34 @@ class BaseController extends helper
         return max(round($fare, 2), $minFare);
     }
 
+    // ── Auto-assign: assign helper (shared across Bookings + Jobs) ───────────
+
+    /**
+     * Assign a driver to a booking: updates status, records history, notifies both parties.
+     *
+     * @param string $bookingId  The booking to assign
+     * @param string $driverId   The driver to assign
+     * @param array  $booking    Booking row (needs at least 'status', 'customer_id', 'booking_type')
+     */
+    protected function assignDriver(string $bookingId, string $driverId, array $booking): void
+    {
+        $prev = $booking['status'] ?? 'pending';
+        $this->update('bookings', ['status' => 'assigned', 'driver_id' => $driverId], "id = '$bookingId'");
+        $this->recordStatusChange($bookingId, $prev, 'assigned', 'system', null, 'Auto-assigned');
+        $this->notify(
+            'driver', $driverId,
+            'New Job Assigned',
+            "You have been assigned a new {$booking['booking_type']} booking.",
+            'driver_assigned', $bookingId
+        );
+        $this->notify(
+            'customer', $booking['customer_id'],
+            'Driver Found',
+            'A driver has been assigned to your booking.',
+            'driver_assigned', $bookingId
+        );
+    }
+
     // ── Auto-assign: find nearest free driver ────────────────────────────────
 
     /**
@@ -314,7 +409,7 @@ class BaseController extends helper
      */
     protected function findNearestDriver(float $lat, float $lng, string $vehicleTypeId): ?array
     {
-        $radius = (float) $this->setting('driver_search_radius_km', '10');
+        $radius = (float) $this->setting('driver_search_radius_km', '50');
 
         $sql = "
             SELECT d.id, d.name, d.phone, d.vehicle_id, d.fcm_token,
@@ -347,9 +442,62 @@ class BaseController extends helper
         return $row ?: null;
     }
 
+    /**
+     * Like findNearestDriver but excludes specific driver IDs (e.g., those who already rejected).
+     * Uses positional params so the exclusion list can be dynamically spliced in.
+     */
+    protected function findNearestDriverExcluding(
+        float  $lat,
+        float  $lng,
+        string $vehicleTypeId,
+        array  $excludeDriverIds = []
+    ): ?array {
+        $radius = (float) $this->setting('driver_search_radius_km', '50');
+
+        // Build the exclusion clause dynamically
+        $excludeClause = '';
+        if (!empty($excludeDriverIds)) {
+            $marks = implode(',', array_fill(0, count($excludeDriverIds), '?'));
+            $excludeClause = "AND d.id NOT IN ($marks)";
+        }
+
+        $sql = "
+            SELECT d.id, d.name, d.phone, d.vehicle_id, d.fcm_token,
+                   d.last_lat, d.last_lng,
+                   (6371 * ACOS(
+                       LEAST(1.0, COS(RADIANS(?)) * COS(RADIANS(d.last_lat))
+                       * COS(RADIANS(d.last_lng) - RADIANS(?))
+                       + SIN(RADIANS(?)) * SIN(RADIANS(d.last_lat)))
+                   )) AS distance_km
+            FROM drivers d
+            INNER JOIN vehicles v ON v.id = d.vehicle_id AND v.vehicle_type_id = ?
+            WHERE d.is_online  = 1
+              AND d.is_active  = 1
+              AND d.vehicle_id IS NOT NULL
+              AND d.last_lat   IS NOT NULL
+              AND d.last_lng   IS NOT NULL
+              AND d.id NOT IN (
+                  SELECT b.driver_id FROM bookings b
+                  WHERE b.driver_id IS NOT NULL
+                    AND b.status IN ('assigned','accepted','arrived','in_progress','payment_pending')
+              )
+              $excludeClause
+            HAVING distance_km <= ?
+            ORDER BY distance_km ASC
+            LIMIT 1
+        ";
+
+        // Positional params: lat, lng, lat (ACOS reuse), vehicleTypeId, ...excludeIds, radius
+        $params = array_merge([$lat, $lng, $lat, $vehicleTypeId], $excludeDriverIds, [$radius]);
+        $stmt   = $this->db->prepare($sql);
+        $stmt->execute($params);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $row ?: null;
+    }
+
     protected function countAvailableDrivers(string $vehicleTypeId, float $lat, float $lng): int
     {
-        $radius = (float) $this->setting('driver_search_radius_km', '10');
+        $radius = (float) $this->setting('driver_search_radius_km', '50');
 
         $sql = "
             SELECT COUNT(*) FROM (
@@ -378,6 +526,95 @@ class BaseController extends helper
         $stmt = $this->db->prepare($sql);
         $stmt->execute([':lat' => $lat, ':lng' => $lng, ':radius' => $radius, ':vtid' => $vehicleTypeId]);
         return (int) $stmt->fetchColumn();
+    }
+
+    /**
+     * Find nearby OFFLINE drivers who could be soft-notified about a new trip.
+     * Returns up to $limit drivers sorted by proximity.
+     * Excludes drivers already on an active booking.
+     */
+    protected function findNearbyOfflineDrivers(
+        float  $lat,
+        float  $lng,
+        string $vehicleTypeId,
+        int    $limit = 3
+    ): array {
+        $radius = (float) $this->setting('driver_search_radius_km', '50');
+        // Expand radius slightly for offline suggestions so we cast a wider net
+        $softRadius = $radius * 1.5;
+
+        $sql = "
+            SELECT d.id, d.name, d.phone, d.fcm_token,
+                   d.last_lat, d.last_lng,
+                   (6371 * ACOS(
+                       LEAST(1.0, COS(RADIANS(:lat)) * COS(RADIANS(d.last_lat))
+                       * COS(RADIANS(d.last_lng) - RADIANS(:lng))
+                       + SIN(RADIANS(:lat)) * SIN(RADIANS(d.last_lat)))
+                   )) AS distance_km
+            FROM drivers d
+            INNER JOIN vehicles v ON v.id = d.vehicle_id AND v.vehicle_type_id = :vtid
+            WHERE d.is_online  = 0
+              AND d.is_active  = 1
+              AND d.vehicle_id IS NOT NULL
+              AND d.last_lat   IS NOT NULL
+              AND d.last_lng   IS NOT NULL
+              AND d.id NOT IN (
+                  SELECT b.driver_id FROM bookings b
+                  WHERE b.driver_id IS NOT NULL
+                    AND b.status IN ('assigned','accepted','arrived','in_progress','payment_pending')
+              )
+            HAVING distance_km <= :radius
+            ORDER BY distance_km ASC
+            LIMIT $limit
+        ";
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute([':lat' => $lat, ':lng' => $lng, ':radius' => $softRadius, ':vtid' => $vehicleTypeId]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /**
+     * Find nearest drivers for a booking (both online and nearby-offline).
+     * Returns array with keys 'online' (array) and 'offline' (array).
+     */
+    protected function findDriverCandidates(float $lat, float $lng, string $vehicleTypeId): array
+    {
+        $radius = (float) $this->setting('driver_search_radius_km', '50');
+
+        $sql = "
+            SELECT d.id, d.name, d.phone, d.fcm_token, d.is_online,
+                   d.last_lat, d.last_lng, v.plate_number,
+                   vt.name AS vehicle_type_name,
+                   (6371 * ACOS(
+                       LEAST(1.0, COS(RADIANS(:lat)) * COS(RADIANS(d.last_lat))
+                       * COS(RADIANS(d.last_lng) - RADIANS(:lng))
+                       + SIN(RADIANS(:lat)) * SIN(RADIANS(d.last_lat)))
+                   )) AS distance_km
+            FROM drivers d
+            INNER JOIN vehicles v  ON v.id  = d.vehicle_id AND v.vehicle_type_id = :vtid
+            INNER JOIN vehicle_types vt ON vt.id = v.vehicle_type_id
+            WHERE d.is_active    = 1
+              AND d.vehicle_id   IS NOT NULL
+              AND d.last_lat     IS NOT NULL
+              AND d.last_lng     IS NOT NULL
+              AND d.id NOT IN (
+                  SELECT b.driver_id FROM bookings b
+                  WHERE b.driver_id IS NOT NULL
+                    AND b.status IN ('assigned','accepted','arrived','in_progress','payment_pending')
+              )
+            HAVING distance_km <= :radius
+            ORDER BY d.is_online DESC, distance_km ASC
+            LIMIT 10
+        ";
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute([':lat' => $lat, ':lng' => $lng, ':radius' => $radius, ':vtid' => $vehicleTypeId]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $online  = array_values(array_filter($rows, fn($r) => (int)$r['is_online'] === 1));
+        $offline = array_values(array_filter($rows, fn($r) => (int)$r['is_online'] === 0));
+
+        return ['online' => $online, 'offline' => $offline];
     }
 
     // ── Email helpers ─────────────────────────────────────────────────────────

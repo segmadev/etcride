@@ -387,6 +387,13 @@ export function BookingsPage() {
     enabled: assignOpen,
   });
 
+  const { data: suggestions } = useQuery({
+    queryKey: ['suggest-drivers', selected?.id],
+    queryFn: () => bookingsApi.suggestDrivers(selected!.id),
+    enabled: assignOpen && !!selected?.id,
+    staleTime: 30_000,
+  });
+
   const selectedDriver = useMemo(() => (driverList?.data ?? []).find(d => d.id === assignId) ?? null, [driverList, assignId]);
 
   const hasVehicleMismatch = useMemo(() => {
@@ -725,6 +732,41 @@ export function BookingsPage() {
             {/* Driver selector */}
             <div className="flex-1 min-w-0 flex flex-col gap-3">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Select Driver</p>
+
+              {/* ── Nearest-driver suggestions ─────────────────────────────── */}
+              {(suggestions?.online?.length || suggestions?.offline?.length) ? (
+                <div className="rounded-xl border border-brand-100 bg-brand-50 p-2.5 space-y-1.5">
+                  <p className="text-[10px] font-bold text-brand-600 uppercase tracking-wide flex items-center gap-1">
+                    <MapPin size={10} /> Nearest drivers for this pickup
+                  </p>
+                  {(suggestions.online ?? []).map(d => (
+                    <button key={d.id} onClick={() => { setAssignId(d.id); setMismatchConfirmed(false); }}
+                      className={cn(
+                        'w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-left transition-colors text-xs',
+                        assignId === d.id ? 'bg-brand-600 text-white' : 'bg-white hover:bg-brand-100 text-slate-700',
+                      )}>
+                      <span className="h-2 w-2 rounded-full bg-green-400 shrink-0" />
+                      <span className="font-semibold">{d.name}</span>
+                      <span className={cn('text-[10px]', assignId === d.id ? 'text-brand-100' : 'text-slate-400')}>{d.plate_number}</span>
+                      <span className="ml-auto font-mono text-[10px]">{Number(d.distance_km).toFixed(1)} km</span>
+                    </button>
+                  ))}
+                  {(suggestions.offline ?? []).map(d => (
+                    <button key={d.id} onClick={() => { setAssignId(d.id); setMismatchConfirmed(false); }}
+                      className={cn(
+                        'w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-left transition-colors text-xs border border-dashed',
+                        assignId === d.id ? 'bg-brand-600 text-white border-brand-600' : 'bg-white hover:bg-amber-50 text-slate-500 border-slate-200',
+                      )}>
+                      <span className="h-2 w-2 rounded-full bg-slate-300 shrink-0" />
+                      <span className="font-semibold">{d.name}</span>
+                      <span className={cn('text-[10px]', assignId === d.id ? 'text-brand-100' : 'text-slate-400')}>{d.plate_number}</span>
+                      <span className={cn('text-[10px] ml-1', assignId === d.id ? 'text-brand-200' : 'text-amber-600')}>offline</span>
+                      <span className="ml-auto font-mono text-[10px]">{Number(d.distance_km).toFixed(1)} km</span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+
               <div className="flex gap-2">
                 <div className="relative flex-1">
                   <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />

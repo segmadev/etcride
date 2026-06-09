@@ -1,6 +1,6 @@
 {
-    "name": "etc_ride_customer",
-    "short_name": "etc_ride_customer",
+    "name": "ETCride",
+    "short_name": "ETCride",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

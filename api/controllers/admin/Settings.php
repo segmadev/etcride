@@ -64,6 +64,8 @@ class Settings extends BaseController
             'tpl_driver_assigned_subject',   'tpl_driver_assigned_body',
             'tpl_booking_cancelled_subject', 'tpl_booking_cancelled_body',
             'tpl_welcome_subject',           'tpl_welcome_body',
+            // Driver app
+            'driver_auth_mode', 'driver_locations_json',
         ];
 
         $updated = [];

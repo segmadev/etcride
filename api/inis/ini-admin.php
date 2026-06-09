@@ -26,14 +26,15 @@ $router->group('/admin', function ($r) {
     $r->post('/bookings/:id/deassign',       'admin/Bookings@deassign');
     $r->post('/bookings/:id/cancel',         'admin/Bookings@cancel');
     $r->get('/bookings/:id/track',           'admin/Bookings@track');
+    $r->get('/bookings/:id/suggest-drivers', 'admin/Bookings@suggestDrivers');
 
     // ── Drivers ───────────────────────────────────────────────────────────────
     $r->get('/drivers',                      'admin/Drivers@index');
     $r->post('/drivers',                     'admin/Drivers@create');
     $r->get('/drivers/:id',                  'admin/Drivers@show');
-    $r->put('/drivers/:id',                  'admin/Drivers@edit');
+    $r->post('/drivers/:id',                 'admin/Drivers@edit');       // multipart — POST avoids PHP PUT/FILES issue
     $r->put('/drivers/:id/status',           'admin/Drivers@toggleStatus');
-    $r->put('/drivers/:id/kyc',             'admin/Drivers@updateKyc');
+    $r->post('/drivers/:id/kyc',            'admin/Drivers@updateKyc');  // multipart — POST avoids PHP PUT/FILES issue
     $r->post('/drivers/:id/assign-vehicle',  'admin/Drivers@assignVehicle');
 
     // ── Vehicle types ─────────────────────────────────────────────────────────

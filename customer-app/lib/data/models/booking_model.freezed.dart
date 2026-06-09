@@ -51,6 +51,14 @@ mixin _$BookingModel {
   String? get cancellationReason => throw _privateConstructorUsedError;
   String? get createdAt => throw _privateConstructorUsedError;
   String? get updatedAt => throw _privateConstructorUsedError;
+  int get driverEtaMinutes => throw _privateConstructorUsedError;
+  double get driverDistanceKm => throw _privateConstructorUsedError;
+  String? get lastEvent => throw _privateConstructorUsedError;
+  List<dynamic> get alternativeTypes => throw _privateConstructorUsedError;
+  String? get arrivedAt => throw _privateConstructorUsedError;
+  int get freeWaitingMinutes => throw _privateConstructorUsedError;
+  double get waitingChargePerMin => throw _privateConstructorUsedError;
+  double get waitingExtraCharge => throw _privateConstructorUsedError;
 
   /// Serializes this BookingModel to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -99,7 +107,15 @@ abstract class $BookingModelCopyWith<$Res> {
       int routeDurationSeconds,
       String? cancellationReason,
       String? createdAt,
-      String? updatedAt});
+      String? updatedAt,
+      int driverEtaMinutes,
+      double driverDistanceKm,
+      String? lastEvent,
+      List<dynamic> alternativeTypes,
+      String? arrivedAt,
+      int freeWaitingMinutes,
+      double waitingChargePerMin,
+      double waitingExtraCharge});
 }
 
 /// @nodoc
@@ -148,6 +164,14 @@ class _$BookingModelCopyWithImpl<$Res, $Val extends BookingModel>
     Object? cancellationReason = freezed,
     Object? createdAt = freezed,
     Object? updatedAt = freezed,
+    Object? driverEtaMinutes = null,
+    Object? driverDistanceKm = null,
+    Object? lastEvent = freezed,
+    Object? alternativeTypes = null,
+    Object? arrivedAt = freezed,
+    Object? freeWaitingMinutes = null,
+    Object? waitingChargePerMin = null,
+    Object? waitingExtraCharge = null,
   }) {
     return _then(_value.copyWith(
       id: null == id
@@ -274,6 +298,38 @@ class _$BookingModelCopyWithImpl<$Res, $Val extends BookingModel>
           ? _value.updatedAt
           : updatedAt // ignore: cast_nullable_to_non_nullable
               as String?,
+      driverEtaMinutes: null == driverEtaMinutes
+          ? _value.driverEtaMinutes
+          : driverEtaMinutes // ignore: cast_nullable_to_non_nullable
+              as int,
+      driverDistanceKm: null == driverDistanceKm
+          ? _value.driverDistanceKm
+          : driverDistanceKm // ignore: cast_nullable_to_non_nullable
+              as double,
+      lastEvent: freezed == lastEvent
+          ? _value.lastEvent
+          : lastEvent // ignore: cast_nullable_to_non_nullable
+              as String?,
+      alternativeTypes: null == alternativeTypes
+          ? _value.alternativeTypes
+          : alternativeTypes // ignore: cast_nullable_to_non_nullable
+              as List<dynamic>,
+      arrivedAt: freezed == arrivedAt
+          ? _value.arrivedAt
+          : arrivedAt // ignore: cast_nullable_to_non_nullable
+              as String?,
+      freeWaitingMinutes: null == freeWaitingMinutes
+          ? _value.freeWaitingMinutes
+          : freeWaitingMinutes // ignore: cast_nullable_to_non_nullable
+              as int,
+      waitingChargePerMin: null == waitingChargePerMin
+          ? _value.waitingChargePerMin
+          : waitingChargePerMin // ignore: cast_nullable_to_non_nullable
+              as double,
+      waitingExtraCharge: null == waitingExtraCharge
+          ? _value.waitingExtraCharge
+          : waitingExtraCharge // ignore: cast_nullable_to_non_nullable
+              as double,
     ) as $Val);
   }
 }
@@ -317,7 +373,15 @@ abstract class _$$BookingModelImplCopyWith<$Res>
       int routeDurationSeconds,
       String? cancellationReason,
       String? createdAt,
-      String? updatedAt});
+      String? updatedAt,
+      int driverEtaMinutes,
+      double driverDistanceKm,
+      String? lastEvent,
+      List<dynamic> alternativeTypes,
+      String? arrivedAt,
+      int freeWaitingMinutes,
+      double waitingChargePerMin,
+      double waitingExtraCharge});
 }
 
 /// @nodoc
@@ -364,6 +428,14 @@ class __$$BookingModelImplCopyWithImpl<$Res>
     Object? cancellationReason = freezed,
     Object? createdAt = freezed,
     Object? updatedAt = freezed,
+    Object? driverEtaMinutes = null,
+    Object? driverDistanceKm = null,
+    Object? lastEvent = freezed,
+    Object? alternativeTypes = null,
+    Object? arrivedAt = freezed,
+    Object? freeWaitingMinutes = null,
+    Object? waitingChargePerMin = null,
+    Object? waitingExtraCharge = null,
   }) {
     return _then(_$BookingModelImpl(
       id: null == id
@@ -490,6 +562,38 @@ class __$$BookingModelImplCopyWithImpl<$Res>
           ? _value.updatedAt
           : updatedAt // ignore: cast_nullable_to_non_nullable
               as String?,
+      driverEtaMinutes: null == driverEtaMinutes
+          ? _value.driverEtaMinutes
+          : driverEtaMinutes // ignore: cast_nullable_to_non_nullable
+              as int,
+      driverDistanceKm: null == driverDistanceKm
+          ? _value.driverDistanceKm
+          : driverDistanceKm // ignore: cast_nullable_to_non_nullable
+              as double,
+      lastEvent: freezed == lastEvent
+          ? _value.lastEvent
+          : lastEvent // ignore: cast_nullable_to_non_nullable
+              as String?,
+      alternativeTypes: null == alternativeTypes
+          ? _value.alternativeTypes
+          : alternativeTypes // ignore: cast_nullable_to_non_nullable
+              as List<dynamic>,
+      arrivedAt: freezed == arrivedAt
+          ? _value.arrivedAt
+          : arrivedAt // ignore: cast_nullable_to_non_nullable
+              as String?,
+      freeWaitingMinutes: null == freeWaitingMinutes
+          ? _value.freeWaitingMinutes
+          : freeWaitingMinutes // ignore: cast_nullable_to_non_nullable
+              as int,
+      waitingChargePerMin: null == waitingChargePerMin
+          ? _value.waitingChargePerMin
+          : waitingChargePerMin // ignore: cast_nullable_to_non_nullable
+              as double,
+      waitingExtraCharge: null == waitingExtraCharge
+          ? _value.waitingExtraCharge
+          : waitingExtraCharge // ignore: cast_nullable_to_non_nullable
+              as double,
     ));
   }
 }
@@ -528,7 +632,15 @@ class _$BookingModelImpl implements _BookingModel {
       this.routeDurationSeconds = 0,
       this.cancellationReason,
       this.createdAt,
-      this.updatedAt});
+      this.updatedAt,
+      this.driverEtaMinutes = 0,
+      this.driverDistanceKm = 0.0,
+      this.lastEvent,
+      this.alternativeTypes = const [],
+      this.arrivedAt,
+      this.freeWaitingMinutes = 3,
+      this.waitingChargePerMin = 0.0,
+      this.waitingExtraCharge = 0.0});
 
   factory _$BookingModelImpl.fromJson(Map<String, dynamic> json) =>
       _$$BookingModelImplFromJson(json);
@@ -604,10 +716,32 @@ class _$BookingModelImpl implements _BookingModel {
   final String? createdAt;
   @override
   final String? updatedAt;
+  @override
+  @JsonKey()
+  final int driverEtaMinutes;
+  @override
+  @JsonKey()
+  final double driverDistanceKm;
+  @override
+  final String? lastEvent;
+  @override
+  @JsonKey()
+  final List<dynamic> alternativeTypes;
+  @override
+  final String? arrivedAt;
+  @override
+  @JsonKey()
+  final int freeWaitingMinutes;
+  @override
+  @JsonKey()
+  final double waitingChargePerMin;
+  @override
+  @JsonKey()
+  final double waitingExtraCharge;
 
   @override
   String toString() {
-    return 'BookingModel(id: $id, bookingCode: $bookingCode, status: $status, bookingType: $bookingType, pickupAddress: $pickupAddress, destinationAddress: $destinationAddress, pickupLat: $pickupLat, pickupLng: $pickupLng, destinationLat: $destinationLat, destinationLng: $destinationLng, estimatedFare: $estimatedFare, finalFare: $finalFare, paymentStatus: $paymentStatus, paymentMethod: $paymentMethod, driverId: $driverId, driverName: $driverName, driverPhone: $driverPhone, driverAvatar: $driverAvatar, driverRating: $driverRating, vehicleTypeName: $vehicleTypeName, vehiclePlate: $vehiclePlate, vehicleColor: $vehicleColor, numStops: $numStops, durationMinutes: $durationMinutes, distanceKm: $distanceKm, routePolyline: $routePolyline, routeDistanceMeters: $routeDistanceMeters, routeDurationSeconds: $routeDurationSeconds, cancellationReason: $cancellationReason, createdAt: $createdAt, updatedAt: $updatedAt)';
+    return 'BookingModel(id: $id, bookingCode: $bookingCode, status: $status, bookingType: $bookingType, pickupAddress: $pickupAddress, destinationAddress: $destinationAddress, pickupLat: $pickupLat, pickupLng: $pickupLng, destinationLat: $destinationLat, destinationLng: $destinationLng, estimatedFare: $estimatedFare, finalFare: $finalFare, paymentStatus: $paymentStatus, paymentMethod: $paymentMethod, driverId: $driverId, driverName: $driverName, driverPhone: $driverPhone, driverAvatar: $driverAvatar, driverRating: $driverRating, vehicleTypeName: $vehicleTypeName, vehiclePlate: $vehiclePlate, vehicleColor: $vehicleColor, numStops: $numStops, durationMinutes: $durationMinutes, distanceKm: $distanceKm, routePolyline: $routePolyline, routeDistanceMeters: $routeDistanceMeters, routeDurationSeconds: $routeDurationSeconds, cancellationReason: $cancellationReason, createdAt: $createdAt, updatedAt: $updatedAt, driverEtaMinutes: $driverEtaMinutes, driverDistanceKm: $driverDistanceKm, lastEvent: $lastEvent, alternativeTypes: $alternativeTypes, arrivedAt: $arrivedAt, freeWaitingMinutes: $freeWaitingMinutes, waitingChargePerMin: $waitingChargePerMin, waitingExtraCharge: $waitingExtraCharge)';
   }
 
   @override
@@ -674,7 +808,23 @@ class _$BookingModelImpl implements _BookingModel {
             (identical(other.createdAt, createdAt) ||
                 other.createdAt == createdAt) &&
             (identical(other.updatedAt, updatedAt) ||
-                other.updatedAt == updatedAt));
+                other.updatedAt == updatedAt) &&
+            (identical(other.driverEtaMinutes, driverEtaMinutes) ||
+                other.driverEtaMinutes == driverEtaMinutes) &&
+            (identical(other.driverDistanceKm, driverDistanceKm) ||
+                other.driverDistanceKm == driverDistanceKm) &&
+            (identical(other.lastEvent, lastEvent) ||
+                other.lastEvent == lastEvent) &&
+            (identical(other.alternativeTypes, alternativeTypes) ||
+                other.alternativeTypes == alternativeTypes) &&
+            (identical(other.arrivedAt, arrivedAt) ||
+                other.arrivedAt == arrivedAt) &&
+            (identical(other.freeWaitingMinutes, freeWaitingMinutes) ||
+                other.freeWaitingMinutes == freeWaitingMinutes) &&
+            (identical(other.waitingChargePerMin, waitingChargePerMin) ||
+                other.waitingChargePerMin == waitingChargePerMin) &&
+            (identical(other.waitingExtraCharge, waitingExtraCharge) ||
+                other.waitingExtraCharge == waitingExtraCharge));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -711,7 +861,15 @@ class _$BookingModelImpl implements _BookingModel {
         routeDurationSeconds,
         cancellationReason,
         createdAt,
-        updatedAt
+        updatedAt,
+        driverEtaMinutes,
+        driverDistanceKm,
+        lastEvent,
+        alternativeTypes,
+        arrivedAt,
+        freeWaitingMinutes,
+        waitingChargePerMin,
+        waitingExtraCharge
       ]);
 
   /// Create a copy of BookingModel
@@ -762,7 +920,15 @@ abstract class _BookingModel implements BookingModel {
       final int routeDurationSeconds,
       final String? cancellationReason,
       final String? createdAt,
-      final String? updatedAt}) = _$BookingModelImpl;
+      final String? updatedAt,
+      final int driverEtaMinutes,
+      final double driverDistanceKm,
+      final String? lastEvent,
+      final List<dynamic> alternativeTypes,
+      final String? arrivedAt,
+      final int freeWaitingMinutes,
+      final double waitingChargePerMin,
+      final double waitingExtraCharge}) = _$BookingModelImpl;
 
   factory _BookingModel.fromJson(Map<String, dynamic> json) =
       _$BookingModelImpl.fromJson;
@@ -829,6 +995,22 @@ abstract class _BookingModel implements BookingModel {
   String? get createdAt;
   @override
   String? get updatedAt;
+  @override
+  int get driverEtaMinutes;
+  @override
+  double get driverDistanceKm;
+  @override
+  String? get lastEvent;
+  @override
+  List<dynamic> get alternativeTypes;
+  @override
+  String? get arrivedAt;
+  @override
+  int get freeWaitingMinutes;
+  @override
+  double get waitingChargePerMin;
+  @override
+  double get waitingExtraCharge;
 
   /// Create a copy of BookingModel
   /// with the given fields replaced by the non-null parameter values.

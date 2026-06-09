@@ -249,7 +249,7 @@ function MapCanvas({
                 fillColor:     color,
                 fillOpacity:   isActive ? 0.18 : 0.08,
                 zIndex:        isActive ? 4 : 2,
-                cursor:        isActive ? 'move' : 'pointer',
+                // cursor is not a valid PolygonOptions field — handled via CSS on the container
               }}
             />
           );

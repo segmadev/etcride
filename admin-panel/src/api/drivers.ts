@@ -58,14 +58,15 @@ export const driversApi = {
       }),
     ),
 
-  update: (id: string, payload: { name?: string; email?: string; license_number?: string; photo?: File | null }) => {
+  update: (id: string, payload: { name?: string; email?: string; license_number?: string; photo?: File | null; password?: string }) => {
     const fd = new FormData();
     if (payload.name)           fd.append('name',           payload.name);
     if (payload.email)          fd.append('email',          payload.email);
     if (payload.license_number) fd.append('license_number', payload.license_number);
     if (payload.photo)          fd.append('photo',          payload.photo);
+    if (payload.password)       fd.append('password',       btoa(payload.password));
     return apiRequest<{ photo_url: string | null }>(
-      apiClient.put(`/admin/drivers/${id}`, fd, {
+      apiClient.post(`/admin/drivers/${id}`, fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
       }),
     );
@@ -100,7 +101,7 @@ export const driversApi = {
     if (payload.kyc_id_front)  fd.append('kyc_id_front',  payload.kyc_id_front);
     if (payload.kyc_id_back)   fd.append('kyc_id_back',   payload.kyc_id_back);
     return apiRequest<{ kyc_status: KycStatus; kyc_front_url: string | null; kyc_back_url: string | null }>(
-      apiClient.put(`/admin/drivers/${id}/kyc`, fd, {
+      apiClient.post(`/admin/drivers/${id}/kyc`, fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
       }),
     );

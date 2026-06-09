@@ -25,16 +25,19 @@ class RequestingScreen extends ConsumerStatefulWidget {
 
 class _RequestingScreenState extends ConsumerState<RequestingScreen> {
   Timer? _pollTimer;
+  Timer? _assignedTimer;       // 1-min countdown after driver is assigned
   GoogleMapController? _mapCtrl;
   int _mapVersion = 0;
 
   BookingModel? _booking;
-  bool          _cancelling = false;
+  bool _cancelling      = false;
+  bool _showFindAnother = false;   // becomes true after 1 min in 'assigned' state
+  bool _findingAnother  = false;
 
   // Route state
   List<LatLng>   _routePoints    = [];
   bool           _routeLoaded    = false;
-  int            _durationSec    = 0;   // actual driving duration from Directions API
+  int            _durationSec    = 0;
   LatLngBounds?  _routeBounds;
   String?        _routePolylineUsed;
 
@@ -42,7 +45,7 @@ class _RequestingScreenState extends ConsumerState<RequestingScreen> {
   void initState() {
     super.initState();
     _loadBooking();
-    _pollTimer = Timer.periodic(const Duration(seconds: 10), (_) => _poll());
+    _pollTimer = Timer.periodic(const Duration(seconds: 8), (_) => _poll());
   }
 
   // ── Data ────────────────────────────────────────────────────────────────────
@@ -99,7 +102,8 @@ class _RequestingScreenState extends ConsumerState<RequestingScreen> {
       if (!mounted) return;
       final changed = _booking == null ||
           _booking!.status != b.status ||
-          _booking!.driverId != b.driverId;
+          _booking!.driverId != b.driverId ||
+          _booking!.lastEvent != b.lastEvent;
       if (changed) setState(() => _booking = b);
       _fetchRoute(b);
       _handleStatus(b);
@@ -118,19 +122,24 @@ class _RequestingScreenState extends ConsumerState<RequestingScreen> {
 
   void _handleStatus(BookingModel b) {
     if (!mounted) return;
-    if (b.status == BookingStatus.assigned ||
-        b.status == BookingStatus.accepted ||
-        b.status == BookingStatus.arrived) {
+    // Driver accepted or already arrived → go to driver-assigned screen
+    if (b.status == BookingStatus.accepted || b.status == BookingStatus.arrived) {
       _stop();
       context.go(AppRoutes.driverAssigned, extra: widget.bookingId);
-    } else if (b.status == BookingStatus.inProgress) {
+      return;
+    }
+    if (b.status == BookingStatus.inProgress) {
       _stop();
       context.go(AppRoutes.tripInProgress, extra: widget.bookingId);
-    } else if (b.status == BookingStatus.paymentPending ||
+      return;
+    }
+    if (b.status == BookingStatus.paymentPending ||
         b.status == BookingStatus.completed) {
       _stop();
       context.go(AppRoutes.payment, extra: widget.bookingId);
-    } else if (b.status == BookingStatus.cancelled) {
+      return;
+    }
+    if (b.status == BookingStatus.cancelled) {
       _stop();
       ref.invalidate(activeBookingProvider('ride'));
       ref.invalidate(activeBookingProvider('delivery'));
@@ -138,6 +147,42 @@ class _RequestingScreenState extends ConsumerState<RequestingScreen> {
           content: Text('Booking was cancelled.'),
           backgroundColor: AppColors.error));
       context.go(AppRoutes.home);
+      return;
+    }
+    // 'assigned' — driver found but not yet accepted
+    if (b.status == BookingStatus.assigned) {
+      _startAssignedTimer();
+    } else {
+      // 'pending' — searching or driver declined
+      _cancelAssignedTimer();
+    }
+  }
+
+  void _startAssignedTimer() {
+    if (_assignedTimer?.isActive == true) return;
+    _assignedTimer = Timer(const Duration(minutes: 1), () {
+      if (mounted) setState(() => _showFindAnother = true);
+    });
+  }
+
+  void _cancelAssignedTimer() {
+    _assignedTimer?.cancel();
+    _assignedTimer = null;
+    if (_showFindAnother && mounted) setState(() => _showFindAnother = false);
+  }
+
+  Future<void> _findAnotherDriver() async {
+    setState(() => _findingAnother = true);
+    try {
+      _cancelAssignedTimer();
+      await ref.read(bookingRepositoryProvider).findAnotherDriver(widget.bookingId);
+      if (mounted) setState(() => _findingAnother = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _findingAnother = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(e.toString()), backgroundColor: AppColors.error));
+      }
     }
   }
 
@@ -302,12 +347,15 @@ class _RequestingScreenState extends ConsumerState<RequestingScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(e.toString()), backgroundColor: AppColors.error));
         setState(() => _cancelling = false);
-        _pollTimer = Timer.periodic(const Duration(seconds: 10), (_) => _poll());
+        _pollTimer = Timer.periodic(const Duration(seconds: 8), (_) => _poll());
       }
     }
   }
 
-  void _stop() { _pollTimer?.cancel(); }
+  void _stop() {
+    _pollTimer?.cancel();
+    _assignedTimer?.cancel();
+  }
 
   @override
   void dispose() {
@@ -388,16 +436,22 @@ class _RequestingScreenState extends ConsumerState<RequestingScreen> {
           Positioned(
             left: 0, right: 0, bottom: 0,
             child: _InfoSheet(
-              pickupAddress: pickupAddr,
-              destAddress:   destAddr,
-              fare:          fare,
-              vehicleType:   vtName.isNotEmpty ? vtName : 'Standard',
-              distanceKm:    distKm,
-              durationSec:   _durationSec,
-              isDelivery:    isDelivery,
-              cancelling:    _cancelling,
-              status:        _booking?.status,
-              onCancel:      _cancel,
+              pickupAddress:      pickupAddr,
+              destAddress:        destAddr,
+              fare:               fare,
+              vehicleType:        vtName.isNotEmpty ? vtName : 'Standard',
+              distanceKm:         distKm,
+              durationSec:        _durationSec,
+              isDelivery:         isDelivery,
+              cancelling:         _cancelling,
+              status:             _booking?.status,
+              lastEvent:          _booking?.lastEvent,
+              driverEtaMinutes:   _booking?.driverEtaMinutes ?? 0,
+              alternativeTypes:   _booking?.alternativeTypes ?? const [],
+              showFindAnother:    _showFindAnother,
+              findingAnother:     _findingAnother,
+              onCancel:           _cancel,
+              onFindAnother:      _findAnotherDriver,
             ),
           ),
         ],
@@ -504,7 +558,7 @@ class _MapPlaceholder extends StatelessWidget {
 
 // ── Info sheet ────────────────────────────────────────────────────────────────
 
-class _InfoSheet extends StatefulWidget {
+class _InfoSheet extends StatelessWidget {
   const _InfoSheet({
     required this.pickupAddress,
     required this.destAddress,
@@ -515,32 +569,31 @@ class _InfoSheet extends StatefulWidget {
     required this.isDelivery,
     required this.cancelling,
     required this.onCancel,
+    required this.onFindAnother,
+    required this.showFindAnother,
+    required this.findingAnother,
+    required this.driverEtaMinutes,
+    required this.alternativeTypes,
     this.status,
+    this.lastEvent,
   });
 
-  final String        pickupAddress;
-  final String        destAddress;
-  final double        fare;
-  final String        vehicleType;
-  final double        distanceKm;
-  final int           durationSec;
-  final bool          isDelivery;
-  final bool          cancelling;
+  final String         pickupAddress;
+  final String         destAddress;
+  final double         fare;
+  final String         vehicleType;
+  final double         distanceKm;
+  final int            durationSec;
+  final bool           isDelivery;
+  final bool           cancelling;
   final BookingStatus? status;
-  final VoidCallback  onCancel;
-
-  @override
-  State<_InfoSheet> createState() => _InfoSheetState();
-}
-
-class _InfoSheetState extends State<_InfoSheet> {
-  String get _pickupInCompact {
-    final sec = widget.durationSec;
-    if (sec <= 0) return '—';
-    final m = sec ~/ 60;
-    final s = sec % 60;
-    return '${m}m ${s}s';
-  }
+  final String?        lastEvent;
+  final int            driverEtaMinutes;
+  final List<dynamic>  alternativeTypes;
+  final bool           showFindAnother;
+  final bool           findingAnother;
+  final VoidCallback   onCancel;
+  final VoidCallback   onFindAnother;
 
   String get _scheduledTime {
     final now = TimeOfDay.now();
@@ -554,6 +607,9 @@ class _InfoSheetState extends State<_InfoSheet> {
     if (addr.isEmpty) return '';
     return addr.split(',').first.trim();
   }
+
+  bool get _isAssigned => status == BookingStatus.assigned;
+  bool get _isDeclined => lastEvent == 'driver_declined' && status == BookingStatus.pending;
 
   @override
   Widget build(BuildContext context) {
@@ -581,34 +637,110 @@ class _InfoSheetState extends State<_InfoSheet> {
             ),
           ),
 
-          Text('Finding your driver…', style: AppTextStyles.h4, textAlign: TextAlign.center),
-          const SizedBox(height: 6),
-          Text(
-            'This usually takes a few seconds',
-            style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 20),
-          Row(
-            children: [
-              Text('Pick Up in', style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.w700)),
-              const SizedBox(width: 8),
+          // ── Status heading ────────────────────────────────────────────────
+          if (_isAssigned) ...[
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.check_circle_outline_rounded,
+                    color: AppColors.success, size: 20),
+                const SizedBox(width: 8),
+                Text('Driver found!', style: AppTextStyles.h4, textAlign: TextAlign.center),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Waiting for driver to accept your request…',
+              style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+              textAlign: TextAlign.center,
+            ),
+            if (driverEtaMinutes > 0) ...[
+              const SizedBox(height: 8),
               Text(
-                _pickupInCompact,
-                style: AppTextStyles.bodyMedium.copyWith(
-                  color: AppColors.primary,
-                  fontWeight: FontWeight.w700,
-                ),
+                'Estimated arrival: $driverEtaMinutes min${driverEtaMinutes == 1 ? "" : "s"}',
+                style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.primary, fontWeight: FontWeight.w700),
+                textAlign: TextAlign.center,
               ),
             ],
-          ),
-          const SizedBox(height: 14),
+          ] else if (_isDeclined) ...[
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.info_outline_rounded,
+                    color: AppColors.warning, size: 20),
+                const SizedBox(width: 8),
+                Text('Driver declined', style: AppTextStyles.h4, textAlign: TextAlign.center),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'We\'re finding you another driver…',
+              style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+              textAlign: TextAlign.center,
+            ),
+          ] else ...[
+            Text('Finding your driver…', style: AppTextStyles.h4, textAlign: TextAlign.center),
+            const SizedBox(height: 6),
+            Text(
+              'This usually takes a few seconds',
+              style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+              textAlign: TextAlign.center,
+            ),
+          ],
+
+          // ── Alternative types suggestion ──────────────────────────────────
+          if (alternativeTypes.isNotEmpty && status == BookingStatus.pending) ...[
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: AppColors.primaryLight.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'No $vehicleType drivers nearby. Try:',
+                    style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.primary, fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: alternativeTypes.take(3).map((t) {
+                      final m     = t as Map<String, dynamic>? ?? {};
+                      final name  = m['name']?.toString() ?? '';
+                      final count = int.tryParse(m['available_count']?.toString() ?? '0') ?? 0;
+                      return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          '$name ($count available)',
+                          style: AppTextStyles.caption.copyWith(
+                              color: AppColors.primary, fontWeight: FontWeight.w600),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          const SizedBox(height: 16),
           const Divider(height: 1),
           const SizedBox(height: 14),
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              'To ${_short(widget.destAddress)}',
+              'To ${_short(destAddress)}',
               style: AppTextStyles.bodyLarge.copyWith(fontWeight: FontWeight.w700),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -618,7 +750,7 @@ class _InfoSheetState extends State<_InfoSheet> {
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              'at $_scheduledTime from ${_short(widget.pickupAddress)}',
+              'at $_scheduledTime from ${_short(pickupAddress)}',
               style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -630,7 +762,7 @@ class _InfoSheetState extends State<_InfoSheet> {
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              '${widget.vehicleType.toUpperCase()} ~${AppFormatters.naira(widget.fare)}',
+              '${vehicleType.toUpperCase()} ~${AppFormatters.naira(fare)}',
               style: AppTextStyles.bodyLarge.copyWith(fontWeight: FontWeight.w800),
             ),
           ),
@@ -653,12 +785,35 @@ class _InfoSheetState extends State<_InfoSheet> {
               ),
             ],
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 14),
+
+          // ── "Find another driver" button (shown after 1 min in assigned state) ─
+          if (showFindAnother) ...[
+            SizedBox(
+              width: double.infinity,
+              height: 54,
+              child: OutlinedButton(
+                onPressed: findingAnother ? null : onFindAnother,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.primary,
+                  side: const BorderSide(color: AppColors.primary),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+                ),
+                child: Text(
+                  findingAnother ? 'Searching…' : 'FIND ANOTHER DRIVER',
+                  style: AppTextStyles.labelLarge.copyWith(
+                      color: AppColors.primary, letterSpacing: 0.6),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
+
           SizedBox(
             width: double.infinity,
             height: 54,
             child: ElevatedButton(
-              onPressed: widget.cancelling ? null : widget.onCancel,
+              onPressed: cancelling ? null : onCancel,
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFFD9D9D9),
                 foregroundColor: const Color(0xFF6B6B6B),
@@ -666,7 +821,7 @@ class _InfoSheetState extends State<_InfoSheet> {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
               ),
               child: Text(
-                widget.cancelling ? '...' : 'CANCEL REQUEST',
+                cancelling ? '...' : 'CANCEL REQUEST',
                 style: AppTextStyles.labelLarge.copyWith(letterSpacing: 0.6),
               ),
             ),

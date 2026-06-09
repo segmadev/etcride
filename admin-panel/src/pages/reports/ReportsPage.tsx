@@ -7,7 +7,6 @@ import {
 import { PageWrapper } from '../../components/layout/PageWrapper';
 import { Card } from '../../components/ui/Card';
 import { Table } from '../../components/ui/Table';
-import { Button } from '../../components/ui/Button';
 import { reportsApi } from '../../api';
 import { formatCurrency, formatDate } from '../../utils';
 import { cn } from '../../utils';

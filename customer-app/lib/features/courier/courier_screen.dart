@@ -49,7 +49,10 @@ class _CourierScreenState extends ConsumerState<CourierScreen> {
     }
 
     final enabled = await Geolocator.isLocationServiceEnabled();
-    if (!enabled) return null;
+    if (!enabled) {
+      await Geolocator.openLocationSettings();
+      return null;
+    }
 
     var perm = await Geolocator.checkPermission();
     if (perm == LocationPermission.denied) {
@@ -70,15 +73,29 @@ class _CourierScreenState extends ConsumerState<CourierScreen> {
       final pos = await _getPosition();
       if (pos == null) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Enable location permission in your browser/device settings.'),
-              backgroundColor: AppColors.error,
-            ),
-          );
-          if (!kIsWeb) {
-            context.push(AppRoutes.locationPermission);
+          if (kIsWeb) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Enable location permission in your browser settings.'),
+                backgroundColor: AppColors.error,
+              ),
+            );
+          } else {
+            await context.push(AppRoutes.locationPermission);
           }
+        }
+        final retry = await _getPosition();
+        if (retry != null) {
+          final address = await MapsService.reverseGeocode(retry.latitude, retry.longitude);
+          _pickupCtrl.text = address ?? 'My Location';
+
+          ref.read(bookingDraftProvider.notifier).update((d) => d.copyWith(
+                bookingType:   'delivery',
+                pickupAddress: _pickupCtrl.text,
+                pickupLat:     retry.latitude,
+                pickupLng:     retry.longitude,
+              ));
+          return;
         }
         _pickupCtrl.text = 'My Location';
         return;

@@ -319,7 +319,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with SingleTickerProv
                                       children: [
                                         const Icon(Icons.alternate_email_rounded, size: 18, color: AppColors.textHint),
                                         const SizedBox(width: 10),
-                                        Expanded(child: Text(s, style: AppTextStyles.bodyMedium)),
+                                        Expanded(child: _EmailSuggestionText(email: s)),
                                       ],
                                     ),
                                   ),
@@ -393,6 +393,38 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with SingleTickerProv
           ),
         ),
       ),
+    );
+  }
+}
+
+class _EmailSuggestionText extends StatelessWidget {
+  const _EmailSuggestionText({required this.email});
+  final String email;
+
+  @override
+  Widget build(BuildContext context) {
+    final at = email.indexOf('@');
+    if (at < 0) {
+      return Text(email, style: AppTextStyles.bodyMedium);
+    }
+    final local = email.substring(0, at + 1);
+    final domain = email.substring(at + 1);
+    return RichText(
+      text: TextSpan(
+        style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textPrimary),
+        children: [
+          TextSpan(text: local),
+          TextSpan(
+            text: domain,
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: AppColors.primary,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
     );
   }
 }

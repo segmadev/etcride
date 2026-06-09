@@ -32,20 +32,11 @@ class TripInProgressScreen extends ConsumerStatefulWidget {
 class _TripInProgressScreenState
     extends ConsumerState<TripInProgressScreen> {
   BookingModel? _booking;
-  Timer? _pollTimer;
-  Timer? _driverAnimTimer;
-  GoogleMapController? _mapCtrl;
-  int _mapVersion = 0;
+  Timer?        _pollTimer;
 
-  List<LatLng>  _routePoints = [];
-  bool          _routeLoaded = false;
-  LatLngBounds? _routeBounds;
-  String?       _routePolylineUsed;
-
-  LatLng? _driverPos;
-  double  _driverRotation = 0;
-
-  static const _defaultCenter = LatLng(8.4966, 4.5421);
+  // Raw driver GPS from each poll — passed to the map widget which handles
+  // animation internally (avoids 25fps parent rebuilds that cause blink).
+  LatLng? _driverTarget;
 
   @override
   void initState() {
@@ -59,7 +50,6 @@ class _TripInProgressScreenState
       final b = await ref.read(bookingRepositoryProvider).getBooking(widget.bookingId);
       if (!mounted) return;
       setState(() => _booking = b);
-      _fetchRoute(b);
       _loadTrack(b);
 
       if (b.status == BookingStatus.paymentPending ||
@@ -83,34 +73,6 @@ class _TripInProgressScreenState
     } catch (_) {}
   }
 
-  void _fetchRoute(BookingModel b) {
-    if (b.pickupLat == 0 || b.destinationLat == 0) return;
-
-    final encoded = (b.routePolyline ?? '').trim();
-    if (_routeLoaded && (encoded.isEmpty || encoded == _routePolylineUsed)) return;
-    final fallbackPts = [
-      LatLng(b.pickupLat, b.pickupLng),
-      LatLng(b.destinationLat, b.destinationLng),
-    ];
-    final points = encoded.isNotEmpty
-        ? MapsService.decodePolylineBest(
-            encoded,
-            origin: fallbackPts.first,
-            destination: fallbackPts.last,
-          )
-        : fallbackPts;
-    if (encoded.isNotEmpty && !_routeLooksValid(points, fallbackPts.first, fallbackPts.last)) {
-      return;
-    }
-    setState(() {
-      _routePoints = points.length >= 2 ? points : fallbackPts;
-      _routeBounds = MapsService.boundsFromPoints(_routePoints);
-      _routeLoaded = true;
-      _routePolylineUsed = encoded.isNotEmpty ? encoded : _routePolylineUsed;
-    });
-    _fitRoute();
-  }
-
   Future<void> _loadTrack(BookingModel b) async {
     if (b.driverId == null) return;
     try {
@@ -119,144 +81,17 @@ class _TripInProgressScreenState
       final lat = t.lat;
       final lng = t.lng;
       if (lat == null || lng == null) return;
-      _animateDriverTo(LatLng(lat, lng));
+      final next = LatLng(lat, lng);
+      if (_driverTarget?.latitude  != next.latitude ||
+          _driverTarget?.longitude != next.longitude) {
+        setState(() => _driverTarget = next);
+      }
     } catch (_) {}
   }
-
-  void _animateDriverTo(LatLng next) {
-    final prev = _driverPos;
-    if (prev == null) {
-      setState(() => _driverPos = next);
-      return;
-    }
-
-    final rotation = _bearingDegrees(prev, next);
-    _driverAnimTimer?.cancel();
-
-    const steps = 20;
-    var i = 0;
-    _driverAnimTimer = Timer.periodic(const Duration(milliseconds: 40), (t) {
-      i++;
-      final f = i / steps;
-      final pos = LatLng(
-        prev.latitude + (next.latitude - prev.latitude) * f,
-        prev.longitude + (next.longitude - prev.longitude) * f,
-      );
-      if (!mounted) { t.cancel(); return; }
-      setState(() {
-        _driverPos = pos;
-        _driverRotation = rotation;
-      });
-      if (i >= steps) t.cancel();
-    });
-  }
-
-  double _bearingDegrees(LatLng from, LatLng to) {
-    final lat1 = _degToRad(from.latitude);
-    final lat2 = _degToRad(to.latitude);
-    final dLon = _degToRad(to.longitude - from.longitude);
-    final y = math.sin(dLon) * math.cos(lat2);
-    final x = math.cos(lat1) * math.sin(lat2) -
-        math.sin(lat1) * math.cos(lat2) * math.cos(dLon);
-    final brng = math.atan2(y, x);
-    return (brng * 180 / math.pi + 360) % 360;
-  }
-
-  double _degToRad(double d) => d * math.pi / 180;
-
-  double _haversineKm(LatLng a, LatLng b) {
-    const r = 6371.0;
-    final dLat = _degToRad(b.latitude - a.latitude);
-    final dLng = _degToRad(b.longitude - a.longitude);
-    final lat1 = _degToRad(a.latitude);
-    final lat2 = _degToRad(b.latitude);
-    final s1 = math.sin(dLat / 2);
-    final s2 = math.sin(dLng / 2);
-    final h = s1 * s1 + math.cos(lat1) * math.cos(lat2) * s2 * s2;
-    return r * 2 * math.asin(math.sqrt(h));
-  }
-
-  bool _routeLooksValid(List<LatLng> pts, LatLng origin, LatLng dest) {
-    if (pts.length < 2) return false;
-    final a = pts.first;
-    final b = pts.last;
-    final s1 = _haversineKm(origin, a) + _haversineKm(dest, b);
-    final s2 = _haversineKm(origin, b) + _haversineKm(dest, a);
-    return (s1 < 2.0) || (s2 < 2.0);
-  }
-
-  void _fitRoute() {
-    final bounds = _routeBounds;
-    if (bounds == null) return;
-    final spanLat = (bounds.northeast.latitude - bounds.southwest.latitude).abs();
-    final spanLng = (bounds.northeast.longitude - bounds.southwest.longitude).abs();
-    if (spanLat > 1.5 || spanLng > 1.5) return;
-    final version = _mapVersion;
-    Future.delayed(const Duration(milliseconds: 500), () {
-      if (!mounted) return;
-      if (version != _mapVersion) return;
-      try {
-        _mapCtrl?.animateCamera(CameraUpdate.newLatLngBounds(bounds, 80));
-      } catch (_) {
-        _mapCtrl = null;
-      }
-    });
-  }
-
-  Set<Marker> get _markers {
-    final b = _booking;
-    if (b == null) return {};
-    return {
-      if (b.pickupLat != 0)
-        Marker(
-          markerId: const MarkerId('pickup'),
-          position: LatLng(b.pickupLat, b.pickupLng),
-          icon: BitmapDescriptor.defaultMarkerWithHue(
-              BitmapDescriptor.hueGreen),
-          infoWindow: InfoWindow(title: 'Pickup', snippet: b.pickupAddress),
-        ),
-      if (b.destinationLat != 0)
-        Marker(
-          markerId: const MarkerId('destination'),
-          position: LatLng(b.destinationLat, b.destinationLng),
-          icon: BitmapDescriptor.defaultMarkerWithHue(
-              BitmapDescriptor.hueRed),
-          infoWindow: InfoWindow(
-              title: 'Destination', snippet: b.destinationAddress),
-        ),
-      if (_driverPos != null)
-        Marker(
-          markerId: const MarkerId('driver'),
-          position: _driverPos!,
-          rotation: _driverRotation,
-          flat: true,
-          anchor: const Offset(0.5, 0.5),
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
-          infoWindow: const InfoWindow(title: 'Driver'),
-        ),
-    };
-  }
-
-  Set<Polyline> get _polylines => _routePoints.length >= 2
-      ? {
-          Polyline(
-            polylineId: const PolylineId('route'),
-            points:     _routePoints,
-            color:      AppColors.primary,
-            width:      5,
-            jointType:  JointType.round,
-            startCap:   Cap.roundCap,
-            endCap:     Cap.roundCap,
-          ),
-        }
-      : {};
 
   @override
   void dispose() {
     _pollTimer?.cancel();
-    _driverAnimTimer?.cancel();
-    _mapVersion++;
-    _mapCtrl?.dispose();
     super.dispose();
   }
 
@@ -265,24 +100,14 @@ class _TripInProgressScreenState
     final b      = _booking;
     final mapKey = ref.watch(mapApiKeyProvider);
 
-    final initialPos = b != null && b.destinationLat != 0
-        ? LatLng(b.destinationLat, b.destinationLng)
-        : _defaultCenter;
-
     return Scaffold(
       body: Stack(
         children: [
-          // ── Map with full route ───────────────────────────────────────────
+          // ── Map — self-contained (owns route + animation + JS loader) ─────
           _RoutedTripMap(
-            initialPos: initialPos,
-            apiKey:     mapKey,
-            markers:    _markers,
-            polylines:  _polylines,
-            onMapCreated: (c) {
-              _mapCtrl = c;
-              _mapVersion++;
-              if (_routeBounds != null) _fitRoute();
-            },
+            booking:      b,
+            apiKey:       mapKey,
+            driverTarget: _driverTarget,
           ),
 
           // ── Top bar ───────────────────────────────────────────────────────
@@ -486,72 +311,236 @@ class _EmbeddedPngFromSvgAsset extends StatelessWidget {
   }
 }
 
-// ── Stable map view ───────────────────────────────────────────────────────────
+// ── Trip map — self-contained: owns route, animation, JS-loader future ────────
 
 class _RoutedTripMap extends StatefulWidget {
   const _RoutedTripMap({
-    required this.initialPos,
+    required this.booking,
     required this.apiKey,
-    required this.markers,
-    required this.polylines,
-    required this.onMapCreated,
+    required this.driverTarget,
   });
-  final LatLng initialPos;
-  final String apiKey;
-  final Set<Marker>   markers;
-  final Set<Polyline> polylines;
-  final void Function(GoogleMapController) onMapCreated;
+  final BookingModel? booking;
+  final String        apiKey;
+  final LatLng?       driverTarget;
 
   @override
   State<_RoutedTripMap> createState() => _RoutedTripMapState();
 }
 
 class _RoutedTripMapState extends State<_RoutedTripMap> {
-  late Set<Marker>   _m;
-  late Set<Polyline> _p;
+  // Cached so FutureBuilder never sees a new Future instance → no blink
+  Future<bool>? _loadFuture;
+
+  GoogleMapController? _ctrl;
+  int _camVersion = 0;
+
+  List<LatLng>  _routePts    = [];
+  bool          _routeLoaded = false;
+  String?       _polyUsed;
+  LatLngBounds? _routeBounds;
+
+  LatLng? _driverPos;
+  double  _driverRot = 0;
+  Timer?  _animTimer;
+
+  static const _kDefaultCenter = LatLng(8.4966, 4.5421);
 
   @override
-  void initState() { super.initState(); _m = widget.markers; _p = widget.polylines; }
+  void initState() {
+    super.initState();
+    if (kIsWeb) _loadFuture = ensureGoogleMapsJsLoaded(apiKey: widget.apiKey);
+    _buildRoute(widget.booking);
+    if (widget.driverTarget != null) _driverPos = widget.driverTarget;
+  }
 
   @override
   void didUpdateWidget(_RoutedTripMap old) {
     super.didUpdateWidget(old);
-    final mc = _hm(old.markers)   != _hm(widget.markers);
-    final pc = _hp(old.polylines) != _hp(widget.polylines);
-    if (mc || pc) setState(() { _m = widget.markers; _p = widget.polylines; });
+    final b = widget.booking;
+    if (b?.id != old.booking?.id || b?.routePolyline != old.booking?.routePolyline) {
+      _buildRoute(b);
+    }
+    final t = widget.driverTarget;
+    if (t != null && t != old.driverTarget) _animateDriverTo(t);
   }
 
-  String _hm(Set<Marker> s) => s.map((x) =>
-      '${x.markerId.value}:${x.position.latitude.toStringAsFixed(5)}').join('|');
-  String _hp(Set<Polyline> s) =>
-      s.map((x) => '${x.polylineId.value}:${x.points.length}').join('|');
+  @override
+  void dispose() {
+    _animTimer?.cancel();
+    _ctrl?.dispose();
+    _ctrl = null;
+    super.dispose();
+  }
+
+  // ── Route ────────────────────────────────────────────────────────────────────
+
+  void _buildRoute(BookingModel? b) {
+    if (b == null || b.pickupLat == 0 || b.destinationLat == 0) return;
+    final encoded = (b.routePolyline ?? '').trim();
+    if (_routeLoaded && (encoded.isEmpty || encoded == _polyUsed)) return;
+
+    final pickup = LatLng(b.pickupLat, b.pickupLng);
+    final dest   = LatLng(b.destinationLat, b.destinationLng);
+    final pts    = encoded.isNotEmpty
+        ? MapsService.decodePolylineBest(encoded, origin: pickup, destination: dest)
+        : [pickup, dest];
+
+    if (encoded.isNotEmpty && !_routeValid(pts, pickup, dest)) return;
+    final route = pts.length >= 2 ? pts : [pickup, dest];
+    final allPts = <LatLng>[...route, if (_driverPos != null) _driverPos!];
+
+    setState(() {
+      _routePts    = route;
+      _routeBounds = MapsService.boundsFromPoints(allPts);
+      _routeLoaded = true;
+      if (encoded.isNotEmpty) _polyUsed = encoded;
+    });
+    _fitCamera();
+  }
+
+  bool _routeValid(List<LatLng> pts, LatLng origin, LatLng dest) {
+    if (pts.length < 2) return false;
+    double hav(LatLng a, LatLng b) {
+      const r = 6371.0;
+      final dLat = (b.latitude  - a.latitude)  * math.pi / 180;
+      final dLng = (b.longitude - a.longitude) * math.pi / 180;
+      final lat1 = a.latitude * math.pi / 180;
+      final lat2 = b.latitude * math.pi / 180;
+      final s1 = math.sin(dLat / 2), s2 = math.sin(dLng / 2);
+      return r * 2 * math.asin(math.sqrt(s1 * s1 + math.cos(lat1) * math.cos(lat2) * s2 * s2));
+    }
+    return hav(origin, pts.first) + hav(dest, pts.last) < 2.0 ||
+           hav(origin, pts.last)  + hav(dest, pts.first) < 2.0;
+  }
+
+  void _fitCamera() {
+    if (!mounted || _ctrl == null || _routeBounds == null) return;
+    final b = _routeBounds!;
+    if ((b.northeast.latitude  - b.southwest.latitude).abs()  > 1.5) return;
+    if ((b.northeast.longitude - b.southwest.longitude).abs() > 1.5) return;
+    final v = ++_camVersion;
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (!mounted || _ctrl == null || v != _camVersion) return;
+      try { _ctrl!.animateCamera(CameraUpdate.newLatLngBounds(b, 80)); }
+      catch (_) { _ctrl = null; }
+    });
+  }
+
+  // ── Driver animation ─────────────────────────────────────────────────────────
+
+  void _animateDriverTo(LatLng target) {
+    final from = _driverPos ?? target;
+    if (from == target) return;
+    _driverRot = _bearing(from, target);
+    _animTimer?.cancel();
+    const steps = 20;
+    var i = 0;
+    _animTimer = Timer.periodic(const Duration(milliseconds: 40), (t) {
+      if (!mounted) { t.cancel(); return; }
+      i++;
+      final f = (i / steps).clamp(0.0, 1.0);
+      setState(() => _driverPos = LatLng(
+        from.latitude  + (target.latitude  - from.latitude)  * f,
+        from.longitude + (target.longitude - from.longitude) * f,
+      ));
+      if (i >= steps) t.cancel();
+    });
+  }
+
+  static double _bearing(LatLng from, LatLng to) {
+    final lat1 = from.latitude  * math.pi / 180;
+    final lat2 = to.latitude    * math.pi / 180;
+    final dLng = (to.longitude  - from.longitude) * math.pi / 180;
+    final y = math.sin(dLng) * math.cos(lat2);
+    final x = math.cos(lat1) * math.sin(lat2) -
+              math.sin(lat1) * math.cos(lat2) * math.cos(dLng);
+    return (math.atan2(y, x) * 180 / math.pi + 360) % 360;
+  }
+
+  // ── Markers & polylines ──────────────────────────────────────────────────────
+
+  Set<Marker> get _markers {
+    final b = widget.booking;
+    if (b == null) return {};
+    return {
+      if (b.pickupLat != 0)
+        Marker(
+          markerId: const MarkerId('pickup'),
+          position: LatLng(b.pickupLat, b.pickupLng),
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+          infoWindow: InfoWindow(title: 'Pickup', snippet: b.pickupAddress),
+        ),
+      if (b.destinationLat != 0)
+        Marker(
+          markerId: const MarkerId('destination'),
+          position: LatLng(b.destinationLat, b.destinationLng),
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+          infoWindow: InfoWindow(title: 'Destination', snippet: b.destinationAddress),
+        ),
+      if (_driverPos != null)
+        Marker(
+          markerId: const MarkerId('driver'),
+          position: _driverPos!,
+          rotation: _driverRot,
+          flat: true,
+          anchor: const Offset(0.5, 0.5),
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+          infoWindow: const InfoWindow(title: 'Driver'),
+        ),
+    };
+  }
+
+  Set<Polyline> get _polylines {
+    if (_routePts.length < 2) return {};
+    return {
+      Polyline(
+        polylineId: const PolylineId('route'),
+        points:     _routePts,
+        color:      AppColors.primary,
+        width:      5,
+        jointType:  JointType.round,
+        startCap:   Cap.roundCap,
+        endCap:     Cap.roundCap,
+      ),
+    };
+  }
+
+  LatLng get _initialTarget {
+    final b = widget.booking;
+    if (b != null && b.destinationLat != 0) return LatLng(b.destinationLat, b.destinationLng);
+    if (_driverPos != null) return _driverPos!;
+    return _kDefaultCenter;
+  }
+
+  // ── Build ────────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
-    if (kIsWeb) {
-      return FutureBuilder<bool>(
-        future: ensureGoogleMapsJsLoaded(apiKey: widget.apiKey),
-        builder: (_, snap) {
-          if (snap.connectionState != ConnectionState.done || snap.data != true) {
-            return Container(color: AppColors.surface,
-                child: const Center(child: CircularProgressIndicator()));
-          }
-          return _map();
-        },
-      );
-    }
-    return _map();
+    if (!kIsWeb) return _map();
+    return FutureBuilder<bool>(
+      future: _loadFuture, // stable — never triggers re-flash
+      builder: (_, snap) {
+        if (snap.connectionState != ConnectionState.done || snap.data != true) {
+          return Container(color: AppColors.surface,
+              child: const Center(child: CircularProgressIndicator()));
+        }
+        return _map();
+      },
+    );
   }
 
   Widget _map() => GoogleMap(
-        initialCameraPosition:
-            CameraPosition(target: widget.initialPos, zoom: 14),
-        markers:                 _m,
-        polylines:               _p,
-        myLocationEnabled:       true,
+        initialCameraPosition: CameraPosition(target: _initialTarget, zoom: 14),
+        markers:                 _markers,
+        polylines:               _polylines,
+        myLocationEnabled:       false,
         myLocationButtonEnabled: false,
         zoomControlsEnabled:     false,
         mapToolbarEnabled:       false,
-        onMapCreated:            widget.onMapCreated,
+        onMapCreated: (c) {
+          _ctrl = c;
+          _camVersion++;
+          _fitCamera();
+        },
       );
 }

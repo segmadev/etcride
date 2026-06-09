@@ -49,7 +49,10 @@ class _ConfirmPickupScreenState extends ConsumerState<ConfirmPickupScreen> {
     }
 
     final enabled = await Geolocator.isLocationServiceEnabled();
-    if (!enabled) return null;
+    if (!enabled) {
+      await Geolocator.openLocationSettings();
+      return null;
+    }
 
     var perm = await Geolocator.checkPermission();
     if (perm == LocationPermission.denied) {
@@ -77,15 +80,23 @@ class _ConfirmPickupScreenState extends ConsumerState<ConfirmPickupScreen> {
         final pos = await _getPosition();
         if (pos == null) {
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Enable location permission in your browser/device settings.'),
-                backgroundColor: AppColors.error,
-              ),
-            );
-            if (!kIsWeb) {
-              context.push(AppRoutes.locationPermission);
+            if (kIsWeb) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Enable location permission in your browser settings.'),
+                  backgroundColor: AppColors.error,
+                ),
+              );
+            } else {
+              await context.push(AppRoutes.locationPermission);
             }
+          }
+          final retry = await _getPosition();
+          if (retry != null) {
+            _pickupLatLng = LatLng(retry.latitude, retry.longitude);
+            await _reverseGeocode(_pickupLatLng!);
+            if (mounted) setState(() {});
+            return;
           }
           _pickupLatLng = _defaultCenter;
           _pickupAddress = 'Ilorin, Kwara State';

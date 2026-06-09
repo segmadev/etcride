@@ -8,6 +8,7 @@ import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/config/router.dart';
+import '../../core/errors/app_exception.dart';
 import '../../core/utils/validators.dart';
 import '../../data/models/user_model.dart';
 import '../../shared/providers/providers.dart';
@@ -57,11 +58,6 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
     if (user != null) {
       _autoFillFromUser(user);
     }
-
-    ref.listen(currentUserProvider, (prev, next) {
-      if (next == null) return;
-      _autoFillFromUser(next);
-    });
   }
 
   Widget _nigeriaFlag() {
@@ -105,9 +101,10 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
       }
     } catch (e) {
       if (mounted) {
+        final msg = (e is AppException) ? e.message : e.toString();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(e.toString()),
+            content: Text(msg),
             backgroundColor: AppColors.error,
           ),
         );
@@ -279,6 +276,11 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<UserModel?>(currentUserProvider, (prev, next) {
+      if (next == null) return;
+      _autoFillFromUser(next);
+    });
+
     final user = ref.watch(currentUserProvider);
     final emailLocked = user?.email.isNotEmpty ?? false;
     final phoneLocked = user?.phone.isNotEmpty ?? false;

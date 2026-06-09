@@ -41,6 +41,14 @@ _$BookingModelImpl _$$BookingModelImplFromJson(Map<String, dynamic> json) =>
       cancellationReason: json['cancellationReason'] as String?,
       createdAt: json['createdAt'] as String?,
       updatedAt: json['updatedAt'] as String?,
+      driverEtaMinutes: (json['driverEtaMinutes'] as num?)?.toInt() ?? 0,
+      driverDistanceKm: (json['driverDistanceKm'] as num?)?.toDouble() ?? 0.0,
+      lastEvent: json['lastEvent'] as String?,
+      alternativeTypes: json['alternativeTypes'] as List<dynamic>? ?? const [],
+      arrivedAt: json['arrivedAt'] as String?,
+      freeWaitingMinutes: (json['freeWaitingMinutes'] as num?)?.toInt() ?? 3,
+      waitingChargePerMin: (json['waitingChargePerMin'] as num?)?.toDouble() ?? 0.0,
+      waitingExtraCharge: (json['waitingExtraCharge'] as num?)?.toDouble() ?? 0.0,
     );
 
 Map<String, dynamic> _$$BookingModelImplToJson(_$BookingModelImpl instance) =>
@@ -76,6 +84,14 @@ Map<String, dynamic> _$$BookingModelImplToJson(_$BookingModelImpl instance) =>
       'cancellationReason': instance.cancellationReason,
       'createdAt': instance.createdAt,
       'updatedAt': instance.updatedAt,
+      'driverEtaMinutes': instance.driverEtaMinutes,
+      'driverDistanceKm': instance.driverDistanceKm,
+      'lastEvent': instance.lastEvent,
+      'alternativeTypes': instance.alternativeTypes,
+      'arrivedAt': instance.arrivedAt,
+      'freeWaitingMinutes': instance.freeWaitingMinutes,
+      'waitingChargePerMin': instance.waitingChargePerMin,
+      'waitingExtraCharge': instance.waitingExtraCharge,
     };
 
 const _$BookingStatusEnumMap = {

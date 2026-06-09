@@ -15,6 +15,15 @@ import '../../shared/widgets/app_button.dart';
 class LocationPermissionScreen extends StatelessWidget {
   const LocationPermissionScreen({super.key});
 
+  void _done(BuildContext context) {
+    if (!context.mounted) return;
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go(AppRoutes.home);
+    }
+  }
+
   Future<void> _allow(BuildContext context) async {
     if (kIsWeb) {
       final host = Uri.base.host.toLowerCase();
@@ -51,7 +60,7 @@ class LocationPermissionScreen extends StatelessWidget {
           locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
         );
         if (!context.mounted) return;
-        context.go(AppRoutes.home);
+        _done(context);
       } catch (_) {
         if (!context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -67,7 +76,7 @@ class LocationPermissionScreen extends StatelessWidget {
     final status = await Permission.locationWhenInUse.request();
     if (!context.mounted) return;
     if (status.isGranted) {
-      context.go(AppRoutes.home);
+      _done(context);
       return;
     }
 

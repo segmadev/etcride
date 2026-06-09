@@ -273,6 +273,30 @@ class Bookings extends BaseController
         ]);
     }
 
+    // ── GET /admin/bookings/:id/suggest-drivers ───────────────────────────────
+    public function suggestDrivers(string $id): void
+    {
+        $id      = $this->normalizeId($id);
+        $booking = $this->getall('bookings', 'id = ?', [$id]);
+        if (!is_array($booking)) { echo utilities::apiMessage('Booking not found.', 404); return; }
+
+        $lat  = (float) ($booking['pickup_lat']  ?? 0);
+        $lng  = (float) ($booking['pickup_lng']  ?? 0);
+        $vtId = $booking['vehicle_type_id'] ?? '';
+
+        if (!$lat || !$lng || !$vtId) {
+            echo utilities::apiMessage('Booking missing location or vehicle type.', 422);
+            return;
+        }
+
+        $candidates = $this->findDriverCandidates($lat, $lng, $vtId);
+
+        echo utilities::apiMessage('Driver suggestions retrieved.', 200, [
+            'online'  => $candidates['online'],
+            'offline' => $candidates['offline'],
+        ]);
+    }
+
     // ── GET /admin/notifications ──────────────────────────────────────────────
     public function notifications(): void
     {
