@@ -21,6 +21,7 @@ export interface CreateDriverPayload {
   // KYC (optional)
   kyc_id_type?: string;
   kyc_id_number?: string;
+  driving_experience?: string;
   kyc_id_front?: File | null;
   kyc_id_back?: File | null;
 }
@@ -37,6 +38,7 @@ function toFormData(payload: CreateDriverPayload): FormData {
   if (payload.photo)          fd.append('photo',          payload.photo);
   if (payload.kyc_id_type)    fd.append('kyc_id_type',    payload.kyc_id_type);
   if (payload.kyc_id_number)  fd.append('kyc_id_number',  payload.kyc_id_number);
+  if (payload.driving_experience) fd.append('driving_experience', payload.driving_experience);
   if (payload.kyc_id_front)   fd.append('kyc_id_front',   payload.kyc_id_front);
   if (payload.kyc_id_back)    fd.append('kyc_id_back',    payload.kyc_id_back);
   return fd;
@@ -88,19 +90,23 @@ export const driversApi = {
       kyc_status?: KycStatus;
       kyc_id_type?: string;
       kyc_id_number?: string;
+      driving_experience?: string;
       kyc_note?: string;
       kyc_id_front?: File | null;
       kyc_id_back?: File | null;
+      profile_photo?: File | null;
     },
   ) => {
     const fd = new FormData();
-    if (payload.kyc_status)    fd.append('kyc_status',    payload.kyc_status);
-    if (payload.kyc_id_type)   fd.append('kyc_id_type',   payload.kyc_id_type);
-    if (payload.kyc_id_number) fd.append('kyc_id_number', payload.kyc_id_number);
-    if (payload.kyc_note)      fd.append('kyc_note',      payload.kyc_note);
-    if (payload.kyc_id_front)  fd.append('kyc_id_front',  payload.kyc_id_front);
-    if (payload.kyc_id_back)   fd.append('kyc_id_back',   payload.kyc_id_back);
-    return apiRequest<{ kyc_status: KycStatus; kyc_front_url: string | null; kyc_back_url: string | null }>(
+    if (payload.kyc_status) fd.append('kyc_status', payload.kyc_status);
+    if (payload.kyc_id_type !== undefined) fd.append('kyc_id_type', payload.kyc_id_type);
+    if (payload.kyc_id_number !== undefined) fd.append('kyc_id_number', payload.kyc_id_number);
+    if (payload.driving_experience !== undefined) fd.append('driving_experience', payload.driving_experience);
+    if (payload.kyc_note !== undefined) fd.append('kyc_note', payload.kyc_note);
+    if (payload.kyc_id_front) fd.append('kyc_id_front', payload.kyc_id_front);
+    if (payload.kyc_id_back) fd.append('kyc_id_back', payload.kyc_id_back);
+    if (payload.profile_photo) fd.append('profile_photo', payload.profile_photo);
+    return apiRequest<{ kyc_status: KycStatus; kyc_note?: string | null; driving_experience?: string | null; kyc_front_url: string | null; kyc_back_url: string | null; photo_url: string | null }>(
       apiClient.post(`/admin/drivers/${id}/kyc`, fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
       }),

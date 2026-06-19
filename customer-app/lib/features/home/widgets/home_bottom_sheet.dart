@@ -8,6 +8,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/config/router.dart';
+import '../../../core/services/chat_notification_service.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../data/models/booking_draft.dart';
 import '../../../data/models/booking_model.dart';
@@ -32,6 +33,7 @@ class _HomeBottomSheetState extends ConsumerState<HomeBottomSheet> {
       case BookingStatus.assigned:
       case BookingStatus.accepted:
       case BookingStatus.arrived:
+      case BookingStatus.pickedUp:
         context.go(AppRoutes.driverAssigned, extra: b.id);
       case BookingStatus.inProgress:
         context.go(AppRoutes.tripInProgress, extra: b.id);
@@ -51,6 +53,7 @@ class _HomeBottomSheetState extends ConsumerState<HomeBottomSheet> {
         BookingStatus.assigned => 'Driver assigned',
         BookingStatus.accepted => 'Driver accepted',
         BookingStatus.arrived => 'Driver arrived',
+        BookingStatus.pickedUp => 'Package picked up',
         BookingStatus.inProgress => 'Trip in progress',
         BookingStatus.paymentPending => 'Payment pending',
         BookingStatus.completed => 'Trip completed',
@@ -72,7 +75,8 @@ class _HomeBottomSheetState extends ConsumerState<HomeBottomSheet> {
         ? AppFormatters.greeting(user.name)
         : AppFormatters.greeting('');
     final bookingType = _isRide ? 'ride' : 'delivery';
-    final active = ref.watch(activeBookingProvider(bookingType));
+    final active          = ref.watch(activeBookingProvider(bookingType));
+    final activeDeliveries = ref.watch(activeDeliveryBookingsProvider);
 
     return DraggableScrollableSheet(
       initialChildSize: 0.38,
@@ -126,78 +130,71 @@ class _HomeBottomSheetState extends ConsumerState<HomeBottomSheet> {
             ),
             const SizedBox(height: 16),
 
-            active.when(
-              data: (b) {
-                if (b == null) return const SizedBox.shrink();
-                return Column(
-                  children: [
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: AppColors.surface,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: AppColors.divider),
+            // ── Active ride (single) ──────────────────────────────────────
+            if (_isRide)
+              active.when(
+                data: (b) {
+                  if (b == null) return const SizedBox.shrink();
+                  return Column(
+                    children: [
+                      _ActiveBookingCard(
+                        booking: b,
+                        label: 'Active trip',
+                        onResume: () => _resumeBooking(b),
+                        onChat: b.driverId != null
+                            ? () => context.push(AppRoutes.driverChat, extra: b.id)
+                            : null,
+                        statusLabel: _statusLabel(b.status),
                       ),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 40,
-                            height: 40,
-                            decoration: const BoxDecoration(
-                              color: AppColors.primaryLight,
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(Icons.route_rounded, color: AppColors.primary, size: 20),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('Active trip', style: AppTextStyles.labelMedium),
-                                const SizedBox(height: 2),
-                                Text(
-                                  _statusLabel(b.status),
-                                  style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          TextButton(
-                            onPressed: () => _resumeBooking(b),
-                            style: TextButton.styleFrom(
-                              foregroundColor: AppColors.primary,
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                            ),
-                            child: const Text('Resume'),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-                );
-              },
-              loading: () => const SizedBox(height: 8),
-              error: (_, __) => const SizedBox(height: 8),
-            ),
+                      const SizedBox(height: 12),
+                    ],
+                  );
+                },
+                loading: () => const SizedBox(height: 8),
+                error: (_, __) => const SizedBox(height: 8),
+              ),
+
+            // ── Active deliveries (multiple) ──────────────────────────────
+            if (!_isRide)
+              activeDeliveries.when(
+                data: (list) {
+                  if (list.isEmpty) return const SizedBox.shrink();
+                  return Column(
+                    children: [
+                      for (final b in list) ...[
+                        _ActiveBookingCard(
+                          booking: b,
+                          label: 'Active delivery',
+                          onResume: () => _resumeBooking(b),
+                          onChat: b.driverId != null
+                              ? () => context.push(AppRoutes.driverChat, extra: b.id)
+                              : null,
+                          statusLabel: _statusLabel(b.status),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                      const SizedBox(height: 4),
+                    ],
+                  );
+                },
+                loading: () => const SizedBox(height: 8),
+                error: (_, __) => const SizedBox(height: 8),
+              ),
 
             GestureDetector(
               onTap: () {
-                final b = active.valueOrNull;
-                if (b != null) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('You already have an active trip. Resuming it.'),
-                      backgroundColor: AppColors.primary,
-                    ),
-                  );
-                  _resumeBooking(b);
-                  return;
+                if (_isRide) {
+                  final b = active.valueOrNull;
+                  if (b != null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('You already have an active trip. Resuming it.'),
+                        backgroundColor: AppColors.primary,
+                      ),
+                    );
+                    _resumeBooking(b);
+                    return;
+                  }
                 }
                 ref.read(bookingDraftProvider.notifier).state =
                     BookingDraft(bookingType: bookingType);
@@ -307,16 +304,18 @@ class _HomeBottomSheetState extends ConsumerState<HomeBottomSheet> {
               label: AppStrings.chooseOnMap,
               iconBg: AppColors.primary,
               onTap: () {
-                final b = active.valueOrNull;
-                if (b != null) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('You already have an active trip. Resuming it.'),
-                      backgroundColor: AppColors.primary,
-                    ),
-                  );
-                  _resumeBooking(b);
-                  return;
+                if (_isRide) {
+                  final b = active.valueOrNull;
+                  if (b != null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('You already have an active trip. Resuming it.'),
+                        backgroundColor: AppColors.primary,
+                      ),
+                    );
+                    _resumeBooking(b);
+                    return;
+                  }
                 }
                 ref.read(bookingDraftProvider.notifier).state =
                     BookingDraft(bookingType: bookingType);
@@ -325,6 +324,119 @@ class _HomeBottomSheetState extends ConsumerState<HomeBottomSheet> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ── Active booking card with chat badge ───────────────────────────────────────
+
+class _ActiveBookingCard extends StatelessWidget {
+  const _ActiveBookingCard({
+    required this.booking,
+    required this.label,
+    required this.statusLabel,
+    required this.onResume,
+    this.onChat,
+  });
+
+  final BookingModel booking;
+  final String       label;
+  final String       statusLabel;
+  final VoidCallback onResume;
+  final VoidCallback? onChat;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.divider),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40, height: 40,
+            decoration: const BoxDecoration(
+              color: AppColors.primaryLight,
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.route_rounded, color: AppColors.primary, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: AppTextStyles.labelMedium),
+                const SizedBox(height: 2),
+                Text(
+                  statusLabel,
+                  style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          // Chat button with unread badge
+          if (onChat != null)
+            ValueListenableBuilder<Map<String, int>>(
+              valueListenable: ChatNotificationService.instance.unreadCounts,
+              builder: (_, counts, __) {
+                final unread = counts[booking.id] ?? 0;
+                return GestureDetector(
+                  onTap: onChat,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Container(
+                        width: 36, height: 36,
+                        decoration: const BoxDecoration(
+                          color: AppColors.primaryLight,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.chat_bubble_outline_rounded,
+                            size: 18, color: AppColors.primary),
+                      ),
+                      if (unread > 0)
+                        Positioned(
+                          top: -4, right: -4,
+                          child: Container(
+                            padding: const EdgeInsets.all(3),
+                            decoration: const BoxDecoration(
+                              color: AppColors.error,
+                              shape: BoxShape.circle,
+                            ),
+                            child: Text(
+                              unread > 9 ? '9+' : '$unread',
+                              style: const TextStyle(
+                                fontFamily: 'Inter',
+                                fontSize: 9,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          const SizedBox(width: 4),
+          TextButton(
+            onPressed: onResume,
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.primary,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            ),
+            child: const Text('Resume'),
+          ),
+        ],
       ),
     );
   }

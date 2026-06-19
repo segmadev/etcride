@@ -58,6 +58,15 @@ class _SearchDestinationScreenState extends ConsumerState<SearchDestinationScree
   // Prevents autocomplete firing when text is set programmatically
   bool _programmatic = false;
 
+  void _openNextStep() {
+    final draft = ref.read(bookingDraftProvider);
+    if (draft.bookingType == 'delivery') {
+      context.push(AppRoutes.courierSelectVehicle);
+    } else {
+      showSelectRideDrawer(context);
+    }
+  }
+
   final _sessionToken = DateTime.now().millisecondsSinceEpoch.toString();
 
   @override
@@ -261,7 +270,7 @@ class _SearchDestinationScreenState extends ConsumerState<SearchDestinationScree
           if (widget.asSheet) {
             Navigator.of(context).pop(SearchDestinationResult.openSelectRide);
           } else {
-            showSelectRideDrawer(context);
+            _openNextStep();
           }
         } else {
           _pickupFocus.requestFocus();
@@ -337,7 +346,7 @@ class _SearchDestinationScreenState extends ConsumerState<SearchDestinationScree
           if (widget.asSheet) {
             Navigator.of(context).pop(SearchDestinationResult.openSelectRide);
           } else {
-            showSelectRideDrawer(context);
+            _openNextStep();
           }
         } else {
           _destFocus.requestFocus();
@@ -983,7 +992,12 @@ Future<bool> showSearchDestinationDrawer(
   }
   if (!context.mounted) return false;
   if (result == SearchDestinationResult.openSelectRide && openSelectRideAfter) {
-    await showSelectRideDrawer(context);
+    final draft = ProviderScope.containerOf(context).read(bookingDraftProvider);
+    if (draft.bookingType == 'delivery') {
+      context.push(AppRoutes.courierSelectVehicle);
+    } else {
+      await showSelectRideDrawer(context);
+    }
   }
   return true;
 }

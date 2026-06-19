@@ -8,10 +8,86 @@ class Bookings extends BaseController
         return strlen($id) > 20 ? substr($id, 0, 20) : $id;
     }
 
+    // ── GET /chats ─────────────────────────────────────────────────────────────
+    /**
+     * Lists every booking this customer has exchanged at least one chat
+     * message on, most-recent-first, with the other party's name and a
+     * preview of the last message — i.e. the chat inbox / history page.
+     */
+    public function chatThreads(): void
+    {
+        $me = BaseController::$authUser;
+
+        $stmt = $this->db->prepare("
+            SELECT b.id AS booking_id, b.status,
+                   d.name  AS other_name,
+                   d.photo AS other_photo,
+                   m.body  AS last_message,
+                   m.sender_role AS last_sender_role,
+                   m.created_at  AS last_message_at,
+                   (
+                       SELECT COUNT(*)
+                       FROM trip_messages tm
+                       WHERE tm.booking_id  = b.id
+                         AND tm.sender_role = 'driver'
+                         AND tm.created_at  > COALESCE(
+                             (SELECT cr.last_read_at FROM chat_reads cr
+                              WHERE cr.booking_id = b.id AND cr.role = 'customer'),
+                             '1970-01-01'
+                         )
+                   ) AS unread_count
+            FROM bookings b
+            JOIN (
+                SELECT booking_id, MAX(created_at) AS max_created
+                FROM trip_messages
+                GROUP BY booking_id
+            ) latest ON latest.booking_id = b.id
+            JOIN trip_messages m
+                ON m.booking_id = latest.booking_id AND m.created_at = latest.max_created
+            LEFT JOIN drivers d ON d.id = b.driver_id
+            WHERE b.customer_id = ?
+            ORDER BY m.created_at DESC
+        ");
+        $stmt->execute([$me['id']]);
+        echo utilities::apiMessage('Chat threads retrieved.', 200, $stmt->fetchAll(PDO::FETCH_ASSOC));
+    }
+
+    public function markChatRead(string $id): void
+    {
+        $me = BaseController::$authUser;
+        $booking = $this->getall('bookings', 'id = ? AND customer_id = ?', [$id, $me['id']], 'id');
+        if (!is_array($booking)) { echo utilities::apiMessage('Not found.', 404); return; }
+
+        $stmt = $this->db->prepare("
+            INSERT INTO chat_reads (booking_id, role, last_read_at)
+            VALUES (?, 'customer', NOW())
+            ON DUPLICATE KEY UPDATE last_read_at = NOW()
+        ");
+        $stmt->execute([$id]);
+        echo utilities::apiMessage('Marked as read.', 200);
+    }
+
     // ── POST /bookings ────────────────────────────────────────────────────────
     public function create(): void
     {
         $me  = BaseController::$authUser;
+
+        // Defensively re-merge JSON body into $_POST in case the router's
+        // Content-Type check missed it (e.g. charset suffix in header).
+        static $jsonMergedOnce = false;
+        if (!$jsonMergedOnce) {
+            $jsonMergedOnce = true;
+            $raw = file_get_contents('php://input');
+            if ($raw !== '' && $raw !== false) {
+                $decoded = json_decode($raw, true);
+                if (is_array($decoded)) {
+                    foreach ($decoded as $k => $v) {
+                        if (!array_key_exists($k, $_POST)) $_POST[$k] = $v;
+                    }
+                }
+            }
+        }
+
         $err = $this->requireFields([
             'booking_type', 'vehicle_type_id',
             'pickup_address', 'pickup_lat', 'pickup_lng',
@@ -45,7 +121,7 @@ class Bookings extends BaseController
 
         // Validate delivery fields
         if ($bookingType === 'delivery') {
-            $dErr = $this->requireFields(['recipient_name', 'recipient_phone']);
+            $dErr = $this->requireFields(['recipient_phone']);
             if ($dErr) { echo $dErr; return; }
         }
 
@@ -96,7 +172,7 @@ class Bookings extends BaseController
         }
 
         $zoneId        = $this->getDefaultZoneId();
-        $estimatedFare = $this->calculateFare($vtId, $zoneId, $distanceKm, $numStops);
+        $estimatedFare = $this->calculateFare($vtId, $zoneId, $distanceKm, $numStops, null, $bookingType);
 
         // Ensure pay_mode_snapshot is always a valid ENUM value
         $rawPayMode = $this->setting('pay_mode', '');
@@ -144,8 +220,11 @@ class Bookings extends BaseController
 
         // Delivery-only fields
         if ($bookingType === 'delivery') {
-            $insertData['recipient_name']  = $this->str('recipient_name');
+            $recipientName = $this->str('recipient_name');
+            if ($recipientName !== '') $insertData['recipient_name'] = $recipientName;
             $insertData['recipient_phone'] = $this->str('recipient_phone');
+            $senderPhone = $this->str('sender_phone');
+            if ($senderPhone !== '') $insertData['sender_phone'] = $senderPhone;
             $pkg = $this->str('package_description');
             if ($pkg !== '') $insertData['package_description'] = $pkg;
             $size = $this->str('package_size');
@@ -381,12 +460,14 @@ class Bookings extends BaseController
 
             // ── alternative_types: show when pending with no driver ───────────
             if (($booking['status'] ?? '') === 'pending' && !$driverId) {
-                $vtId = $booking['vehicle_type_id'] ?? '';
+                $vtId        = $booking['vehicle_type_id'] ?? '';
+                $bookingType = $booking['booking_type']    ?? 'ride';
                 $booking['alternative_types'] = $vtId
                     ? $this->findAlternativeVehicleTypes(
                           (float) ($booking['pickup_lat'] ?? 0),
                           (float) ($booking['pickup_lng'] ?? 0),
-                          $vtId
+                          $vtId,
+                          $bookingType
                       )
                     : [];
             } else {
@@ -401,8 +482,73 @@ class Bookings extends BaseController
             echo utilities::apiMessage('Booking retrieved.', 200, $booking);
 
         } catch (\Throwable $e) {
+            error_log(sprintf("[Bookings::show] %s in %s:%d\n%s",
+                $e->getMessage(), $e->getFile(), $e->getLine(), $e->getTraceAsString()));
             echo utilities::apiMessage('Failed to retrieve booking: ' . $e->getMessage(), 500);
         }
+    }
+
+    // ── GET /bookings/:id/messages ────────────────────────────────────────────
+    /**
+     * Returns the in-app chat history for this booking.
+     * Optional ?since=<created_at> returns only messages after that timestamp,
+     * so the app can poll incrementally instead of re-fetching the whole thread.
+     */
+    public function getMessages(string $id): void
+    {
+        $me = BaseController::$authUser;
+        $id = $this->normalizeId($id);
+
+        $booking = $this->getall('bookings', 'id = ? AND customer_id = ?', [$id, $me['id']]);
+        if (!is_array($booking)) {
+            echo utilities::apiMessage('Booking not found.', 404);
+            return;
+        }
+
+        $since  = trim((string) $this->query('since', ''));
+        $where  = 'booking_id = ?';
+        $params = [$id];
+        if ($since !== '') {
+            $where   .= ' AND created_at > ?';
+            $params[] = $since;
+        }
+
+        $stmt = $this->db->prepare("SELECT * FROM trip_messages WHERE $where ORDER BY created_at ASC");
+        $stmt->execute($params);
+        echo utilities::apiMessage('Messages retrieved.', 200, $stmt->fetchAll(PDO::FETCH_ASSOC));
+    }
+
+    // ── POST /bookings/:id/messages ───────────────────────────────────────────
+    public function sendMessage(string $id): void
+    {
+        $me = BaseController::$authUser;
+        $id = $this->normalizeId($id);
+
+        $booking = $this->getall('bookings', 'id = ? AND customer_id = ?', [$id, $me['id']]);
+        if (!is_array($booking)) {
+            echo utilities::apiMessage('Booking not found.', 404);
+            return;
+        }
+
+        // Not using $this->str() here — it runs htmlspecialchars(), which
+        // corrupts plain chat text (e.g. "I'm" becomes "I&#039;m") since the
+        // apps render this as plain text, not HTML.
+        $body = trim((string) ($_POST['message'] ?? ''));
+        if ($body === '') {
+            echo utilities::apiMessage('Message text is required.', 422);
+            return;
+        }
+
+        $msgId = utilities::genID('MSG_', 10);
+        $this->quick_insert('trip_messages', [
+            'id'          => $msgId,
+            'booking_id'  => $id,
+            'sender_role' => 'customer',
+            'sender_id'   => $me['id'],
+            'body'        => $body,
+        ]);
+
+        echo utilities::apiMessage('Message sent.', 200, $this->getall('trip_messages', 'id = ?', [$msgId]));
     }
 
     // ── POST /bookings/:id/find-driver ───────────────────────────────────────
@@ -771,5 +917,60 @@ class Bookings extends BaseController
         }
 
         echo utilities::apiMessage('Booking cancelled.', 200);
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /**
+     * Return vehicle types of the same category (ride|delivery) that have
+     * online drivers within ~10 km, excluding the type already on the booking.
+     */
+    protected function findAlternativeVehicleTypes(
+        float  $lat,
+        float  $lng,
+        string $excludeVtId,
+        string $bookingType = 'ride'
+    ): array {
+        $category = in_array($bookingType, ['ride', 'delivery']) ? $bookingType : 'ride';
+
+        $stmt = $this->db->prepare("
+            SELECT
+                vt.id,
+                vt.name,
+                vt.icon,
+                vt.base_fare,
+                vt.per_km_rate,
+                vt.category,
+                COUNT(d.id) AS available_drivers
+            FROM vehicle_types vt
+            JOIN vehicles v
+                ON v.vehicle_type_id = vt.id
+               AND v.status          = 'active'
+            JOIN drivers d
+                ON d.vehicle_id  = v.id
+               AND d.is_online   = 1
+               AND d.kyc_status  = 'verified'
+               AND d.is_active   = 1
+               AND d.last_lat   IS NOT NULL
+               AND d.last_lng   IS NOT NULL
+               AND (
+                   6371 * ACOS(
+                       COS(RADIANS(?)) * COS(RADIANS(d.last_lat))
+                       * COS(RADIANS(d.last_lng) - RADIANS(?))
+                       + SIN(RADIANS(?)) * SIN(RADIANS(d.last_lat))
+                   )
+               ) <= 10
+            WHERE vt.is_active = 1
+              AND vt.category  = ?
+              AND vt.id       != ?
+            GROUP BY vt.id
+            HAVING available_drivers > 0
+            ORDER BY vt.base_fare ASC
+            LIMIT 5
+        ");
+
+        $stmt->execute([$lat, $lng, $lat, $category, $excludeVtId]);
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 }

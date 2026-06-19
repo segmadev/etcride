@@ -13,6 +13,7 @@ class LocationService {
   Timer?            _timer;
   DriverRepository? _repo;
   Position?         _lastPosition;
+  bool              _activeJob = false;
 
   final ValueNotifier<Position?> positionNotifier = ValueNotifier(null);
 
@@ -32,12 +33,28 @@ class LocationService {
     await _ping();
     _timer = Timer.periodic(const Duration(seconds: 30), (_) => _ping());
     debugPrint('$_tag start() timer running, pinging every 30 s');
+    _activeJob = false;
   }
 
   void stop() {
     _timer?.cancel();
     _timer = null;
+    _activeJob = false;
     debugPrint('$_tag stop() — timer cancelled');
+  }
+
+  /// Switch to 5 s pinging during an active job, 30 s otherwise.
+  /// Call with [active]=true when a job is accepted/started, false when done.
+  void setActiveJob(bool active) {
+    if (_activeJob == active) return;
+    _activeJob = active;
+    if (_timer?.isActive != true) return; // not running — interval takes effect on next start()
+    final interval = active
+        ? const Duration(seconds: 5)
+        : const Duration(seconds: 30);
+    _timer!.cancel();
+    _timer = Timer.periodic(interval, (_) => _ping());
+    debugPrint('$_tag setActiveJob($active) — pinging every ${interval.inSeconds}s');
   }
 
   Future<void> refreshPosition() async {

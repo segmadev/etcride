@@ -64,6 +64,53 @@ class Webhook extends BaseController
         echo utilities::apiMessage('Webhook processed.', 200);
     }
 
+    // ── GET /payments/callback — Flutterwave redirect after hosted checkout ──────
+    // Flutterwave sends: ?status=successful|cancelled|failed&tx_ref=...&transaction_id=...
+    public function callback(): void
+    {
+        $status        = $_GET['status']         ?? 'unknown';
+        $txRef         = htmlspecialchars($_GET['tx_ref']         ?? '', ENT_QUOTES, 'UTF-8');
+        $transactionId = htmlspecialchars($_GET['transaction_id'] ?? '', ENT_QUOTES, 'UTF-8');
+        $bookingId     = htmlspecialchars($_GET['booking_id']     ?? '', ENT_QUOTES, 'UTF-8');
+
+        $success = $status === 'successful';
+        $icon    = $success ? '✅' : '❌';
+        $heading = $success ? 'Payment Successful' : 'Payment ' . ucfirst($status);
+        $msg     = $success
+            ? 'Your payment has been confirmed. Please return to the app.'
+            : 'Your payment was not completed. Please return to the app and try again.';
+
+        header('Content-Type: text/html; charset=UTF-8');
+        echo <<<HTML
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Payment {$heading}</title>
+  <style>
+    body { font-family: -apple-system, sans-serif; display: flex; align-items: center;
+           justify-content: center; min-height: 100vh; margin: 0; background: #f5f5f5; }
+    .card { background: #fff; border-radius: 20px; padding: 40px 32px; text-align: center;
+            max-width: 380px; box-shadow: 0 4px 24px rgba(0,0,0,.10); }
+    .icon { font-size: 56px; margin-bottom: 16px; }
+    h1   { font-size: 22px; margin: 0 0 8px; color: #1a1a1a; }
+    p    { color: #666; font-size: 15px; line-height: 1.5; margin: 0 0 24px; }
+    .ref { font-size: 12px; color: #999; margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">{$icon}</div>
+    <h1>{$heading}</h1>
+    <p>{$msg}</p>
+    <div class="ref">Ref: {$txRef}</div>
+  </div>
+</body>
+</html>
+HTML;
+    }
+
     // ── Shared payment processing ─────────────────────────────────────────────
     private function processPayment(string $ref, bool $success, string $provRef, array $raw, string $provider): void
     {

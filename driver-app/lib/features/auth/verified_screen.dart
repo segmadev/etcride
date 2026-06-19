@@ -4,6 +4,7 @@ import '../../core/config/router.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../shared/widgets/app_button.dart';
+import '../../shared/widgets/pre_dashboard_account_menu.dart';
 
 class DriverVerifiedScreen extends StatelessWidget {
   const DriverVerifiedScreen({super.key, this.message});
@@ -18,6 +19,10 @@ class DriverVerifiedScreen extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(26, 32, 26, 40),
           child: Column(
             children: [
+              const Align(
+                alignment: Alignment.centerRight,
+                child: PreDashboardAccountMenu(),
+              ),
               const Spacer(),
 
               // Animated checkmark

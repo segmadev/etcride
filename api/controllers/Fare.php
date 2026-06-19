@@ -15,6 +15,7 @@ class Fare extends BaseController
         $destLat     = $this->flt('destination_lat');
         $destLng     = $this->flt('destination_lng');
         $vtId        = $this->str('vehicle_type_id');
+        $bookingType = $this->str('booking_type', 'ride');
 
         // Validate vehicle type exists
         $vt = $this->getall('vehicle_types', 'id = ? AND is_active = 1', [$vtId]);
@@ -56,7 +57,7 @@ class Fare extends BaseController
         // Get zone (default for now — customer location matching TBD)
         $zoneId = $this->getDefaultZoneId();
 
-        $fare = $this->calculateFare($vtId, $zoneId, $distanceKm, $numStops);
+        $fare = $this->calculateFare($vtId, $zoneId, $distanceKm, $numStops, null, $bookingType);
 
         // Fetch pricing breakdown for transparency
         $pricing = null;
@@ -68,6 +69,9 @@ class Fare extends BaseController
             $pricing = $vt;
         }
 
+        $timeFareEnabled = $this->setting('time_fare_enabled', '0') === '1';
+        $perMinuteRate   = (float) $this->setting('time_fare_per_minute', '5');
+
         echo utilities::apiMessage('Fare estimated.', 200, [
             'vehicle_type'   => ['id' => $vt['id'], 'name' => $vt['name']],
             'distance_km'    => $distanceKm,
@@ -75,9 +79,11 @@ class Fare extends BaseController
             'estimated_fare' => $fare,
             'currency'       => $this->setting('currency', 'NGN'),
             'breakdown'      => [
-                'base_fare'    => (float) $pricing['base_fare'],
-                'per_km_rate'  => (float) $pricing['per_km_rate'],
-                'per_stop_fee' => (float) $pricing['per_stop_fee'],
+                'base_fare'         => (float) $pricing['base_fare'],
+                'per_km_rate'       => (float) $pricing['per_km_rate'],
+                'per_stop_fee'      => (float) $pricing['per_stop_fee'],
+                'time_fare_enabled' => $timeFareEnabled,
+                'per_minute_rate'   => $timeFareEnabled ? $perMinuteRate : 0,
             ],
         ]);
     }

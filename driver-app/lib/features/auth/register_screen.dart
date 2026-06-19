@@ -64,8 +64,12 @@ class _DriverRegisterScreenState
     final pass    = _passCtrl.text;
     final confirm = _confirmCtrl.text;
 
-    if (name.isEmpty || phone.isEmpty || pass.isEmpty) {
-      setState(() => _error = 'Name, phone, and password are required.');
+    if (name.isEmpty || phone.isEmpty || email.isEmpty || pass.isEmpty) {
+      setState(() => _error = 'Name, phone, email, and password are required.');
+      return;
+    }
+    if (!RegExp(r'^[\w.+-]+@[\w-]+\.[a-zA-Z]{2,}$').hasMatch(email)) {
+      setState(() => _error = 'Please enter a valid email address.');
       return;
     }
     if (pass.length < 6) {
@@ -86,7 +90,7 @@ class _DriverRegisterScreenState
       await ref.read(driverAuthRepositoryProvider).register(
         name:     name,
         phone:    phone,
-        email:    email.isNotEmpty ? email : null,
+        email:    email,
         password: pass,
         state:    _selectedState,
         lga:      _selectedLga,
@@ -136,7 +140,24 @@ class _DriverRegisterScreenState
                 children: [
                   GestureDetector(
                     onTap: () => context.pop(),
-                    child: const Icon(Icons.arrow_back_rounded, size: 24),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.arrow_back_ios_new_rounded,
+                          size: 18,
+                          color: AppColors.primary,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Back',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -171,10 +192,10 @@ class _DriverRegisterScreenState
               _PhoneField(controller: _phoneCtrl),
               const SizedBox(height: 14),
 
-              // Email (optional)
+              // Email (required)
               AppTextField(
                 controller:   _emailCtrl,
-                hint:     'Email address (optional)',
+                hint:         'Email address',
                 keyboardType: TextInputType.emailAddress,
               ),
               const SizedBox(height: 14),

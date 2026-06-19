@@ -18,14 +18,22 @@ final driverAuthRepositoryProvider = Provider<DriverAuthRepository>((ref) {
   );
 });
 
+final driverRepositoryProvider = Provider<DriverRepository>((ref) {
+  return DriverRepository(ref.read(apiClientProvider));
+});
+
 final contentRepositoryProvider = Provider<ContentRepository>((ref) {
   return ContentRepository(ref.read(apiClientProvider));
 });
 
 final currentDriverProvider = StateProvider<DriverModel?>((ref) => null);
 
+final driverOnlineProvider = StateProvider<bool>((ref) {
+  return ref.watch(currentDriverProvider)?.isOnline ?? false;
+});
+
 final driverAuthInitProvider = FutureProvider<DriverModel?>((ref) async {
-  final repo   = ref.read(driverAuthRepositoryProvider);
+  final repo = ref.read(driverAuthRepositoryProvider);
   final driver = await repo.getCachedDriver();
   if (driver != null) {
     ref.read(currentDriverProvider.notifier).state = driver;
@@ -33,79 +41,52 @@ final driverAuthInitProvider = FutureProvider<DriverModel?>((ref) async {
   return driver;
 });
 
-// ── Auth mode & locations ────────────────────────────────────────────────────
-
-/// Driver auth mode: 'both' | 'otp' | 'password'
-final driverAuthConfigProvider = FutureProvider<Map<String, dynamic>>((ref) async {
-  try {
-    return await ref.read(contentRepositoryProvider).getDriverAuthConfig();
-  } catch (_) {
-    return {'mode': 'both'};
-  }
-});
-
-final driverAuthModeProvider = Provider<String>((ref) {
-  final v    = ref.watch(driverAuthConfigProvider).valueOrNull;
-  final mode = v?['mode']?.toString() ?? 'both';
-  return ['otp', 'password', 'both'].contains(mode) ? mode : 'both';
-});
-
-/// List of {state: String, lgas: List} — empty when not configured.
-final driverLocationsProvider = FutureProvider<List<dynamic>>((ref) async {
-  try {
-    return await ref.read(contentRepositoryProvider).getDriverLocations();
-  } catch (_) {
-    return [];
-  }
-});
-
-// ── Driver repository & job providers ────────────────────────────────────────
-
-final driverRepositoryProvider = Provider<DriverRepository>((ref) {
-  return DriverRepository(ref.read(apiClientProvider));
-});
-
-/// Online/offline state — optimistic, synced with backend on change.
-final driverOnlineProvider = StateProvider<bool>((ref) {
-  return ref.read(currentDriverProvider)?.isOnline ?? false;
-});
-
-/// Active jobs assigned to the driver.
-final driverJobsProvider = FutureProvider<List<JobModel>>((ref) async {
-  try {
-    return await ref.read(driverRepositoryProvider).getJobs();
-  } catch (_) {
-    return [];
-  }
-});
-
-/// Recent trip history (last 20).
-final driverHistoryProvider = FutureProvider<List<JobModel>>((ref) async {
-  try {
-    return await ref.read(driverRepositoryProvider).getHistory();
-  } catch (_) {
-    return [];
-  }
-});
-
-/// Unread notification count — used for badge in the top bar.
-final driverUnreadNotifCountProvider = FutureProvider<int>((ref) async {
-  try {
-    final notifs = await ref.read(driverRepositoryProvider).getNotifications();
-    return notifs.where((n) => n['is_read'] == 0 || n['is_read'] == '0').length;
-  } catch (_) {
-    return 0;
-  }
-});
-
-// ── Map settings ─────────────────────────────────────────────────────────────
-
 final mapSettingsProvider = FutureProvider<Map<String, dynamic>>((ref) async {
   final repo = ref.read(contentRepositoryProvider);
   return await repo.getMapSettings();
 });
 
+final commonDetailsProvider = FutureProvider<Map<String, dynamic>>((ref) async {
+  return ref.read(contentRepositoryProvider).getCommonDetails();
+});
+
 final mapApiKeyProvider = Provider<String>((ref) {
   final v = ref.watch(mapSettingsProvider).valueOrNull;
   return v?['api_key']?.toString() ?? '';
+});
+
+final driverJobsProvider = FutureProvider<List<JobModel>>((ref) async {
+  return ref.read(driverRepositoryProvider).getJobs();
+});
+
+final driverHistoryProvider = FutureProvider<List<JobModel>>((ref) async {
+  return ref.read(driverRepositoryProvider).getHistory();
+});
+
+final driverNotificationsProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  return ref.read(driverRepositoryProvider).getNotifications();
+});
+
+bool _isUnread(Map<String, dynamic> n) {
+  final v = n['is_read'];
+  return !(v == 1 || v == '1' || v == true);
+}
+
+final driverUnreadNotifCountProvider = FutureProvider<int>((ref) async {
+  final notifs = await ref.watch(driverNotificationsProvider.future);
+  return notifs.where(_isUnread).length;
+});
+
+/// Auth mode returned by /content/driver-auth-config: 'otp' | 'password' | 'both'
+final driverAuthConfigProvider = FutureProvider<Map<String, dynamic>>((ref) async {
+  return ref.read(contentRepositoryProvider).getDriverAuthConfig();
+});
+
+final driverAuthModeProvider = Provider<String>((ref) {
+  return ref.watch(driverAuthConfigProvider).valueOrNull?['mode']?.toString() ?? 'both';
+});
+
+/// List of {state, lgas:[...]} from /content/driver-locations
+final driverLocationsProvider = FutureProvider<List<dynamic>>((ref) async {
+  return ref.read(contentRepositoryProvider).getDriverLocations();
 });

@@ -19,6 +19,7 @@ const ReportsPage      = lazy(() => import('./pages/reports/ReportsPage').then(m
 const MapSettingsPage  = lazy(() => import('./pages/map/MapSettingsPage').then(m => ({ default: m.MapSettingsPage })));
 const ProfilePage         = lazy(() => import('./pages/profile/ProfilePage').then(m => ({ default: m.ProfilePage })));
 const EmailTemplatesPage  = lazy(() => import('./pages/emailTemplates/EmailTemplatesPage').then(m => ({ default: m.EmailTemplatesPage })));
+const PaymentsPage        = lazy(() => import('./pages/payments/PaymentsPage'));
 
 // ── React Query client ────────────────────────────────────────────────────────
 const queryClient = new QueryClient({
@@ -67,6 +68,7 @@ export default function App() {
               <Route path="/map"              element={<MapSettingsPage />} />
               <Route path="/email-templates" element={<EmailTemplatesPage />} />
               <Route path="/profile"         element={<ProfilePage />} />
+              <Route path="/payments"        element={<PaymentsPage />} />
             </Route>
 
             {/* Fallback */}

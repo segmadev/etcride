@@ -18,6 +18,7 @@ class BookingDraft {
     this.distanceKm        = 0,
     this.recipientName,
     this.recipientPhone,
+    this.senderPhone,
     this.packageDescription,
   });
 
@@ -34,6 +35,7 @@ class BookingDraft {
   final double distanceKm;
   final String? recipientName;
   final String? recipientPhone;
+  final String? senderPhone;
   final String? packageDescription;
 
   bool get hasPickup      => pickupLat != 0 && pickupLng != 0;
@@ -54,6 +56,7 @@ class BookingDraft {
     double? distanceKm,
     String? recipientName,
     String? recipientPhone,
+    String? senderPhone,
     String? packageDescription,
   }) =>
       BookingDraft(
@@ -70,6 +73,7 @@ class BookingDraft {
         distanceKm:          distanceKm          ?? this.distanceKm,
         recipientName:       recipientName       ?? this.recipientName,
         recipientPhone:      recipientPhone      ?? this.recipientPhone,
+        senderPhone:         senderPhone         ?? this.senderPhone,
         packageDescription:  packageDescription  ?? this.packageDescription,
       );
 }

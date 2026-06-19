@@ -149,7 +149,11 @@ class Router
     {
         $path = $path ?? PATH ?? "/";
         $contentType = $_SERVER['CONTENT_TYPE'] ?? ($_SERVER['HTTP_CONTENT_TYPE'] ?? '');
-        if (stripos($contentType, 'application/json') !== false) {
+        $isJsonContent = stripos($contentType, 'application/json') !== false;
+        // Also try JSON parse when $_POST is empty and body looks like JSON (handles
+        // cases where Content-Type header is missing or stripped by a proxy).
+        $shouldTryJson = $isJsonContent || empty($_POST);
+        if ($shouldTryJson) {
             $rawBody = file_get_contents('php://input');
             if (is_string($rawBody) && $rawBody !== '') {
                 $json = json_decode($rawBody, true);

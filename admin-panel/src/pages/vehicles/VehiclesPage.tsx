@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Power, Truck } from 'lucide-react';
+import { Pencil, Plus, Power, Truck } from 'lucide-react';
 import { PageWrapper } from '../../components/layout/PageWrapper';
 import { Card } from '../../components/ui/Card';
 import { Table } from '../../components/ui/Table';
@@ -15,7 +15,17 @@ import { cn } from '../../utils';
 import type { Vehicle } from '../../types';
 
 // ── Mobile vehicle card ───────────────────────────────────────────────────────
-function VehicleCard({ vehicle: v, onToggle }: { vehicle: Vehicle; onToggle: () => void }) {
+function VehicleCard({
+  vehicle: v,
+  onToggle,
+  onEdit,
+  onView,
+}: {
+  vehicle: Vehicle;
+  onToggle: () => void;
+  onEdit: () => void;
+  onView: () => void;
+}) {
   const isActive = v.status === 'active';
   return (
     <div className={cn(
@@ -23,9 +33,7 @@ function VehicleCard({ vehicle: v, onToggle }: { vehicle: Vehicle; onToggle: () 
       isActive ? 'border-slate-200' : 'border-slate-100 opacity-75',
     )}>
       <div className="flex items-center gap-3 px-4 py-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100">
-          <Truck size={18} className="text-slate-500" />
-        </div>
+        <VehicleImage vehicle={v} size="sm" />
         <div className="flex-1 min-w-0">
           <p className="font-mono text-base font-bold text-slate-800">{v.plate_number}</p>
           <p className="text-xs text-slate-500 truncate">
@@ -48,6 +56,18 @@ function VehicleCard({ vehicle: v, onToggle }: { vehicle: Vehicle; onToggle: () 
           </span>
         </div>
         <button
+          onClick={onView}
+          className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-slate-200 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 active:scale-[0.98]"
+        >
+          View Details
+        </button>
+        <button
+          onClick={onEdit}
+          className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-slate-200 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 active:scale-[0.98]"
+        >
+          <Pencil size={14} /> Edit Details
+        </button>
+        <button
           onClick={onToggle}
           className={cn(
             'flex w-full items-center justify-center gap-1.5 rounded-xl border py-2.5 text-sm font-medium transition-colors active:scale-[0.98]',
@@ -63,6 +83,26 @@ function VehicleCard({ vehicle: v, onToggle }: { vehicle: Vehicle; onToggle: () 
   );
 }
 
+function VehicleImage({ vehicle, size = 'md' }: { vehicle: Vehicle; size?: 'sm' | 'md' | 'lg' }) {
+  const dimension = size === 'lg' ? 'h-40 w-full' : size === 'sm' ? 'h-12 w-12' : 'h-12 w-16';
+
+  if (vehicle.photo_url) {
+    return (
+      <img
+        src={vehicle.photo_url}
+        alt={`${vehicle.make} ${vehicle.model}`}
+        className={`${dimension} shrink-0 rounded-xl border border-slate-200 object-cover bg-slate-50`}
+      />
+    );
+  }
+
+  return (
+    <div className={`${dimension} flex shrink-0 items-center justify-center rounded-xl bg-slate-100`}>
+      <Truck size={size === 'lg' ? 28 : 18} className="text-slate-400" />
+    </div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 export function VehiclesPage() {
   const qc = useQueryClient();
@@ -74,9 +114,12 @@ export function VehiclesPage() {
 
   const [createOpen, setCreateOpen]     = useState(false);
   const [toggleTarget, setToggleTarget] = useState<Vehicle | null>(null);
+  const [editTarget, setEditTarget]     = useState<Vehicle | null>(null);
+  const [detailId, setDetailId]         = useState<string | null>(null);
 
   const [form, setForm] = useState({
     vehicle_type_id: '', plate_number: '', make: '', model: '', color: '', year: '',
+    photo: null as File | null,
   });
   const setF = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm(prev => ({ ...prev, [k]: e.target.value }));
@@ -91,13 +134,38 @@ export function VehiclesPage() {
     queryFn: () => vehicleTypesApi.list(),
   });
 
+  const { data: detailVehicle, isLoading: detailLoading } = useQuery({
+    queryKey: ['vehicle', detailId],
+    queryFn: () => vehiclesApi.show(detailId!),
+    enabled: !!detailId,
+  });
+
   const createMutation = useMutation({
     mutationFn: () => vehiclesApi.create(form),
     onSuccess: () => {
       toast('Vehicle added.', 'success');
       qc.invalidateQueries({ queryKey: ['vehicles'] });
       setCreateOpen(false);
-      setForm({ vehicle_type_id: '', plate_number: '', make: '', model: '', color: '', year: '' });
+      setForm({ vehicle_type_id: '', plate_number: '', make: '', model: '', color: '', year: '', photo: null });
+    },
+    onError: (e: unknown) => toast(getApiErrorMessage(e), 'error'),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: () => vehiclesApi.update(editTarget!.id, {
+      vehicle_type_id: form.vehicle_type_id,
+      plate_number: form.plate_number,
+      make: form.make,
+      model: form.model,
+      color: form.color,
+      year: form.year,
+      photo: form.photo,
+    }),
+    onSuccess: () => {
+      toast('Vehicle updated.', 'success');
+      qc.invalidateQueries({ queryKey: ['vehicles'] });
+      setEditTarget(null);
+      setForm({ vehicle_type_id: '', plate_number: '', make: '', model: '', color: '', year: '', photo: null });
     },
     onError: (e: unknown) => toast(getApiErrorMessage(e), 'error'),
   });
@@ -119,6 +187,19 @@ export function VehiclesPage() {
 
   const allVehicles = data?.data ?? [];
 
+  const openEdit = (v: Vehicle) => {
+    setEditTarget(v);
+    setForm({
+      vehicle_type_id: v.vehicle_type_id ?? '',
+      plate_number: v.plate_number ?? '',
+      make: v.make ?? '',
+      model: v.model ?? '',
+      color: v.color ?? '',
+      year: v.year ?? '',
+      photo: null,
+    });
+  };
+
   const columns = [
     {
       key: 'plate_number',
@@ -129,9 +210,12 @@ export function VehiclesPage() {
       key: 'vehicle',
       header: 'Vehicle',
       render: (v: Vehicle) => (
-        <div>
-          <p className="text-sm font-medium text-slate-800">{v.make} {v.model}</p>
-          <p className="text-xs text-slate-400">{v.color}{v.color && v.year ? ' · ' : ''}{v.year ?? ''}</p>
+        <div className="flex items-center gap-3">
+          <VehicleImage vehicle={v} />
+          <div>
+            <p className="text-sm font-medium text-slate-800">{v.make} {v.model}</p>
+            <p className="text-xs text-slate-400">{v.color}{v.color && v.year ? ' · ' : ''}{v.year ?? ''}</p>
+          </div>
         </div>
       ),
     },
@@ -156,17 +240,26 @@ export function VehiclesPage() {
       key: 'actions',
       header: '',
       render: (v: Vehicle) => (
-        <button
-          onClick={e => { e.stopPropagation(); setToggleTarget(v); }}
-          className={`flex h-7 w-7 items-center justify-center rounded-lg transition-colors ${
-            v.status === 'active'
-              ? 'text-slate-400 hover:bg-red-50 hover:text-red-600'
-              : 'text-slate-400 hover:bg-green-50 hover:text-green-600'
-          }`}
-          title={v.status === 'active' ? 'Deactivate' : 'Activate'}
-        >
-          <Power size={14} />
-        </button>
+        <div className="flex items-center justify-end gap-2">
+          <button
+            onClick={e => { e.stopPropagation(); openEdit(v); }}
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+            title="Edit"
+          >
+            <Pencil size={14} />
+          </button>
+          <button
+            onClick={e => { e.stopPropagation(); setToggleTarget(v); }}
+            className={`flex h-7 w-7 items-center justify-center rounded-lg transition-colors ${
+              v.status === 'active'
+                ? 'text-slate-400 hover:bg-red-50 hover:text-red-600'
+                : 'text-slate-400 hover:bg-green-50 hover:text-green-600'
+            }`}
+            title={v.status === 'active' ? 'Deactivate' : 'Activate'}
+          >
+            <Power size={14} />
+          </button>
+        </div>
       ),
     },
   ];
@@ -207,7 +300,13 @@ export function VehiclesPage() {
             <p className="text-sm">No vehicles found.</p>
           </div>
         ) : allVehicles.map(v => (
-          <VehicleCard key={v.id} vehicle={v} onToggle={() => setToggleTarget(v)} />
+          <VehicleCard
+            key={v.id}
+            vehicle={v}
+            onToggle={() => setToggleTarget(v)}
+            onEdit={() => openEdit(v)}
+            onView={() => setDetailId(v.id)}
+          />
         ))}
         <Pagination page={page} total={data?.total ?? 0} perPage={data?.per_page ?? 25} onChange={setPage} />
       </div>
@@ -221,6 +320,7 @@ export function VehiclesPage() {
             loading={isLoading}
             keyExtractor={v => v.id}
             emptyMessage="No vehicles found."
+            onRowClick={v => setDetailId(v.id)}
           />
           <Pagination page={page} total={data?.total ?? 0} perPage={data?.per_page ?? 25} onChange={setPage} />
         </Card>
@@ -256,7 +356,112 @@ export function VehiclesPage() {
             <Input label="Color *" value={form.color} onChange={setF('color')} placeholder="White" />
             <Input label="Year"    value={form.year}  onChange={setF('year')}  placeholder="2022" type="number" />
           </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700">Vehicle Photo (optional)</label>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={e => setForm(p => ({ ...p, photo: e.target.files?.[0] ?? null }))}
+              className="block w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-200"
+            />
+            {form.photo && (
+              <p className="mt-1 text-xs text-slate-500">Selected: {form.photo.name}</p>
+            )}
+          </div>
         </div>
+      </Modal>
+
+      {/* Edit vehicle modal */}
+      <Modal
+        open={!!editTarget}
+        onClose={() => { setEditTarget(null); setForm({ vehicle_type_id: '', plate_number: '', make: '', model: '', color: '', year: '', photo: null }); }}
+        title="Edit Vehicle"
+        size="md"
+        footer={
+          <>
+            <Button
+              variant="outline"
+              onClick={() => { setEditTarget(null); setForm({ vehicle_type_id: '', plate_number: '', make: '', model: '', color: '', year: '', photo: null }); }}
+            >
+              Cancel
+            </Button>
+            <Button loading={updateMutation.isPending} onClick={() => updateMutation.mutate()}>
+              Save Changes
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <Select
+            label="Vehicle Type *"
+            value={form.vehicle_type_id}
+            onChange={e => setForm(p => ({ ...p, vehicle_type_id: e.target.value }))}
+            placeholder="Select type…"
+            options={(vehicleTypes ?? []).map(t => ({ value: t.id, label: t.name }))}
+          />
+          <Input label="Plate Number *" value={form.plate_number} onChange={setF('plate_number')} placeholder="KWR-123-AB" />
+          <div className="grid grid-cols-2 gap-3">
+            <Input label="Make *"  value={form.make}  onChange={setF('make')}  placeholder="Toyota" />
+            <Input label="Model *" value={form.model} onChange={setF('model')} placeholder="Corolla" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Input label="Color *" value={form.color} onChange={setF('color')} placeholder="White" />
+            <Input label="Year"    value={form.year}  onChange={setF('year')}  placeholder="2022" type="number" />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700">Vehicle Photo (optional)</label>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={e => setForm(p => ({ ...p, photo: e.target.files?.[0] ?? null }))}
+              className="block w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-200"
+            />
+            {form.photo && (
+              <p className="mt-1 text-xs text-slate-500">Selected: {form.photo.name}</p>
+            )}
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={!!detailId}
+        onClose={() => setDetailId(null)}
+        title="Vehicle Details"
+        size="md"
+        footer={<Button variant="outline" onClick={() => setDetailId(null)}>Close</Button>}
+      >
+        {detailLoading || !detailVehicle ? (
+          <div className="py-10 text-center text-sm text-slate-400">Loading vehicle details...</div>
+        ) : (
+          <div className="space-y-5">
+            <VehicleImage vehicle={detailVehicle} size="lg" />
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <DetailItem label="Plate Number" value={detailVehicle.plate_number} />
+                <DetailItem label="Status" value={detailVehicle.status} />
+                <DetailItem label="Make" value={detailVehicle.make || '—'} />
+                <DetailItem label="Model" value={detailVehicle.model || '—'} />
+                <DetailItem label="Color" value={detailVehicle.color || '—'} />
+                <DetailItem label="Year" value={detailVehicle.year || '—'} />
+                <DetailItem label="Vehicle Type" value={detailVehicle.vehicle_type_name || '—'} />
+                <DetailItem
+                  label="Assigned Driver"
+                  value={detailVehicle.driver_name ? `${detailVehicle.driver_name}${detailVehicle.driver_phone ? ` · ${detailVehicle.driver_phone}` : ''}` : 'Unassigned'}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <Button
+                onClick={() => {
+                  setDetailId(null);
+                  openEdit(detailVehicle);
+                }}
+              >
+                Edit Vehicle
+              </Button>
+            </div>
+          </div>
+        )}
       </Modal>
 
       <ConfirmModal
@@ -270,5 +475,14 @@ export function VehiclesPage() {
         loading={toggleMutation.isPending}
       />
     </PageWrapper>
+  );
+}
+
+function DetailItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="text-sm font-medium text-slate-800">{value}</p>
+    </div>
   );
 }

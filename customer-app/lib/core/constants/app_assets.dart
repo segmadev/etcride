@@ -13,7 +13,7 @@ abstract final class AppAssets {
   static const String worldLocation     = 'assets/icons/world-location.svg';
   static const String noTrips           = 'assets/svg/no_trips.svg';
   static const String noNotifications   = 'assets/svg/no_notifications.svg';
-  static const String receiptIllustration = 'assets/svg/receipt.svg';
+  static const String receiptIllustration = 'assets/icons/undraw_receipt_tzi0 1.svg';
 
   // ── Vehicle images ────────────────────────────────────────────────────────
   static const String carPremium        = 'assets/images/car_premium.png';

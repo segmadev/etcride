@@ -66,18 +66,14 @@ class TripCard extends StatelessWidget {
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    Text(
-                      booking.createdAt != null
-                          ? AppFormatters.tripDate(DateTime.parse(booking.createdAt!))
-                          : '',
-                      style: AppTextStyles.bodySmall,
-                    ),
-                    const SizedBox(width: 6),
-                    Text('•', style: AppTextStyles.bodySmall),
-                    const SizedBox(width: 6),
-                    Text(
-                      AppFormatters.nairaCompact(booking.finalFare > 0 ? booking.finalFare : booking.estimatedFare),
-                      style: AppTextStyles.bodySmall.copyWith(fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                    Flexible(
+                      child: Text(
+                        booking.createdAt != null
+                            ? AppFormatters.tripDate(DateTime.parse(booking.createdAt!))
+                            : '',
+                        style: AppTextStyles.bodySmall,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                     const SizedBox(width: 6),
                     Text('~', style: AppTextStyles.bodySmall),
@@ -90,16 +86,21 @@ class TripCard extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           // Fare + rebook
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                AppFormatters.nairaCompact(booking.finalFare > 0 ? booking.finalFare : booking.estimatedFare),
-                style: AppTextStyles.priceMedium,
-              ),
-              const SizedBox(height: 8),
-              _RebookButton(onTap: onRebook),
-            ],
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 120),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  AppFormatters.nairaCompact(booking.finalFare > 0 ? booking.finalFare : booking.estimatedFare),
+                  style: AppTextStyles.priceMedium,
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+                const SizedBox(height: 8),
+                _RebookButton(onTap: onRebook),
+              ],
+            ),
           ),
         ],
       ),

@@ -8,6 +8,7 @@ export interface VehicleTypePayload {
   per_km_rate: number;
   per_stop_fee: number;
   is_active?: number;
+  category?: 'ride' | 'delivery';
 }
 
 export const vehicleTypesApi = {

@@ -1,17 +1,17 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Pencil, Trash2, Car } from 'lucide-react';
+import { Plus, Pencil, Trash2, Car, Package } from 'lucide-react';
 import { PageWrapper } from '../../components/layout/PageWrapper';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
-import { Input } from '../../components/ui/Input';
+import { Input, Select } from '../../components/ui/Input';
 import { Modal, ConfirmModal } from '../../components/ui/Modal';
 import { useToast } from '../../components/ui/Toast';
 import { vehicleTypesApi, getApiErrorMessage } from '../../api';
 import { formatCurrency } from '../../utils';
 import type { VehicleType } from '../../types';
 
-const emptyForm = { name: '', description: '', base_fare: '', per_km_rate: '', per_stop_fee: '' };
+const emptyForm = { name: '', description: '', base_fare: '', per_km_rate: '', per_stop_fee: '', category: 'ride' as 'ride' | 'delivery' };
 
 export function VehicleTypesPage() {
   const qc = useQueryClient();
@@ -33,13 +33,13 @@ export function VehicleTypesPage() {
   const openCreate = () => { setEditTarget(null); setForm(emptyForm); setModalOpen(true); };
   const openEdit   = (t: VehicleType) => {
     setEditTarget(t);
-    setForm({ name: t.name, description: t.description ?? '', base_fare: String(t.base_fare), per_km_rate: String(t.per_km_rate), per_stop_fee: String(t.per_stop_fee) });
+    setForm({ name: t.name, description: t.description ?? '', base_fare: String(t.base_fare), per_km_rate: String(t.per_km_rate), per_stop_fee: String(t.per_stop_fee), category: t.category ?? 'ride' });
     setModalOpen(true);
   };
 
   const saveMutation = useMutation({
     mutationFn: () => {
-      const payload = { name: form.name, description: form.description, base_fare: parseFloat(form.base_fare), per_km_rate: parseFloat(form.per_km_rate), per_stop_fee: parseFloat(form.per_stop_fee) };
+      const payload = { name: form.name, description: form.description, base_fare: parseFloat(form.base_fare), per_km_rate: parseFloat(form.per_km_rate), per_stop_fee: parseFloat(form.per_stop_fee), category: form.category };
       return editTarget ? vehicleTypesApi.update(editTarget.id, payload) : vehicleTypesApi.create(payload);
     },
     onSuccess: () => { toast(editTarget ? 'Vehicle type updated.' : 'Vehicle type created.', 'success'); qc.invalidateQueries({ queryKey: ['vehicle-types'] }); setModalOpen(false); },
@@ -79,9 +79,15 @@ export function VehicleTypesPage() {
                   </div>
                   <div>
                     <h3 className="font-semibold text-slate-900 text-sm">{t.name}</h3>
-                    <Badge status={t.is_active ? 'active' : 'inactive'} className="mt-0.5">
-                      {t.is_active ? 'Active' : 'Inactive'}
-                    </Badge>
+                    <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                      <Badge status={t.is_active ? 'active' : 'inactive'}>
+                        {t.is_active ? 'Active' : 'Inactive'}
+                      </Badge>
+                      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${t.category === 'delivery' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
+                        {t.category === 'delivery' ? <Package size={9} /> : <Car size={9} />}
+                        {t.category === 'delivery' ? 'Delivery' : 'Ride'}
+                      </span>
+                    </div>
                   </div>
                 </div>
                 <div className="flex gap-1 shrink-0">
@@ -126,6 +132,15 @@ export function VehicleTypesPage() {
         <div className="space-y-4">
           <Input label="Name *"       value={form.name}        onChange={setF('name')}        placeholder="Sedan" />
           <Input label="Description"  value={form.description} onChange={setF('description')} placeholder="Standard 4-door vehicle" />
+          <Select
+            label="Category *"
+            value={form.category}
+            onChange={e => setForm(p => ({ ...p, category: e.target.value as 'ride' | 'delivery' }))}
+            options={[
+              { value: 'ride',     label: 'Ride — passenger transport' },
+              { value: 'delivery', label: 'Delivery — courier / package' },
+            ]}
+          />
           <div className="grid grid-cols-3 gap-3">
             <Input label="Base Fare (₦) *"  value={form.base_fare}    onChange={setF('base_fare')}    type="number" placeholder="500" />
             <Input label="Per km (₦) *"     value={form.per_km_rate}  onChange={setF('per_km_rate')}  type="number" placeholder="150" />

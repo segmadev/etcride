@@ -17,6 +17,7 @@ abstract final class ApiEndpoints {
   static const String placeDetails         = '/content/place-details';
   static const String geocode              = '/content/geocode';
   static const String reverseGeocode       = '/content/reverse-geocode';
+  static const String directions           = '/content/directions';
 
   // ── Driver auth ───────────────────────────────────────────────────────────
   static const String driverLogin         = '/driver/auth/login';
@@ -39,9 +40,14 @@ abstract final class ApiEndpoints {
   static String rejectJob(String id)        => '/driver/jobs/$id/reject';
   static String cancelJob(String id)        => '/driver/jobs/$id/cancel';
   static String arriveJob(String id)        => '/driver/jobs/$id/arrive';
+  static String confirmPickupPayment(String id) => '/driver/jobs/$id/confirm-pickup-payment';
+  static String pickupJob(String id)            => '/driver/jobs/$id/pickup';
   static String startJob(String id)         => '/driver/jobs/$id/start';
   static String completeJob(String id)      => '/driver/jobs/$id/complete';
   static String confirmPayment(String id)   => '/driver/jobs/$id/confirm-payment';
   static String reachStop(String id, String stopId) => '/driver/jobs/$id/stops/$stopId/reach';
   static String updateJobPaymentMethod(String id)   => '/driver/jobs/$id/payment-method';
+  static String jobMessages(String id)              => '/driver/jobs/$id/messages';
+  static const String driverChatThreads             = '/driver/chats';
+  static String markDriverChatRead(String id)      => '/driver/chats/$id/read';
 }

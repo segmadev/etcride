@@ -18,6 +18,75 @@ class Auth extends BaseController
         return in_array($mode, ['otp', 'password', 'both'], true) ? $mode : 'both';
     }
 
+    private function photoUrl(?string $file): ?string
+    {
+        return $this->uploadUrl('drivers', $file);
+    }
+
+    private function vehiclePhotoUrl(?string $file): ?string
+    {
+        return $this->uploadUrl('vehicles', $file);
+    }
+
+    private function assignedVehiclePayload(?string $vehicleId): ?array
+    {
+        if (!$vehicleId) {
+            return null;
+        }
+
+        $withPhoto = $this->tableHasColumn('vehicles', 'photo');
+        $stmt = $this->db->prepare(
+            "SELECT v.id, v.plate_number, v.make, v.model, v.color, v.year, v.status," .
+            ($withPhoto ? " v.photo," : "") .
+            " vt.name AS vehicle_type_name
+             FROM vehicles v
+             LEFT JOIN vehicle_types vt ON vt.id = v.vehicle_type_id
+             WHERE v.id = ?
+             LIMIT 1"
+        );
+        $stmt->execute([$vehicleId]);
+        $vehicle = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!is_array($vehicle)) {
+            return null;
+        }
+
+        $payload = [
+            'id' => $vehicle['id'],
+            'plate_number' => $vehicle['plate_number'] ?? null,
+            'make' => $vehicle['make'] ?? null,
+            'model' => $vehicle['model'] ?? null,
+            'color' => $vehicle['color'] ?? null,
+            'year' => $vehicle['year'] ?? null,
+            'status' => $vehicle['status'] ?? null,
+            'vehicle_type' => $vehicle['vehicle_type_name'] ?? null,
+        ];
+
+        if ($withPhoto) {
+            $payload['photo'] = $vehicle['photo'] ?? null;
+            $payload['photo_url'] = $this->vehiclePhotoUrl($vehicle['photo'] ?? null);
+        }
+
+        return $payload;
+    }
+
+    private function driverPayload(array $driver, array $extra = []): array
+    {
+        unset($driver['password'], $driver['reset_code']);
+
+        $driver['photo_url'] = $this->photoUrl($driver['photo'] ?? null);
+        $driver['profile_photo'] = $driver['photo'] ?? null;
+        $driver['profile_photo_url'] = $driver['photo_url'];
+        $driver['kyc_front_url'] = $this->photoUrl($driver['kyc_id_front'] ?? null);
+        $driver['kyc_back_url'] = $this->photoUrl($driver['kyc_id_back'] ?? null);
+        $driver['driving_experience'] = $driver['driving_experience'] ?? null;
+        $driver['kyc_note'] = $driver['kyc_note'] ?? null;
+        $driver['rejection_reason'] = $driver['kyc_note'];
+        $driver['assigned_vehicle'] = $this->assignedVehiclePayload($driver['vehicle_id'] ?? null);
+
+        return array_merge($driver, $extra);
+    }
+
     // ── POST /driver/auth/login ───────────────────────────────────────────────
     public function login(): void
     {
@@ -26,13 +95,11 @@ class Auth extends BaseController
             return;
         }
 
-        // Accept 'login' (phone or email, sent by the Flutter app) or legacy 'phone'.
-        $loginId = $this->str('login') ?: $this->str('phone');
+        $err = $this->requireFields(['phone', 'password']);
+        if ($err) { echo $err; return; }
+
+        $phone   = $this->str('phone');
         $passRaw = $this->input('password', '');
-        if (empty($loginId) || empty(trim((string) $passRaw))) {
-            echo utilities::apiMessage('The following fields are required: login, password', 422);
-            return;
-        }
 
         $decoded = base64_decode($passRaw, true);
         if ($decoded === false) {
@@ -40,8 +107,8 @@ class Auth extends BaseController
             return;
         }
 
-        $field  = filter_var($loginId, FILTER_VALIDATE_EMAIL) ? 'email' : 'phone';
-        $driver = $this->getall('drivers', "$field = ?", [$loginId]);
+        $field  = filter_var($phone, FILTER_VALIDATE_EMAIL) ? 'email' : 'phone';
+        $driver = $this->getall('drivers', "$field = ?", [$phone]);
 
         if (!is_array($driver) || !password_verify($decoded, $driver['password'])) {
             echo utilities::apiMessage('Invalid credentials.', 401);
@@ -68,11 +135,10 @@ class Auth extends BaseController
 
         $this->logActivity('driver', $driver['id'], 'login');
 
-        unset($driver['password'], $driver['reset_code']);
-        $driver['token']      = $token;
-        $driver['expires_at'] = $expiresAt;
-
-        echo utilities::apiMessage('Login successful.', 200, $driver);
+        echo utilities::apiMessage('Login successful.', 200, $this->driverPayload($driver, [
+            'token' => $token,
+            'expires_at' => $expiresAt,
+        ]));
     }
 
     // ── POST /driver/auth/register ────────────────────────────────────────────
@@ -126,13 +192,18 @@ class Auth extends BaseController
         }
 
         $this->logActivity('driver', $id, 'register');
-        echo utilities::apiMessage('Driver registered successfully.', 201, [
+        echo utilities::apiMessage('Driver registered successfully.', 201, $this->driverPayload([
             'id'         => $id,
             'name'       => $name,
             'phone'      => $phone,
             'email'      => $email !== '' ? $email : null,
+            'photo'      => null,
+            'kyc_id_front' => null,
+            'kyc_id_back' => null,
+            'driving_experience' => null,
+            'kyc_note' => null,
             'kyc_status' => 'not_submitted',
-        ]);
+        ]));
     }
 
     // ── POST /driver/auth/send-otp ────────────────────────────────────────────
@@ -261,11 +332,10 @@ class Auth extends BaseController
 
         $this->logActivity('driver', $driver['id'], 'otp_login');
 
-        unset($driver['password'], $driver['reset_code']);
-        $driver['token']      = $token;
-        $driver['expires_at'] = $expiresAt;
-
-        echo utilities::apiMessage('Verified successfully.', 200, $driver);
+        echo utilities::apiMessage('Verified successfully.', 200, $this->driverPayload($driver, [
+            'token' => $token,
+            'expires_at' => $expiresAt,
+        ]));
     }
 
     // ── POST /driver/auth/logout ──────────────────────────────────────────────
@@ -282,15 +352,14 @@ class Auth extends BaseController
     public function getProfile(): void
     {
         $me = BaseController::$authDriver;
-        // Re-fetch from DB so the response always reflects the latest kyc_status,
-        // is_online, rating, etc. — not just the session snapshot.
         $driver = $this->getall('drivers', 'id = ?', [$me['id']]);
+
         if (!is_array($driver)) {
-            echo utilities::apiMessage('Driver not found.', 404);
+            echo utilities::apiMessage('Driver account not found.', 404);
             return;
         }
-        unset($driver['password'], $driver['reset_code']);
-        echo utilities::apiMessage('Profile retrieved.', 200, $driver);
+
+        echo utilities::apiMessage('Profile retrieved.', 200, $this->driverPayload($driver));
     }
 
     // ── PUT /driver/auth/profile ──────────────────────────────────────────────
@@ -298,6 +367,36 @@ class Auth extends BaseController
     {
         $me     = BaseController::$authDriver;
         $fields = [];
+
+        if ($this->input('name') !== null) {
+            $name = trim((string) $this->input('name', ''));
+            if ($name === '') {
+                echo utilities::apiMessage('Name is required.', 422);
+                return;
+            }
+            $fields['name'] = $name;
+        }
+
+        if ($this->input('email') !== null) {
+            $email = trim((string) $this->input('email', ''));
+            if ($email === '') {
+                $fields['email'] = null;
+            } else {
+                if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                    echo utilities::apiMessage('Enter a valid email address.', 422);
+                    return;
+                }
+
+                $exists = $this->db->prepare('SELECT COUNT(*) FROM drivers WHERE email = ? AND id != ?');
+                $exists->execute([$email, $me['id']]);
+                if ((int) $exists->fetchColumn() > 0) {
+                    echo utilities::apiMessage('Email already in use.', 409);
+                    return;
+                }
+
+                $fields['email'] = $email;
+            }
+        }
 
         if ($this->str('fcm_token') !== '') $fields['fcm_token'] = $this->str('fcm_token');
 
@@ -307,6 +406,12 @@ class Auth extends BaseController
         }
 
         $this->update('drivers', $fields, "id = '{$me['id']}'");
-        echo utilities::apiMessage('Profile updated.', 200);
+        $driver = $this->getall('drivers', 'id = ?', [$me['id']]);
+        if (!is_array($driver)) {
+            echo utilities::apiMessage('Driver account not found.', 404);
+            return;
+        }
+
+        echo utilities::apiMessage('Profile updated.', 200, $this->driverPayload($driver));
     }
 }

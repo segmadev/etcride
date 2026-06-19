@@ -146,7 +146,7 @@ class _CourierScreenState extends ConsumerState<CourierScreen> {
           ));
 
       if (!mounted) return;
-      context.push(AppRoutes.courierReceiveDetails);
+      context.push(AppRoutes.confirmPickup);
     } catch (_) {
       setState(() => _error = 'Could not find that address. Try again.');
     } finally {

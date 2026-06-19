@@ -57,6 +57,7 @@ dependencies:
   share_plus: ^10.1.4
   shimmer: ^3.0.0
   web: ^1.1.1
+  audioplayers: ^6.1.0
 
   freezed_annotation: ^2.4.4
   json_annotation: ^4.9.0
@@ -91,6 +92,7 @@ flutter:
     - assets/onboarding/
     - assets/cards/
     - assets/icons/
+    - assets/icons/Nigeria.png
     - assets/icons/Nigeria.svg
     - assets/icons/hugeicons_menu-03.svg
     - assets/icons/map-pin.svg
@@ -104,6 +106,7 @@ flutter:
     - assets/logos/
     - assets/logos/flutterwave-icon 1.svg
     - assets/splash/
+    - assets/sounds/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

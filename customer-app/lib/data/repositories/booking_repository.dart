@@ -1,6 +1,7 @@
 import '../../core/network/api_client.dart';
 import '../../core/network/api_endpoints.dart';
 import '../models/booking_model.dart';
+import '../models/trip_message_model.dart';
 
 class BookingRepository {
   const BookingRepository(this._client);
@@ -18,16 +19,21 @@ class BookingRepository {
     final status = switch (rawStatus) {
       'in_progress'      => 'inProgress',
       'payment_pending'  => 'paymentPending',
+      'picked_up'        => 'pickedUp',
       _                  => rawStatus,
     };
 
-    // Payment method: backend stores snake_case
-    final rawPay = (raw['payment_method'] ?? raw['pay_mode_snapshot'])?.toString();
+    // Payment method: normalize to camelCase values the enum map expects.
+    // Use lowercase comparison so 'Cash', 'CASH', 'cash' all match.
+    final rawPay = (raw['payment_method'] ?? raw['pay_mode_snapshot'])
+        ?.toString()
+        .toLowerCase()
+        .trim();
     final paymentMethod = switch (rawPay) {
-      'bank_transfer' => 'bankTransfer',
-      'cash'          => 'cash',
-      'flutterwave'   => 'flutterwave',
-      _               => null,
+      'bank_transfer' || 'banktransfer' || 'bank transfer' => 'bankTransfer',
+      'cash'                                               => 'cash',
+      'flutterwave'                                        => 'flutterwave',
+      _                                                    => null,
     };
 
     return {
@@ -130,6 +136,7 @@ class BookingRepository {
     String? notes,
     String? recipientName,
     String? recipientPhone,
+    String? senderPhone,
     String? packageDescription,
   }) async {
     final data = await _client.post<Map<String, dynamic>>(
@@ -145,10 +152,12 @@ class BookingRepository {
         'destination_lng':     destinationLng,
         if (stops.isNotEmpty) 'stops': stops,
         if (distanceKm != null) 'distance_km': distanceKm,
-        if (notes != null) 'notes': notes,
-        if (recipientName != null) 'recipient_name': recipientName,
+        if (notes != null && notes.isNotEmpty) 'notes': notes,
+        if (recipientName != null && recipientName.isNotEmpty) 'recipient_name': recipientName,
+        // Always include recipient_phone for delivery so server validation fires clearly
         if (recipientPhone != null) 'recipient_phone': recipientPhone,
-        if (packageDescription != null) 'package_description': packageDescription,
+        if (senderPhone != null && senderPhone.isNotEmpty) 'sender_phone': senderPhone,
+        if (packageDescription != null && packageDescription.isNotEmpty) 'package_description': packageDescription,
       },
     );
     if (data == null) throw const FormatException('Empty response.');
@@ -197,6 +206,21 @@ class BookingRepository {
     );
   }
 
+  Future<Map<String, dynamic>> initiatePayment(String bookingId) async {
+    final data = await _client.post<Map<String, dynamic>>(
+      ApiEndpoints.initiatePayment(bookingId),
+      body: {},
+    );
+    return data ?? {};
+  }
+
+  Future<Map<String, dynamic>> getPaymentStatus(String bookingId) async {
+    final data = await _client.get<Map<String, dynamic>>(
+      ApiEndpoints.paymentStatus(bookingId),
+    );
+    return data ?? {};
+  }
+
   Future<void> updatePaymentMethod(String bookingId, String paymentMethod) async {
     await _client.put<Map<String, dynamic>>(
       ApiEndpoints.paymentMethod(bookingId),
@@ -212,6 +236,36 @@ class BookingRepository {
         if (comment != null && comment.trim().isNotEmpty) 'comment': comment.trim(),
       },
     );
+  }
+
+  /// Fetches chat messages for a booking. If [since] is provided, only
+  /// messages created after that timestamp are returned (incremental poll).
+  Future<List<TripMessageModel>> getMessages(String bookingId, {DateTime? since}) async {
+    final list = await _client.get<List<dynamic>>(
+      ApiEndpoints.bookingMessages(bookingId),
+      params: {if (since != null) 'since': since.toIso8601String()},
+    );
+    return (list ?? const [])
+        .cast<Map<String, dynamic>>()
+        .map(TripMessageModel.fromJson)
+        .toList();
+  }
+
+  Future<TripMessageModel> sendMessage(String bookingId, String message) async {
+    final data = await _client.post<Map<String, dynamic>>(
+      ApiEndpoints.bookingMessages(bookingId),
+      body: {'message': message},
+    );
+    return TripMessageModel.fromJson(data!);
+  }
+
+  Future<List<Map<String, dynamic>>> getChatThreads() async {
+    final list = await _client.get<List<dynamic>>(ApiEndpoints.chatThreads);
+    return (list ?? const []).cast<Map<String, dynamic>>();
+  }
+
+  Future<void> markChatRead(String bookingId) async {
+    await _client.post<void>(ApiEndpoints.markChatRead(bookingId), body: {});
   }
 
   Future<List<BookingModel>> getMyBookings({String? status}) async {

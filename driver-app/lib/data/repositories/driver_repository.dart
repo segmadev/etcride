@@ -1,4 +1,5 @@
 import '../models/job_model.dart';
+import '../models/trip_message_model.dart';
 import '../../core/network/api_client.dart';
 import '../../core/network/api_endpoints.dart';
 import '../../core/errors/app_exception.dart';
@@ -81,10 +82,27 @@ class DriverRepository {
     await _client.post<Map<String, dynamic>>(
       ApiEndpoints.arriveJob(id),
       body: {
+        // ignore: use_null_aware_elements
         if (lat != null) 'lat': lat,
+        // ignore: use_null_aware_elements
         if (lng != null) 'lng': lng,
+        // ignore: use_null_aware_elements
         if (gpsAccuracyM != null) 'gps_accuracy_m': gpsAccuracyM,
       },
+    );
+  }
+
+  Future<void> confirmPickupPayment(String id) async {
+    await _client.post<Map<String, dynamic>>(
+      ApiEndpoints.confirmPickupPayment(id),
+      body: {},
+    );
+  }
+
+  Future<void> pickupPackage(String id) async {
+    await _client.post<Map<String, dynamic>>(
+      ApiEndpoints.pickupJob(id),
+      body: {},
     );
   }
 
@@ -95,9 +113,10 @@ class DriverRepository {
     );
   }
 
-  Future<void> completeTrip(String id, {double? distanceKm}) async {
+  Future<void> completeTrip(String id, {double? distanceKm, double? durationMinutes}) async {
     final body = <String, dynamic>{};
     if (distanceKm != null) body['distance_km'] = distanceKm;
+    if (durationMinutes != null) body['duration_minutes'] = durationMinutes;
     await _client.post<Map<String, dynamic>>(
       ApiEndpoints.completeJob(id),
       body: body,
@@ -118,6 +137,30 @@ class DriverRepository {
       ApiEndpoints.reachStop(jobId, stopId),
       body: {},
     );
+  }
+
+  // ── Chat ──────────────────────────────────────────────────────────────────
+
+  /// Fetches chat messages for a job. If [since] is provided, only messages
+  /// created after that timestamp are returned (incremental poll).
+  Future<List<TripMessageModel>> getMessages(String jobId, {DateTime? since}) async {
+    final res = await _client.get<List>(
+      ApiEndpoints.jobMessages(jobId),
+      params: {if (since != null) 'since': since.toIso8601String()},
+    );
+    if (res == null) return [];
+    return res
+        .whereType<Map<String, dynamic>>()
+        .map(TripMessageModel.fromJson)
+        .toList();
+  }
+
+  Future<TripMessageModel> sendMessage(String jobId, String message) async {
+    final res = await _client.post<Map<String, dynamic>>(
+      ApiEndpoints.jobMessages(jobId),
+      body: {'message': message},
+    );
+    return TripMessageModel.fromJson(res!);
   }
 
   // ── History ───────────────────────────────────────────────────────────────────
@@ -147,5 +190,14 @@ class DriverRepository {
       '/driver/notifications/$id/read',
       body: {},
     );
+  }
+
+  Future<List<Map<String, dynamic>>> getChatThreads() async {
+    final list = await _client.get<List<dynamic>>(ApiEndpoints.driverChatThreads);
+    return (list ?? const []).cast<Map<String, dynamic>>();
+  }
+
+  Future<void> markChatRead(String bookingId) async {
+    await _client.post<void>(ApiEndpoints.markDriverChatRead(bookingId), body: {});
   }
 }

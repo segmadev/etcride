@@ -29,11 +29,15 @@ class VehicleTypes extends BaseController
             return;
         }
 
+        $category = $this->str('category');
+        if (!in_array($category, ['ride', 'delivery'])) $category = 'ride';
+
         $id = utilities::genID('VTP_', 10);
         $this->quick_insert('vehicle_types', [
             'id'           => $id,
             'name'         => $name,
             'description'  => $this->str('description'),
+            'category'     => $category,
             'icon'         => $this->str('icon'),
             'base_fare'    => $this->flt('base_fare'),
             'per_km_rate'  => $this->flt('per_km_rate'),
@@ -57,6 +61,8 @@ class VehicleTypes extends BaseController
         foreach (['name', 'description', 'icon'] as $f) {
             if ($this->str($f) !== '') $fields[$f] = $this->str($f);
         }
+        $cat = $this->str('category');
+        if (in_array($cat, ['ride', 'delivery'])) $fields['category'] = $cat;
         foreach (['base_fare', 'per_km_rate', 'per_stop_fee'] as $f) {
             if (isset($_POST[$f])) $fields[$f] = $this->flt($f);
         }

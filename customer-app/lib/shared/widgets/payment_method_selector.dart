@@ -16,9 +16,8 @@ class PaymentMethodSelector extends StatelessWidget {
   final bool enabled;
 
   static const _options = [
-    (method: PaymentMethod.cash,         icon: Icons.money_rounded,         label: 'Cash'),
-    (method: PaymentMethod.bankTransfer, icon: Icons.account_balance_rounded, label: 'Bank Transfer'),
-    (method: PaymentMethod.flutterwave,  icon: Icons.credit_card_rounded,    label: 'Card / Flutterwave'),
+    (method: PaymentMethod.cash,        icon: Icons.money_rounded,       label: 'Cash'),
+    (method: PaymentMethod.flutterwave, icon: Icons.credit_card_rounded,  label: 'Card / Flutterwave'),
   ];
 
   @override

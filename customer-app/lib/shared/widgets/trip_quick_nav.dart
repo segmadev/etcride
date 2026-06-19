@@ -7,6 +7,7 @@ import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../core/config/router.dart';
 import '../../shared/providers/providers.dart';
+import 'app_bottom_drawer.dart';
 
 // ── Floating map overlay button (circle with shadow) ─────────────────────────
 
@@ -21,20 +22,21 @@ class MapOverlayButton extends StatelessWidget {
   Widget build(BuildContext context) => GestureDetector(
         onTap: onTap,
         child: Container(
-          width: 42, height: 42,
+          width: 40, height: 40,
           decoration: BoxDecoration(
             color: AppColors.white,
             shape: BoxShape.circle,
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.14),
-                blurRadius: 12,
-                offset: const Offset(0, 3),
+                color: Colors.black.withValues(alpha: 0.08),
+                blurRadius: 8,
               ),
             ],
           ),
-          child: iconWidget ??
-              Icon(icon, size: 20, color: color ?? AppColors.textPrimary),
+          child: Center(
+            child: iconWidget ??
+                Icon(icon, size: 18, color: color ?? AppColors.textPrimary),
+          ),
         ),
       );
 }
@@ -78,10 +80,11 @@ class TripTopBar extends StatelessWidget {
 // ── Quick-nav bottom sheet ────────────────────────────────────────────────────
 
 void _showQuickNav(BuildContext context) {
-  showModalBottomSheet(
+  showDraggableBottomSheet(
     context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.transparent,
+    initialChildSize: 0.42,
+    minChildSize: 0.16,
+    maxChildSize: 0.7,
     builder: (_) => _QuickNavSheet(parentContext: context),
   );
 }
@@ -99,28 +102,9 @@ class _QuickNavSheet extends ConsumerWidget {
       parentContext.go(route);
     }
 
-    return Container(
-      decoration: const BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      padding: EdgeInsets.fromLTRB(
-          0, 8, 0, MediaQuery.of(context).padding.bottom + 8),
-      child: Column(
+    return Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Handle
-          Center(
-            child: Container(
-              width: 40, height: 4,
-              margin: const EdgeInsets.only(bottom: 12),
-              decoration: BoxDecoration(
-                color: AppColors.divider,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-
           // User header
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
@@ -183,8 +167,7 @@ class _QuickNavSheet extends ConsumerWidget {
           const Divider(height: 1),
           const SizedBox(height: 4),
         ],
-      ),
-    );
+      );
   }
 }
 

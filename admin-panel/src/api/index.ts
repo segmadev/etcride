@@ -10,3 +10,5 @@ export { settingsApi } from './settings';
 export { reportsApi } from './reports';
 export { mapSettingsApi } from './mapSettings';
 export { emailTemplatesApi } from './emailTemplates';
+export { paymentsApi } from './payments';
+export type { Payment, PaymentsFilter } from './payments';

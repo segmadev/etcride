@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/constants/app_assets.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
@@ -23,8 +25,10 @@ class PaymentScreen extends ConsumerStatefulWidget {
 
 class _PaymentScreenState extends ConsumerState<PaymentScreen> {
   BookingModel? _booking;
-  bool _loading = true;
-  bool _paying  = false;
+  bool _loading        = true;
+  bool _paying         = false;
+  bool _waitingGateway = false;   // true while we're polling after launching browser
+  Timer? _pollTimer;
   PaymentMethod _method = PaymentMethod.cash;
 
   @override
@@ -48,6 +52,12 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
     }
   }
 
+  @override
+  void dispose() {
+    _pollTimer?.cancel();
+    super.dispose();
+  }
+
   Future<void> _changeMethod(PaymentMethod m) async {
     setState(() => _method = m);
     try {
@@ -66,23 +76,74 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
     setState(() => _paying = true);
     try {
       if (_method == PaymentMethod.cash) {
-        // Cash: no gateway, just navigate to completion
         if (mounted) context.go(AppRoutes.tripCompleted, extra: widget.bookingId);
         return;
       }
 
-      // For Flutterwave / bank transfer: initiate payment via backend
-      // TODO: wire up payment gateway SDK here
-      // For now, navigate to trip completed and let backend settle status via webhook
-      if (mounted) context.go(AppRoutes.tripCompleted, extra: widget.bookingId);
+      // Flutterwave: call backend to generate payment link
+      final result = await ref.read(bookingRepositoryProvider)
+          .initiatePayment(widget.bookingId);
+
+      final link = result['payment_link'] as String?;
+      if (link == null || link.isEmpty) {
+        final err = result['link_error'] as String? ?? 'Payment link unavailable. Try again.';
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(err), backgroundColor: AppColors.error),
+          );
+          setState(() => _paying = false);
+        }
+        return;
+      }
+
+      // Launch Flutterwave checkout in external browser
+      final uri = Uri.parse(link);
+      if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Could not open payment page.'), backgroundColor: AppColors.error),
+          );
+          setState(() => _paying = false);
+        }
+        return;
+      }
+
+      // Start polling for payment confirmation
+      if (mounted) setState(() => _waitingGateway = true);
+      _startPolling();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(e.toString()), backgroundColor: AppColors.error),
         );
-        setState(() => _paying = false);
+        setState(() { _paying = false; _waitingGateway = false; });
       }
     }
+  }
+
+  void _startPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = Timer.periodic(const Duration(seconds: 4), (_) => _checkPaymentStatus());
+  }
+
+  Future<void> _checkPaymentStatus() async {
+    try {
+      final status = await ref.read(bookingRepositoryProvider)
+          .getPaymentStatus(widget.bookingId);
+      final payStatus = status['payment_status'] as String? ?? '';
+      if (payStatus == 'paid') {
+        _pollTimer?.cancel();
+        if (mounted) context.go(AppRoutes.tripCompleted, extra: widget.bookingId);
+      } else if (payStatus == 'failed') {
+        _pollTimer?.cancel();
+        if (mounted) {
+          setState(() { _paying = false; _waitingGateway = false; });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Payment failed. Please try again.'), backgroundColor: AppColors.error),
+          );
+        }
+      }
+    } catch (_) {}
   }
 
   @override
@@ -163,11 +224,43 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
 
                       const SizedBox(height: 36),
 
-                      AppButton(
-                        label: _payLabel,
-                        onPressed: _paying ? null : _pay,
-                        enabled: !_paying,
-                      ),
+                      if (_waitingGateway) ...[
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: AppColors.primaryLight,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            children: [
+                              const SizedBox(
+                                width: 20, height: 20,
+                                child: CircularProgressIndicator(strokeWidth: 2.5, color: AppColors.primary),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  'Waiting for payment confirmation…\nComplete the payment in your browser.',
+                                  style: AppTextStyles.bodySmall.copyWith(color: AppColors.primary),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextButton(
+                          onPressed: () {
+                            _pollTimer?.cancel();
+                            setState(() { _paying = false; _waitingGateway = false; });
+                          },
+                          child: Text('Cancel', style: AppTextStyles.bodySmall.copyWith(color: AppColors.error)),
+                        ),
+                      ] else
+                        AppButton(
+                          label: _payLabel,
+                          onPressed: _paying ? null : _pay,
+                          enabled: !_paying,
+                        ),
                     ],
                   ),
                 ),
@@ -177,9 +270,9 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
   }
 
   String get _payLabel => switch (_method) {
-    PaymentMethod.cash         => 'Confirm Cash Payment',
-    PaymentMethod.bankTransfer => 'Pay via Bank Transfer',
-    PaymentMethod.flutterwave  => 'Pay with Card',
+    PaymentMethod.cash        => 'Confirm Cash Payment',
+    PaymentMethod.flutterwave => 'Pay with Card / Flutterwave',
+    _                         => 'Pay',
   };
 }
 

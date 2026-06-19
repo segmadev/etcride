@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/config/router.dart';
 import 'core/network/session_expired_notifier.dart';
+import 'core/services/chat_notification_service.dart';
 import 'core/storage/secure_storage.dart';
 import 'core/theme/app_theme.dart';
 import 'shared/providers/providers.dart';
@@ -40,9 +41,25 @@ class _ETCRideAppState extends ConsumerState<ETCRideApp> {
     });
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Start the global chat notification poller whenever the user is signed in.
+    ref.listenManual<AsyncValue<dynamic>>(authInitProvider, (_, next) {
+      next.whenData((user) {
+        if (user != null) {
+          final repo = ref.read(bookingRepositoryProvider);
+          ChatNotificationService.instance.start(repo.getChatThreads);
+        } else {
+          ChatNotificationService.instance.stop();
+        }
+      });
+    }, fireImmediately: true);
+  }
+
   Future<void> _handleSessionExpired() async {
     await SecureStorage.instance.clearAll();
-    // Invalidate the auth state so the router redirects correctly on next check.
+    ChatNotificationService.instance.stop();
     ref.invalidate(authInitProvider);
     appRouter.go(AppRoutes.login);
   }
@@ -50,6 +67,7 @@ class _ETCRideAppState extends ConsumerState<ETCRideApp> {
   @override
   void dispose() {
     _sessionSub?.cancel();
+    ChatNotificationService.instance.dispose();
     super.dispose();
   }
 

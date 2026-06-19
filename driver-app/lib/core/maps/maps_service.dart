@@ -181,6 +181,33 @@ class MapsService {
     }
   }
 
+  // ── Directions: origin → destination route polyline ────────────────────────
+  //
+  // Returns real road points from Google Directions API via the backend proxy.
+  // Falls back silently to a straight [origin, destination] line on any error.
+
+  static Future<List<LatLng>> getDirectionsRoute(
+    LatLng origin,
+    LatLng destination,
+  ) async {
+    try {
+      final data = await _c.get<Map<String, dynamic>>(
+        ApiEndpoints.directions,
+        params: {
+          'origin':      '${origin.latitude},${origin.longitude}',
+          'destination': '${destination.latitude},${destination.longitude}',
+        },
+      );
+      final polyline = data?['polyline'] as String? ?? '';
+      debugPrint('[MapsService.directions] polyline.length=${polyline.length}  data=$data');
+      if (polyline.isEmpty) return [origin, destination];
+      return decodePolyline(polyline);
+    } catch (e, st) {
+      debugPrint('[MapsService.directions] error: $e\n$st');
+      return [origin, destination];
+    }
+  }
+
   static LatLngBounds? boundsFromPoints(List<LatLng> pts) {
     if (pts.isEmpty) return null;
     var minLat = pts.first.latitude,  maxLat = pts.first.latitude;

@@ -113,11 +113,13 @@ export interface Driver {
   kyc_status: KycStatus;
   kyc_id_type: string | null;
   kyc_id_number: string | null;
+  driving_experience: string | null;
   kyc_id_front: string | null;
   kyc_id_back: string | null;
   kyc_front_url: string | null;
   kyc_back_url: string | null;
   kyc_note: string | null;
+  profile_photo_url?: string | null;
   // Vehicle (from join)
   vehicle_id: string | null;
   plate_number?: string | null;
@@ -142,6 +144,8 @@ export interface Vehicle {
   model: string;
   color: string;
   year: string | null;
+  photo?: string | null;
+  photo_url?: string | null;
   status: 'active' | 'inactive';
   driver_id?: string | null;
   driver_name?: string | null;
@@ -158,6 +162,7 @@ export interface VehicleType {
   per_km_rate: number;
   per_stop_fee: number;
   is_active: boolean | number;
+  category: 'ride' | 'delivery';
   vehicle_count?: number;
 }
 

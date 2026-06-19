@@ -57,6 +57,12 @@ final activeBookingProvider = FutureProvider.autoDispose.family<BookingModel?, S
   return null;
 });
 
+/// All active delivery bookings — a customer may have multiple couriers in flight.
+final activeDeliveryBookingsProvider = FutureProvider.autoDispose<List<BookingModel>>((ref) async {
+  final all = await ref.read(bookingRepositoryProvider).getMyBookings();
+  return all.where((b) => b.bookingType.apiValue == 'delivery' && b.status.isActive).toList();
+});
+
 // ── Payment ───────────────────────────────────────────────────────────────────
 
 final selectedPaymentMethodProvider = StateProvider<String>((ref) => 'cash');

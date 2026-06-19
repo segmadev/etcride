@@ -1,38 +1,20 @@
+import 'dart:async';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../data/models/job_model.dart';
+import '../../data/models/trip_message_model.dart';
+import '../../core/services/chat_notification_service.dart';
 import '../../shared/providers/providers.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Chat Screen
-//
-//  UI is fully designed and functional (local state).
-//  TODO (backend): Implement a chat/messages table + WebSocket or polling
-//       endpoint so driver and customer can exchange messages in-app.
-//       Suggested table: `trip_messages (id, booking_id, sender_role,
-//       sender_id, body, sent_at)`.
-//       Add REST endpoints:
-//         GET  /driver/jobs/:id/messages   → list messages
-//         POST /driver/jobs/:id/messages   → send message
-//       Then wire `_loadMessages()` and `_sendMessage()` in this screen.
+//  Chat Screen — polls GET/POST /driver/jobs/:id/messages every few seconds
+//  while open. Customer-app polls the matching /bookings/:id/messages.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const _kAmber = Color(0xFFE2A322);
-
-class _ChatMessage {
-  const _ChatMessage({
-    required this.id,
-    required this.body,
-    required this.fromDriver,
-    required this.sentAt,
-  });
-  final String   id;
-  final String   body;
-  final bool     fromDriver;
-  final DateTime sentAt;
-}
 
 class DriverChatScreen extends ConsumerStatefulWidget {
   const DriverChatScreen({super.key, required this.job});
@@ -45,41 +27,73 @@ class DriverChatScreen extends ConsumerStatefulWidget {
 
 class _DriverChatScreenState
     extends ConsumerState<DriverChatScreen> {
+  static const _kPollInterval = Duration(seconds: 4);
+
   final _controller  = TextEditingController();
   final _scrollCtrl  = ScrollController();
-  final _messages    = <_ChatMessage>[];
+  final _messages    = <TripMessageModel>[];
+  final _chatPlayer  = AudioPlayer();
   bool  _sending     = false;
+  bool  _loading     = true;
+  Timer? _pollTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    ChatNotificationService.activeChatBookingId = widget.job.id;
+    _load();
+  }
 
   @override
   void dispose() {
+    ChatNotificationService.activeChatBookingId = null;
+    _pollTimer?.cancel();
     _controller.dispose();
     _scrollCtrl.dispose();
+    _chatPlayer.dispose();
     super.dispose();
   }
 
-  // ── TODO: replace with real API call ──────────────────────────────────────
-  Future<void> _sendMessage() async {
-    final body = _controller.text.trim();
-    if (body.isEmpty) return;
-    _controller.clear();
+  Future<void> _playChatSound() async {
+    try {
+      await _chatPlayer.play(AssetSource('sounds/chat_notify.wav'));
+    } catch (_) {}
+  }
 
-    setState(() {
-      _sending = true;
-      _messages.add(_ChatMessage(
-        id:         DateTime.now().millisecondsSinceEpoch.toString(),
-        body:       body,
-        fromDriver: true,
-        sentAt:     DateTime.now(),
-      ));
-    });
+  Future<void> _load() async {
+    try {
+      ref.read(driverRepositoryProvider).markChatRead(widget.job.id).ignore();
+      final msgs = await ref.read(driverRepositoryProvider).getMessages(widget.job.id);
+      if (!mounted) return;
+      setState(() {
+        _messages.addAll(msgs);
+        _loading = false;
+      });
+      _scrollToBottom();
+      _pollTimer = Timer.periodic(_kPollInterval, (_) => _poll());
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
 
-    await Future.delayed(const Duration(milliseconds: 300));
+  Future<void> _poll() async {
+    if (!mounted) return;
+    try {
+      final since = _messages.isNotEmpty ? _messages.last.createdAt : null;
+      final fetched = await ref
+          .read(driverRepositoryProvider)
+          .getMessages(widget.job.id, since: since);
+      if (!mounted || fetched.isEmpty) return;
+      final existingIds = _messages.map((m) => m.id).toSet();
+      final newMsgs = fetched.where((m) => !existingIds.contains(m.id)).toList();
+      if (newMsgs.isEmpty) return;
+      setState(() => _messages.addAll(newMsgs));
+      _scrollToBottom();
+      if (newMsgs.any((m) => !m.isMine)) _playChatSound();
+    } catch (_) {}
+  }
 
-    // TODO: await apiClient.post('/driver/jobs/${widget.job.id}/messages',
-    //         body: {'message': body});
-
-    if (mounted) setState(() => _sending = false);
-
+  void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollCtrl.hasClients) {
         _scrollCtrl.animateTo(
@@ -89,6 +103,28 @@ class _DriverChatScreenState
         );
       }
     });
+  }
+
+  Future<void> _sendMessage() async {
+    final body = _controller.text.trim();
+    if (body.isEmpty || _sending) return;
+    _controller.clear();
+    setState(() => _sending = true);
+
+    try {
+      final msg = await ref.read(driverRepositoryProvider).sendMessage(widget.job.id, body);
+      if (!mounted) return;
+      setState(() => _messages.add(msg));
+      _scrollToBottom();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not send message. Please try again.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
   }
 
   @override
@@ -109,10 +145,31 @@ class _DriverChatScreenState
             child: Row(
               children: [
                 // Back
-                IconButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.arrow_back_ios_rounded,
-                      color: Colors.white, size: 20),
+                GestureDetector(
+                  onTap: () => Navigator.of(context).pop(),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.arrow_back_ios_new_rounded,
+                          color: Colors.white,
+                          size: 18,
+                        ),
+                        SizedBox(width: 6),
+                        Text(
+                          'Back',
+                          style: TextStyle(
+                            fontFamily: 'Inter',
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
                 // Passenger avatar
                 CircleAvatar(
@@ -199,7 +256,9 @@ class _DriverChatScreenState
 
           // ── Messages ──────────────────────────────────────────────────────
           Expanded(
-            child: _messages.isEmpty
+            child: _loading
+                ? const Center(child: CircularProgressIndicator(color: _kAmber))
+                : _messages.isEmpty
                 ? _EmptyMessages(passengerName: job.passengerName)
                 : ListView.builder(
                     controller: _scrollCtrl,
@@ -342,12 +401,12 @@ class _MessageBubble extends StatelessWidget {
     required this.message,
     required this.driverName,
   });
-  final _ChatMessage message;
-  final String?      driverName;
+  final TripMessageModel message;
+  final String?          driverName;
 
   @override
   Widget build(BuildContext context) {
-    final isDriver = message.fromDriver;
+    final isDriver = message.isMine;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -406,7 +465,7 @@ class _MessageBubble extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    _fmtTime(message.sentAt),
+                    _fmtTime(message.createdAt),
                     style: TextStyle(
                       fontFamily: 'Inter',
                       fontSize: 10,

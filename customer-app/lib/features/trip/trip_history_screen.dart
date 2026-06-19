@@ -7,6 +7,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/config/router.dart';
+import '../../../data/models/booking_draft.dart';
 import '../../../data/models/booking_model.dart';
 import '../../../shared/providers/providers.dart';
 import '../../../shared/widgets/app_button.dart';
@@ -45,6 +46,20 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen>
       if (!_tabCtrl.indexIsChanging) _fetchTab(_tabCtrl.index);
     });
     _fetchTab(0);
+  }
+
+  void _rebook(BookingModel b) {
+    // Prefill the booking draft with the previous trip's locations and type
+    ref.read(bookingDraftProvider.notifier).state = BookingDraft(
+      bookingType:        b.bookingType.apiValue,
+      pickupAddress:      b.pickupAddress,
+      pickupLat:          b.pickupLat,
+      pickupLng:          b.pickupLng,
+      destinationAddress: b.destinationAddress,
+      destinationLat:     b.destinationLat,
+      destinationLng:     b.destinationLng,
+    );
+    showSearchDestinationDrawer(context);
   }
 
   Future<void> _fetchTab(int idx) async {
@@ -176,7 +191,7 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen>
                         booking: bookings[i],
                         onTap: () => context.push(AppRoutes.tripDetails,
                             extra: bookings[i].id),
-                        onRebook: () => showSearchDestinationDrawer(context),
+                        onRebook: () => _rebook(bookings[i]),
                       ),
                     ),
                   );

@@ -57,8 +57,19 @@ class Payments extends BaseController
         // Update booking payment status
         $this->update('bookings', ['payment_status' => 'pending'], "id = '$bookingId'");
 
-        // Build provider payload
-        $payload = $this->buildProviderPayload($provider, $me, $amount, $ref, $booking);
+        // Build provider payload and get payment link
+        $payload     = $this->buildProviderPayload($provider, $me, $amount, $ref, $booking);
+        $paymentLink = null;
+        $linkError   = null;
+
+        if ($provider === 'flutterwave') {
+            $result = $this->callFlutterwaveApi($payload);
+            if ($result['ok']) {
+                $paymentLink = $result['link'];
+            } else {
+                $linkError = $result['error'];
+            }
+        }
 
         $this->logActivity('customer', $me['id'], 'payment_initiated', [
             'booking_id' => $bookingId,
@@ -67,13 +78,53 @@ class Payments extends BaseController
         ]);
 
         echo utilities::apiMessage('Payment initiated.', 200, [
-            'payment_id' => $payId,
-            'reference'  => $ref,
-            'amount'     => $amount,
-            'currency'   => $this->setting('currency', 'NGN'),
-            'provider'   => $provider,
-            'payload'    => $payload,
+            'payment_id'   => $payId,
+            'reference'    => $ref,
+            'amount'       => $amount,
+            'currency'     => $this->setting('currency', 'NGN'),
+            'provider'     => $provider,
+            'payment_link' => $paymentLink,
+            'link_error'   => $linkError,
+            'payload'      => $payload,
         ]);
+    }
+
+    // ── Call Flutterwave API to generate a hosted payment link ────────────────
+    private function callFlutterwaveApi(array $payload): array
+    {
+        $secretKey = $_ENV['FLUTTERWAVE_SECRET_KEY'] ?? $this->setting('flutterwave_secret_key', '');
+
+        if (empty($secretKey)) {
+            return ['ok' => false, 'error' => 'Flutterwave secret key not configured.'];
+        }
+
+        $ch = curl_init('https://api.flutterwave.com/v3/payments');
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => json_encode($payload),
+            CURLOPT_HTTPHEADER     => [
+                'Authorization: Bearer ' . $secretKey,
+                'Content-Type: application/json',
+            ],
+            CURLOPT_TIMEOUT        => 15,
+        ]);
+
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if (!$response) {
+            return ['ok' => false, 'error' => 'Network error reaching Flutterwave.'];
+        }
+
+        $data = json_decode($response, true);
+        if ($httpCode === 200 && ($data['status'] ?? '') === 'success' && !empty($data['data']['link'])) {
+            return ['ok' => true, 'link' => $data['data']['link']];
+        }
+
+        $msg = $data['message'] ?? 'Flutterwave error (HTTP ' . $httpCode . ')';
+        return ['ok' => false, 'error' => $msg];
     }
 
     // ── GET /bookings/:id/payment-status ──────────────────────────────────────
@@ -107,21 +158,26 @@ class Payments extends BaseController
     // ── Private: build provider-specific payload ──────────────────────────────
     private function buildProviderPayload(string $provider, array $me, float $amount, string $ref, array $booking): array
     {
-        $callbackUrl = rtrim($_ENV['APP_URL'] ?? '', '/') . '/api/payments/webhook/' . $provider;
+        $appUrl      = rtrim($_ENV['APP_URL'] ?? '', '/');
+        $webhookUrl  = $appUrl . '/api/payments/webhook/' . $provider;
+        // Redirect URL returns user to a payment-callback page that the Flutter web app handles
+        $redirectUrl = $appUrl . '/api/payments/callback?tx_ref=' . urlencode($ref) . '&booking_id=' . urlencode($booking['id']);
 
         if ($provider === 'flutterwave') {
             return [
                 'tx_ref'          => $ref,
                 'amount'          => $amount,
                 'currency'        => $this->setting('currency', 'NGN'),
-                'redirect_url'    => $callbackUrl,
+                'redirect_url'    => $redirectUrl,
                 'customer'        => [
-                    'email'       => $me['email'] ?? '',
+                    'email'       => $me['email'] ?? ($me['phone'] . '@etcride.app'),
                     'phonenumber' => $me['phone'],
-                    'name'        => $me['name'],
+                    'name'        => $me['name'] ?? 'Customer',
                 ],
                 'customizations'  => [
-                    'title' => $this->setting('app_name', 'EtcRide') . ' Booking Payment',
+                    'title'       => $this->setting('app_name', 'EtcRide') . ' Payment',
+                    'description' => 'Trip ' . ($booking['booking_code'] ?? $booking['id']),
+                    'logo'        => $appUrl . '/assets/logos/logo.png',
                 ],
                 'meta'            => ['booking_id' => $booking['id']],
             ];

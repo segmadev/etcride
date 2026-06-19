@@ -232,7 +232,6 @@ class _SelectRideScreenState extends ConsumerState<SelectRideScreen> {
   }
 
   String get _paymentLabel => switch (_paymentMethod) {
-    'bank_transfer' => AppStrings.bankTransfer,
     'flutterwave' => AppStrings.payWithFlutterwave,
     _ => AppStrings.cash,
   };

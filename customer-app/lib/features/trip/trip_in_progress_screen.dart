@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -17,6 +18,7 @@ import '../../../core/maps/google_maps_js_loader.dart';
 import '../../../core/maps/maps_service.dart';
 import '../../../data/models/booking_model.dart';
 import '../../../shared/providers/providers.dart';
+import '../../../shared/widgets/app_bottom_drawer.dart';
 import '../../../shared/widgets/driver_card.dart';
 import '../../../shared/widgets/trip_quick_nav.dart';
 
@@ -159,22 +161,34 @@ class _TripInProgressScreenState
             ),
           ),
 
-          // ── Bottom driver card ────────────────────────────────────────────
-          Positioned(
-            left: 0, right: 0, bottom: 0,
+          // ── Bottom driver card (collapsible — drag down to see full map) ───
+          Positioned.fill(
             child: b == null
-                ? Container(
-                    color: AppColors.white,
-                    padding: const EdgeInsets.all(24),
-                    child: const Center(
-                        child: CircularProgressIndicator(
-                            color: AppColors.primary)),
+                ? Align(
+                    alignment: Alignment.bottomCenter,
+                    child: Container(
+                      width: double.infinity,
+                      color: AppColors.white,
+                      padding: const EdgeInsets.all(24),
+                      child: const Center(
+                          child: CircularProgressIndicator(
+                              color: AppColors.primary)),
+                    ),
                   )
-                : DriverCard(
-                    booking: b,
-                    statusIcon: const Icon(Icons.navigation_rounded,
-                        size: 16, color: AppColors.primary),
-                    statusLabel: 'Heading to destination',
+                : CollapsibleMapSheet(
+                    initialChildSize: 0.34,
+                    child: DriverCard(
+                      booking: b,
+                      statusIcon: const Icon(Icons.navigation_rounded,
+                          size: 16, color: AppColors.primary),
+                      statusLabel: b.bookingType == BookingType.delivery
+                          ? 'Package in transit'
+                          : 'Heading to destination',
+                      onChat: () => context.push(
+                        AppRoutes.driverChat,
+                        extra: b.id,
+                      ),
+                    ),
                   ),
           ),
         ],
@@ -184,10 +198,11 @@ class _TripInProgressScreenState
 }
 
 void _showTripMenu(BuildContext context) {
-  showModalBottomSheet(
+  showDraggableBottomSheet(
     context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.transparent,
+    initialChildSize: 0.38,
+    minChildSize: 0.16,
+    maxChildSize: 0.6,
     builder: (_) => _TripInProgressMenu(parentContext: context),
   );
 }
@@ -203,25 +218,9 @@ class _TripInProgressMenu extends StatelessWidget {
       parentContext.go(route);
     }
 
-    return Container(
-      decoration: const BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      padding: EdgeInsets.fromLTRB(
-          0, 8, 0, MediaQuery.of(context).padding.bottom + 8),
-      child: Column(
+    return Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Center(
-            child: Container(
-              width: 40, height: 4,
-              margin: const EdgeInsets.only(bottom: 16),
-              decoration: BoxDecoration(
-                  color: AppColors.divider,
-                  borderRadius: BorderRadius.circular(2)),
-            ),
-          ),
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
             child: Row(
@@ -268,8 +267,7 @@ class _TripInProgressMenu extends StatelessWidget {
           ),
           const SizedBox(height: 4),
         ],
-      ),
-    );
+      );
   }
 }
 
@@ -334,10 +332,15 @@ class _RoutedTripMapState extends State<_RoutedTripMap> {
   GoogleMapController? _ctrl;
   int _camVersion = 0;
 
-  List<LatLng>  _routePts    = [];
-  bool          _routeLoaded = false;
+  List<LatLng>  _routePts      = [];   // full decoded route
+  List<LatLng>  _trimmedPts    = [];   // route trimmed to driver's current position
+  bool          _routeLoaded   = false;
   String?       _polyUsed;
   LatLngBounds? _routeBounds;
+
+  // Custom animated car icon
+  BitmapDescriptor? _carIcon;
+  static BitmapDescriptor? _cachedCarIcon;
 
   LatLng? _driverPos;
   double  _driverRot = 0;
@@ -351,6 +354,57 @@ class _RoutedTripMapState extends State<_RoutedTripMap> {
     if (kIsWeb) _loadFuture = ensureGoogleMapsJsLoaded(apiKey: widget.apiKey);
     _buildRoute(widget.booking);
     if (widget.driverTarget != null) _driverPos = widget.driverTarget;
+    _loadCarIcon();
+  }
+
+  Future<void> _loadCarIcon() async {
+    if (_cachedCarIcon != null) {
+      setState(() => _carIcon = _cachedCarIcon);
+      return;
+    }
+    try {
+      final icon = await _buildCircleMarkerIcon(
+        Icons.directions_car_rounded,
+        bg: const Color(0xFFE2A322),
+      );
+      _cachedCarIcon = icon;
+      if (mounted) setState(() => _carIcon = icon);
+    } catch (_) {}
+  }
+
+  static Future<BitmapDescriptor> _buildCircleMarkerIcon(
+    IconData icon, {
+    Color bg   = const Color(0xFFE2A322),
+    double size = 40,
+  }) async {
+    final dpr      = ui.PlatformDispatcher.instance.implicitView?.devicePixelRatio ?? 1.0;
+    final physSize = (size * dpr).roundToDouble();
+    final r        = physSize / 2;
+    final rec      = ui.PictureRecorder();
+    final canvas   = Canvas(rec);
+    canvas.drawCircle(Offset(r, r), r, Paint()..color = bg);
+    canvas.drawCircle(
+      Offset(r, r), r - dpr,
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.25)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2 * dpr,
+    );
+    final tp = TextPainter(textDirection: TextDirection.ltr)
+      ..text = TextSpan(
+        text: String.fromCharCode(icon.codePoint),
+        style: TextStyle(
+          fontSize: physSize * 0.52,
+          fontFamily: icon.fontFamily,
+          color: Colors.white,
+          package: icon.fontPackage,
+        ),
+      )
+      ..layout();
+    tp.paint(canvas, Offset((physSize - tp.width) / 2, (physSize - tp.height) / 2));
+    final img  = await rec.endRecording().toImage(physSize.toInt(), physSize.toInt());
+    final data = await img.toByteData(format: ui.ImageByteFormat.png);
+    return BitmapDescriptor.bytes(data!.buffer.asUint8List(), imagePixelRatio: dpr);
   }
 
   @override
@@ -391,6 +445,7 @@ class _RoutedTripMapState extends State<_RoutedTripMap> {
 
     setState(() {
       _routePts    = route;
+      _trimmedPts  = route;  // initially show full route
       _routeBounds = MapsService.boundsFromPoints(allPts);
       _routeLoaded = true;
       if (encoded.isNotEmpty) _polyUsed = encoded;
@@ -443,8 +498,59 @@ class _RoutedTripMapState extends State<_RoutedTripMap> {
         from.latitude  + (target.latitude  - from.latitude)  * f,
         from.longitude + (target.longitude - from.longitude) * f,
       ));
-      if (i >= steps) t.cancel();
+      if (i >= steps) {
+        t.cancel();
+        // Trim route and pan camera after marker arrives
+        if (mounted) {
+          setState(() => _trimmedPts = _trimRoute(_routePts, target));
+          _followCamera(target);
+        }
+      }
     });
+  }
+
+  /// Returns the route from the segment closest to [driverPos] to the end.
+  List<LatLng> _trimRoute(List<LatLng> full, LatLng driverPos) {
+    if (full.length < 2) return full;
+    var bestIdx  = 0;
+    var bestDist = double.infinity;
+    for (var i = 0; i < full.length; i++) {
+      final d = _haversineM(full[i], driverPos);
+      if (d < bestDist) { bestDist = d; bestIdx = i; }
+    }
+    if (bestIdx >= full.length - 1) return [full.last];
+    return [driverPos, ...full.sublist(bestIdx + 1)];
+  }
+
+  static double _haversineM(LatLng a, LatLng b) {
+    const r = 6371000.0;
+    final dLat = (b.latitude  - a.latitude)  * math.pi / 180;
+    final dLng = (b.longitude - a.longitude) * math.pi / 180;
+    final lat1 = a.latitude * math.pi / 180;
+    final lat2 = b.latitude * math.pi / 180;
+    final s1 = math.sin(dLat / 2), s2 = math.sin(dLng / 2);
+    return r * 2 * math.asin(math.sqrt(s1*s1 + math.cos(lat1)*math.cos(lat2)*s2*s2));
+  }
+
+  /// Pan camera to keep driver + destination in frame.
+  void _followCamera(LatLng driverPos) {
+    final b = widget.booking;
+    if (b == null || _ctrl == null || b.destinationLat == 0) return;
+    final dest = LatLng(b.destinationLat, b.destinationLng);
+    if (_haversineM(driverPos, dest) < 10) return;
+    final sw = LatLng(
+      math.min(driverPos.latitude, dest.latitude),
+      math.min(driverPos.longitude, dest.longitude),
+    );
+    final ne = LatLng(
+      math.max(driverPos.latitude, dest.latitude),
+      math.max(driverPos.longitude, dest.longitude),
+    );
+    try {
+      _ctrl!.animateCamera(
+        CameraUpdate.newLatLngBounds(LatLngBounds(southwest: sw, northeast: ne), 100),
+      );
+    } catch (_) { _ctrl = null; }
   }
 
   static double _bearing(LatLng from, LatLng to) {
@@ -484,18 +590,20 @@ class _RoutedTripMapState extends State<_RoutedTripMap> {
           rotation: _driverRot,
           flat: true,
           anchor: const Offset(0.5, 0.5),
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+          icon: _carIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
           infoWindow: const InfoWindow(title: 'Driver'),
         ),
     };
   }
 
   Set<Polyline> get _polylines {
-    if (_routePts.length < 2) return {};
+    final pts = _trimmedPts.length >= 2 ? _trimmedPts
+        : (_routePts.length >= 2 ? _routePts : null);
+    if (pts == null) return {};
     return {
       Polyline(
         polylineId: const PolylineId('route'),
-        points:     _routePts,
+        points:     pts,
         color:      AppColors.primary,
         width:      5,
         jointType:  JointType.round,

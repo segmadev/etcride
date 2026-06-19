@@ -33,6 +33,9 @@ class _RequestingScreenState extends ConsumerState<RequestingScreen> {
   bool _cancelling      = false;
   bool _showFindAnother = false;   // becomes true after 1 min in 'assigned' state
   bool _findingAnother  = false;
+  bool _showRetry       = false;   // becomes true after 3 min with no driver found
+  bool _retrying        = false;
+  Timer? _retryTimer;
 
   // Route state
   List<LatLng>   _routePoints    = [];
@@ -152,9 +155,13 @@ class _RequestingScreenState extends ConsumerState<RequestingScreen> {
     // 'assigned' — driver found but not yet accepted
     if (b.status == BookingStatus.assigned) {
       _startAssignedTimer();
-    } else {
-      // 'pending' — searching or driver declined
+      _cancelRetryTimer();
+    } else if (b.status == BookingStatus.pending) {
       _cancelAssignedTimer();
+      _startRetryTimer();
+    } else {
+      _cancelAssignedTimer();
+      _cancelRetryTimer();
     }
   }
 
@@ -169,6 +176,62 @@ class _RequestingScreenState extends ConsumerState<RequestingScreen> {
     _assignedTimer?.cancel();
     _assignedTimer = null;
     if (_showFindAnother && mounted) setState(() => _showFindAnother = false);
+  }
+
+  void _startRetryTimer() {
+    if (_retryTimer?.isActive == true || _showRetry) return;
+    _retryTimer = Timer(const Duration(minutes: 3), () {
+      if (mounted) setState(() => _showRetry = true);
+    });
+  }
+
+  void _cancelRetryTimer() {
+    _retryTimer?.cancel();
+    _retryTimer = null;
+    if (_showRetry && mounted) setState(() => _showRetry = false);
+  }
+
+  Future<void> _retry() async {
+    setState(() { _retrying = true; _showRetry = false; });
+    try {
+      _stop();
+      // Cancel the stuck booking silently
+      try {
+        await ref.read(bookingRepositoryProvider)
+            .cancelBooking(widget.bookingId, reason: 'Customer retried');
+      } catch (_) {}
+
+      // Re-create from draft
+      final draft = ref.read(bookingDraftProvider);
+      final isDelivery = draft.bookingType == 'delivery';
+      final booking = await ref.read(bookingRepositoryProvider).createBooking(
+        vehicleTypeId:      draft.vehicleTypeId,
+        bookingType:        isDelivery ? 'delivery' : 'ride',
+        pickupAddress:      draft.pickupAddress,
+        pickupLat:          draft.pickupLat,
+        pickupLng:          draft.pickupLng,
+        destinationAddress: draft.destinationAddress,
+        destinationLat:     draft.destinationLat,
+        destinationLng:     draft.destinationLng,
+        distanceKm:         draft.distanceKm > 0 ? draft.distanceKm : null,
+        senderPhone:        isDelivery ? draft.senderPhone : null,
+        recipientPhone:     isDelivery ? draft.recipientPhone : null,
+        packageDescription: isDelivery ? draft.packageDescription : null,
+      );
+      if (!mounted) return;
+      ref.invalidate(activeBookingProvider('ride'));
+      ref.invalidate(activeBookingProvider('delivery'));
+      context.go(AppRoutes.requesting, extra: booking.id);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _retrying = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(e.toString().replaceFirst('Exception: ', '')),
+                backgroundColor: AppColors.error));
+        _pollTimer = Timer.periodic(const Duration(seconds: 8), (_) => _poll());
+        _startRetryTimer();
+      }
+    }
   }
 
   Future<void> _findAnotherDriver() async {
@@ -355,6 +418,7 @@ class _RequestingScreenState extends ConsumerState<RequestingScreen> {
   void _stop() {
     _pollTimer?.cancel();
     _assignedTimer?.cancel();
+    _retryTimer?.cancel();
   }
 
   @override
@@ -450,8 +514,11 @@ class _RequestingScreenState extends ConsumerState<RequestingScreen> {
               alternativeTypes:   _booking?.alternativeTypes ?? const [],
               showFindAnother:    _showFindAnother,
               findingAnother:     _findingAnother,
+              showRetry:          _showRetry,
+              retrying:           _retrying,
               onCancel:           _cancel,
               onFindAnother:      _findAnotherDriver,
+              onRetry:            _retry,
             ),
           ),
         ],
@@ -570,8 +637,11 @@ class _InfoSheet extends StatelessWidget {
     required this.cancelling,
     required this.onCancel,
     required this.onFindAnother,
+    required this.onRetry,
     required this.showFindAnother,
     required this.findingAnother,
+    required this.showRetry,
+    required this.retrying,
     required this.driverEtaMinutes,
     required this.alternativeTypes,
     this.status,
@@ -592,8 +662,11 @@ class _InfoSheet extends StatelessWidget {
   final List<dynamic>  alternativeTypes;
   final bool           showFindAnother;
   final bool           findingAnother;
+  final bool           showRetry;
+  final bool           retrying;
   final VoidCallback   onCancel;
   final VoidCallback   onFindAnother;
+  final VoidCallback   onRetry;
 
   String get _scheduledTime {
     final now = TimeOfDay.now();
@@ -804,6 +877,35 @@ class _InfoSheet extends StatelessWidget {
                   style: AppTextStyles.labelLarge.copyWith(
                       color: AppColors.primary, letterSpacing: 0.6),
                 ),
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
+
+          // ── Retry button (shown after 3 min with no driver found) ─────────
+          if (showRetry) ...[
+            SizedBox(
+              width: double.infinity,
+              height: 54,
+              child: ElevatedButton(
+                onPressed: retrying ? null : onRetry,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: AppColors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+                ),
+                child: retrying
+                    ? const SizedBox(
+                        width: 20, height: 20,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: AppColors.white),
+                      )
+                    : Text(
+                        isDelivery ? 'RETRY DELIVERY' : 'RETRY SEARCH',
+                        style: AppTextStyles.labelLarge.copyWith(
+                            color: AppColors.white, letterSpacing: 0.6),
+                      ),
               ),
             ),
             const SizedBox(height: 10),

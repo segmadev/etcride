@@ -1,10 +1,13 @@
 import 'dart:async';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../data/models/booking_model.dart';
+import '../../data/models/trip_message_model.dart';
+import '../../core/services/chat_notification_service.dart';
 import '../../shared/providers/providers.dart';
 import '../../shared/widgets/trip_quick_nav.dart';
 
@@ -17,74 +20,114 @@ class DriverChatScreen extends ConsumerStatefulWidget {
 }
 
 class _DriverChatScreenState extends ConsumerState<DriverChatScreen> {
+  static const _kPollInterval = Duration(seconds: 4);
+
   final _ctrl = TextEditingController();
   final _focus = FocusNode();
+  final _scrollCtrl = ScrollController();
 
   BookingModel? _booking;
-  final List<_ChatMsg> _msgs = [];
+  final List<TripMessageModel> _msgs = [];
+  final _chatPlayer = AudioPlayer();
   bool _loading = true;
+  bool _sending = false;
+  Timer? _pollTimer;
 
   @override
   void initState() {
     super.initState();
+    ChatNotificationService.activeChatBookingId = widget.bookingId;
     _load();
+  }
+
+  @override
+  void dispose() {
+    ChatNotificationService.activeChatBookingId = null;
+    _pollTimer?.cancel();
+    _ctrl.dispose();
+    _focus.dispose();
+    _scrollCtrl.dispose();
+    _chatPlayer.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
     try {
+      ref.read(bookingRepositoryProvider).markChatRead(widget.bookingId).ignore();
       final b = await ref.read(bookingRepositoryProvider).getBooking(widget.bookingId);
+      final msgs = await ref.read(bookingRepositoryProvider).getMessages(widget.bookingId);
       if (!mounted) return;
       setState(() {
         _booking = b;
+        _msgs.addAll(msgs);
         _loading = false;
       });
+      _scrollToBottom();
+      _pollTimer = Timer.periodic(_kPollInterval, (_) => _poll());
     } catch (_) {
       if (!mounted) return;
       setState(() => _loading = false);
     }
   }
 
-  String _timeLabel(BuildContext context) {
-    final t = TimeOfDay.now();
-    final h = t.hourOfPeriod == 0 ? 12 : t.hourOfPeriod;
-    final m = t.minute.toString().padLeft(2, '0');
-    final p = t.period == DayPeriod.am ? 'AM' : 'PM';
-    return '$h:$m$p';
+  Future<void> _poll() async {
+    if (!mounted) return;
+    try {
+      final since = _msgs.isNotEmpty ? _msgs.last.createdAt : null;
+      final fetched = await ref
+          .read(bookingRepositoryProvider)
+          .getMessages(widget.bookingId, since: since);
+      if (!mounted || fetched.isEmpty) return;
+      final existingIds = _msgs.map((m) => m.id).toSet();
+      final newMsgs = fetched.where((m) => !existingIds.contains(m.id)).toList();
+      if (newMsgs.isEmpty) return;
+      setState(() => _msgs.addAll(newMsgs));
+      _scrollToBottom();
+      if (newMsgs.any((m) => !m.isMine)) {
+        try { await _chatPlayer.play(AssetSource('sounds/chat_notify.wav')); } catch (_) {}
+      }
+    } catch (_) {}
   }
 
-  void _send() {
-    final text = _ctrl.text.trim();
-    if (text.isEmpty) return;
-    final ts = _timeLabel(context);
-    setState(() {
-      _msgs.add(_ChatMsg(text: text, time: ts, mine: true));
-      _ctrl.clear();
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollCtrl.hasClients) {
+        _scrollCtrl.animateTo(
+          _scrollCtrl.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        );
+      }
     });
-    _focus.requestFocus();
-
-    final alreadyReplied = _msgs.any((m) => !m.mine);
-    if (!alreadyReplied) {
-      Timer(const Duration(milliseconds: 700), () {
-        if (!mounted) return;
-        setState(() {
-          _msgs.add(_ChatMsg(text: 'Hi, i am on my way', time: ts, mine: false));
-        });
-      });
-    }
   }
 
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    _focus.dispose();
-    super.dispose();
+  Future<void> _send() async {
+    final text = _ctrl.text.trim();
+    if (text.isEmpty || _sending) return;
+    _ctrl.clear();
+    setState(() => _sending = true);
+    try {
+      final msg = await ref.read(bookingRepositoryProvider).sendMessage(widget.bookingId, text);
+      if (!mounted) return;
+      setState(() => _msgs.add(msg));
+      _scrollToBottom();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not send message. Please try again.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+    _focus.requestFocus();
   }
 
   @override
   Widget build(BuildContext context) {
     final b = _booking;
-    final name = b?.driverName ?? 'John A. Doe';
-    final rating = (b?.driverRating ?? 4.0).clamp(0.0, 5.0);
+    final name = b?.driverName ?? 'Driver';
+    final rating = (b?.driverRating ?? 0.0).clamp(0.0, 5.0);
 
     return Scaffold(
       backgroundColor: AppColors.white,
@@ -129,6 +172,7 @@ class _DriverChatScreenState extends ConsumerState<DriverChatScreen> {
                     child: _msgs.isEmpty
                         ? _EmptyChat(name: name, rating: rating)
                         : ListView.builder(
+                            controller: _scrollCtrl,
                             padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
                             itemCount: _msgs.length,
                             itemBuilder: (context, i) => _ChatBubble(msg: _msgs[i]),
@@ -144,6 +188,7 @@ class _DriverChatScreenState extends ConsumerState<DriverChatScreen> {
                     child: _ChatInput(
                       controller: _ctrl,
                       focusNode: _focus,
+                      sending: _sending,
                       onSend: _send,
                     ),
                   ),
@@ -201,31 +246,40 @@ class _EmptyChat extends StatelessWidget {
 
 class _ChatBubble extends StatelessWidget {
   const _ChatBubble({required this.msg});
-  final _ChatMsg msg;
+  final TripMessageModel msg;
+
+  String get _timeLabel {
+    final t = msg.createdAt.toLocal();
+    final h = t.hour % 12 == 0 ? 12 : t.hour % 12;
+    final m = t.minute.toString().padLeft(2, '0');
+    final p = t.hour >= 12 ? 'PM' : 'AM';
+    return '$h:$m$p';
+  }
 
   @override
   Widget build(BuildContext context) {
+    final mine = msg.isMine;
     final bubble = Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: msg.mine ? AppColors.primary : const Color(0xFFE9E9E9),
+        color: mine ? AppColors.primary : const Color(0xFFE9E9E9),
         borderRadius: BorderRadius.circular(18),
       ),
       child: Text(
-        msg.text,
+        msg.body,
         style: AppTextStyles.bodyMedium.copyWith(
-          color: msg.mine ? AppColors.white : AppColors.textPrimary,
+          color: mine ? AppColors.white : AppColors.textPrimary,
         ),
       ),
     );
 
-    if (msg.mine) {
+    if (mine) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
-            Text(msg.time, style: AppTextStyles.caption.copyWith(color: AppColors.textHint)),
+            Text(_timeLabel, style: AppTextStyles.caption.copyWith(color: AppColors.textHint)),
             const SizedBox(width: 10),
             Flexible(child: bubble),
           ],
@@ -239,7 +293,7 @@ class _ChatBubble extends StatelessWidget {
         children: [
           Flexible(child: bubble),
           const SizedBox(width: 10),
-          Text(msg.time, style: AppTextStyles.caption.copyWith(color: AppColors.textHint)),
+          Text(_timeLabel, style: AppTextStyles.caption.copyWith(color: AppColors.textHint)),
         ],
       ),
     );
@@ -251,11 +305,13 @@ class _ChatInput extends StatelessWidget {
     required this.controller,
     required this.focusNode,
     required this.onSend,
+    required this.sending,
   });
 
   final TextEditingController controller;
   final FocusNode focusNode;
   final VoidCallback onSend;
+  final bool sending;
 
   @override
   Widget build(BuildContext context) {
@@ -292,28 +348,29 @@ class _ChatInput extends StatelessWidget {
         ),
         const SizedBox(width: 10),
         GestureDetector(
-          onTap: onSend,
+          onTap: sending ? null : onSend,
           behavior: HitTestBehavior.opaque,
           child: Container(
             width: 46,
             height: 46,
             decoration: BoxDecoration(
-              color: AppColors.black,
+              color: sending ? AppColors.disabled : AppColors.black,
               borderRadius: BorderRadius.circular(999),
             ),
-            child: const Center(
-              child: Icon(Icons.send_rounded, size: 20, color: AppColors.white),
-            ),
+            child: sending
+                ? const Center(
+                    child: SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    ),
+                  )
+                : const Center(
+                    child: Icon(Icons.send_rounded, size: 20, color: AppColors.white),
+                  ),
           ),
         ),
       ],
     );
   }
-}
-
-class _ChatMsg {
-  const _ChatMsg({required this.text, required this.time, required this.mine});
-  final String text;
-  final String time;
-  final bool mine;
 }

@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'package:dio/dio.dart';
+import 'package:dio/dio.dart' show FormData, MultipartFile;
 import 'package:image_picker/image_picker.dart';
 import '../../core/network/api_client.dart';
 import '../../core/network/api_endpoints.dart';
@@ -9,62 +9,40 @@ import '../models/driver_model.dart';
 class DriverAuthRepository {
   const DriverAuthRepository(this._client, this._storage);
 
-  final ApiClient      _client;
-  final SecureStorage  _storage;
+  final ApiClient _client;
+  final SecureStorage _storage;
 
-  static String _encodePassword(String pw) => base64Encode(utf8.encode(pw));
-
-  // ── Login ──────────────────────────────────────────────────────────────────
-
-  Future<DriverModel> login({
-    required String login,
-    required String password,
-  }) async {
-    final data = await _client.post<Map<String, dynamic>>(
-      ApiEndpoints.driverLogin,
-      body: {'login': login, 'password': _encodePassword(password)},
-    );
-    if (data == null) throw const FormatException('Empty response.');
-    final token = data['token']?.toString();
-    if (token == null || token.isEmpty) {
-      throw const FormatException('Missing token in response.');
-    }
-    final driver = DriverModel.fromJson(data);
-    await _saveSession(token, driver);
-    return driver;
-  }
-
-  // ── Register ───────────────────────────────────────────────────────────────
+  static String _encodePassword(String password) =>
+      base64Encode(utf8.encode(password));
 
   Future<void> register({
     required String name,
     required String phone,
+    required String email,
     required String password,
-    String?  email,
-    String?  state,
-    String?  lga,
+    String? state,
+    String? lga,
   }) async {
     await _client.post<Map<String, dynamic>>(
       ApiEndpoints.driverRegister,
       body: {
         'name':     name,
         'phone':    phone,
+        'email':    email,
         'password': _encodePassword(password),
-        if (email != null && email.isNotEmpty) 'email': email,
-        if (state != null && state.isNotEmpty) 'state': state,
-        if (lga   != null && lga.isNotEmpty)   'lga':   lga,
+        // ignore: use_null_aware_elements
+        if (state != null) 'state': state,
+        // ignore: use_null_aware_elements
+        if (lga   != null) 'lga':   lga,
       },
     );
   }
 
-  // ── OTP ───────────────────────────────────────────────────────────────────
-
-  Future<Map<String, dynamic>> sendOtp({required String contact}) async {
-    final data = await _client.post<Map<String, dynamic>>(
+  Future<void> sendOtp({required String contact}) async {
+    await _client.post<Map<String, dynamic>>(
       ApiEndpoints.driverSendOtp,
       body: {'contact': contact},
     );
-    return data ?? {};
   }
 
   Future<DriverModel> verifyOtp({
@@ -81,59 +59,59 @@ class DriverAuthRepository {
       throw const FormatException('Missing token in response.');
     }
     final driver = DriverModel.fromJson(data);
-    await _saveSession(token, driver);
-    return driver;
-  }
-
-  // ── KYC ───────────────────────────────────────────────────────────────────
-
-  Future<Map<String, dynamic>> submitKyc({
-    required String idType,
-    required String idNumber,
-    required XFile  frontFile,
-    XFile?          backFile,
-  }) async {
-    // Use readAsBytes() + fromBytes() — works on all platforms (Image.file /
-    // MultipartFile.fromFile both assert !kIsWeb at runtime).
-    final frontBytes = await frontFile.readAsBytes();
-    final formData = FormData.fromMap({
-      'kyc_id_type':   idType,
-      'kyc_id_number': idNumber,
-      'kyc_id_front':  MultipartFile.fromBytes(
-        frontBytes,
-        filename: frontFile.name,
-      ),
-      if (backFile != null)
-        'kyc_id_back': MultipartFile.fromBytes(
-          await backFile.readAsBytes(),
-          filename: backFile.name,
-        ),
-    });
-
-    final data = await _client.postFormData<Map<String, dynamic>>(
-      ApiEndpoints.driverKycSubmit,
-      formData: formData,
-    );
-    return data ?? {};
-  }
-
-  // ── Profile (live from backend) ───────────────────────────────────────────
-
-  /// Fetches the driver's current profile from the server, updates the local
-  /// cache, and returns the fresh [DriverModel].  Always hits the network —
-  /// use this for "check status" / pull-to-refresh flows.
-  Future<DriverModel> getProfile() async {
-    final data = await _client.get<Map<String, dynamic>>(
-      ApiEndpoints.driverGetProfile,
-    );
-    if (data == null) throw const FormatException('Empty response.');
-    final driver = DriverModel.fromJson(data);
-    // Persist fresh data so the next app launch reflects the latest status.
+    await _storage.saveToken(token);
     await _storage.saveUser(jsonEncode(driver.toJson()));
     return driver;
   }
 
-  // ── Logout ─────────────────────────────────────────────────────────────────
+  Future<DriverModel> getProfile() async {
+    final data = await _client.get<Map<String, dynamic>>(ApiEndpoints.driverGetProfile);
+    if (data == null) throw const FormatException('Empty response.');
+    final driver = DriverModel.fromJson(data);
+    await _storage.saveUser(jsonEncode(driver.toJson()));
+    return driver;
+  }
+
+  Future<DriverModel> updateProfile({
+    required String name,
+    String? email,
+  }) async {
+    final data = await _client.put<Map<String, dynamic>>(
+      ApiEndpoints.driverUpdateProfile,
+      body: {
+        'name': name.trim(),
+        'email': email?.trim() ?? '',
+      },
+    );
+    if (data == null) throw const FormatException('Empty response.');
+    final driver = DriverModel.fromJson(data);
+    await _storage.saveUser(jsonEncode(driver.toJson()));
+    return driver;
+  }
+
+  Future<DriverModel> login({
+    required String login,
+    required String password,
+  }) async {
+    final data = await _client.post<Map<String, dynamic>>(
+      ApiEndpoints.driverLogin,
+      body: {
+        'phone': login,
+        'password': _encodePassword(password),
+      },
+    );
+    if (data == null) throw const FormatException('Empty response.');
+
+    final token = data['token']?.toString();
+    if (token == null || token.isEmpty) {
+      throw const FormatException('Missing token in response.');
+    }
+
+    final driver = DriverModel.fromJson(data);
+    await _storage.saveToken(token);
+    await _storage.saveUser(jsonEncode(driver.toJson()));
+    return driver;
+  }
 
   Future<void> logout() async {
     try {
@@ -142,26 +120,47 @@ class DriverAuthRepository {
     await _storage.clearAll();
   }
 
-  // ── Session cache ──────────────────────────────────────────────────────────
-
   Future<DriverModel?> getCachedDriver() async {
     final raw = await _storage.getUser();
     if (raw == null || raw.isEmpty) return null;
-    try {
-      final decoded = jsonDecode(raw);
-      if (decoded is! Map<String, dynamic>) return null;
-      return DriverModel.fromJson(decoded);
-    } catch (_) {
-      return null;
-    }
+    final decoded = jsonDecode(raw);
+    if (decoded is! Map<String, dynamic>) return null;
+    return DriverModel.fromJson(decoded);
   }
 
   Future<void> updateCachedDriver(DriverModel driver) async {
     await _storage.saveUser(jsonEncode(driver.toJson()));
   }
 
-  Future<void> _saveSession(String token, DriverModel driver) async {
-    await _storage.saveToken(token);
-    await _storage.saveUser(jsonEncode(driver.toJson()));
+  Future<void> submitKyc({
+    required XFile frontFile,
+    required XFile backFile,
+    required XFile profilePhoto,
+    required String drivingExperience,
+    String idType = "Driver's License",
+    String? idNumber,
+  }) async {
+    final frontBytes = await frontFile.readAsBytes();
+    final form = FormData.fromMap({
+      'kyc_id_type': idType,
+      if (idNumber != null && idNumber.trim().isNotEmpty) 'kyc_id_number': idNumber.trim(),
+      'driving_experience': drivingExperience,
+      'kyc_id_front': MultipartFile.fromBytes(
+        frontBytes,
+        filename: frontFile.name,
+      ),
+      'kyc_id_back': MultipartFile.fromBytes(
+        await backFile.readAsBytes(),
+        filename: backFile.name,
+      ),
+      'profile_photo': MultipartFile.fromBytes(
+        await profilePhoto.readAsBytes(),
+        filename: profilePhoto.name,
+      ),
+    });
+    await _client.postFormData<Map<String, dynamic>>(
+      ApiEndpoints.driverKycSubmit,
+      formData: form,
+    );
   }
 }

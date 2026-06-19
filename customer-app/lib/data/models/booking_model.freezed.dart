@@ -50,11 +50,13 @@ mixin _$BookingModel {
   int get routeDurationSeconds => throw _privateConstructorUsedError;
   String? get cancellationReason => throw _privateConstructorUsedError;
   String? get createdAt => throw _privateConstructorUsedError;
-  String? get updatedAt => throw _privateConstructorUsedError;
+  String? get updatedAt =>
+      throw _privateConstructorUsedError; // ── Live tracking fields (not stored in DB, computed on every show() call) ──
   int get driverEtaMinutes => throw _privateConstructorUsedError;
   double get driverDistanceKm => throw _privateConstructorUsedError;
   String? get lastEvent => throw _privateConstructorUsedError;
-  List<dynamic> get alternativeTypes => throw _privateConstructorUsedError;
+  List<dynamic> get alternativeTypes =>
+      throw _privateConstructorUsedError; // ── Waiting time ──────────────────────────────────────────────────────────
   String? get arrivedAt => throw _privateConstructorUsedError;
   int get freeWaitingMinutes => throw _privateConstructorUsedError;
   double get waitingChargePerMin => throw _privateConstructorUsedError;
@@ -575,7 +577,7 @@ class __$$BookingModelImplCopyWithImpl<$Res>
           : lastEvent // ignore: cast_nullable_to_non_nullable
               as String?,
       alternativeTypes: null == alternativeTypes
-          ? _value.alternativeTypes
+          ? _value._alternativeTypes
           : alternativeTypes // ignore: cast_nullable_to_non_nullable
               as List<dynamic>,
       arrivedAt: freezed == arrivedAt
@@ -636,11 +638,12 @@ class _$BookingModelImpl implements _BookingModel {
       this.driverEtaMinutes = 0,
       this.driverDistanceKm = 0.0,
       this.lastEvent,
-      this.alternativeTypes = const [],
+      final List<dynamic> alternativeTypes = const [],
       this.arrivedAt,
       this.freeWaitingMinutes = 3,
       this.waitingChargePerMin = 0.0,
-      this.waitingExtraCharge = 0.0});
+      this.waitingExtraCharge = 0.0})
+      : _alternativeTypes = alternativeTypes;
 
   factory _$BookingModelImpl.fromJson(Map<String, dynamic> json) =>
       _$$BookingModelImplFromJson(json);
@@ -716,6 +719,7 @@ class _$BookingModelImpl implements _BookingModel {
   final String? createdAt;
   @override
   final String? updatedAt;
+// ── Live tracking fields (not stored in DB, computed on every show() call) ──
   @override
   @JsonKey()
   final int driverEtaMinutes;
@@ -724,9 +728,17 @@ class _$BookingModelImpl implements _BookingModel {
   final double driverDistanceKm;
   @override
   final String? lastEvent;
+  final List<dynamic> _alternativeTypes;
   @override
   @JsonKey()
-  final List<dynamic> alternativeTypes;
+  List<dynamic> get alternativeTypes {
+    if (_alternativeTypes is EqualUnmodifiableListView)
+      return _alternativeTypes;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_alternativeTypes);
+  }
+
+// ── Waiting time ──────────────────────────────────────────────────────────
   @override
   final String? arrivedAt;
   @override
@@ -815,8 +827,8 @@ class _$BookingModelImpl implements _BookingModel {
                 other.driverDistanceKm == driverDistanceKm) &&
             (identical(other.lastEvent, lastEvent) ||
                 other.lastEvent == lastEvent) &&
-            (identical(other.alternativeTypes, alternativeTypes) ||
-                other.alternativeTypes == alternativeTypes) &&
+            const DeepCollectionEquality()
+                .equals(other._alternativeTypes, _alternativeTypes) &&
             (identical(other.arrivedAt, arrivedAt) ||
                 other.arrivedAt == arrivedAt) &&
             (identical(other.freeWaitingMinutes, freeWaitingMinutes) ||
@@ -865,7 +877,7 @@ class _$BookingModelImpl implements _BookingModel {
         driverEtaMinutes,
         driverDistanceKm,
         lastEvent,
-        alternativeTypes,
+        const DeepCollectionEquality().hash(_alternativeTypes),
         arrivedAt,
         freeWaitingMinutes,
         waitingChargePerMin,
@@ -994,7 +1006,8 @@ abstract class _BookingModel implements BookingModel {
   @override
   String? get createdAt;
   @override
-  String? get updatedAt;
+  String?
+      get updatedAt; // ── Live tracking fields (not stored in DB, computed on every show() call) ──
   @override
   int get driverEtaMinutes;
   @override
@@ -1002,7 +1015,8 @@ abstract class _BookingModel implements BookingModel {
   @override
   String? get lastEvent;
   @override
-  List<dynamic> get alternativeTypes;
+  List<dynamic>
+      get alternativeTypes; // ── Waiting time ──────────────────────────────────────────────────────────
   @override
   String? get arrivedAt;
   @override

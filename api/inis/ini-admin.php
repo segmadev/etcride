@@ -47,6 +47,7 @@ $router->group('/admin', function ($r) {
     $r->get('/vehicles',                     'admin/Vehicles@index');
     $r->post('/vehicles',                    'admin/Vehicles@create');
     $r->get('/vehicles/:id',                 'admin/Vehicles@show');
+    $r->post('/vehicles/:id',                'admin/Vehicles@edit');
     $r->put('/vehicles/:id',                 'admin/Vehicles@edit');
     $r->put('/vehicles/:id/status',          'admin/Vehicles@toggleStatus');
 
@@ -66,6 +67,11 @@ $router->group('/admin', function ($r) {
     // ── Email templates ───────────────────────────────────────────────────────
     $r->get('/email-templates',              'admin/EmailTemplates@index');
     $r->post('/email-templates/test',        'admin/EmailTemplates@test');
+
+    // ── Payments ──────────────────────────────────────────────────────────────
+    $r->get('/payments',                     'admin/Payments@index');
+    $r->get('/payments/:id',                 'admin/Payments@show');
+    $r->post('/payments/:id/refund',         'admin/Payments@refund');
 
     // ── Reports ───────────────────────────────────────────────────────────────
     $r->get('/reports/bookings',             'admin/Reports@bookings');

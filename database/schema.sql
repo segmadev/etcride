@@ -97,6 +97,7 @@ CREATE TABLE IF NOT EXISTS `vehicles` (
     `model`           VARCHAR(100)            NULL,     -- e.g. CB125
     `color`           VARCHAR(50)             NULL,
     `year`            YEAR                    NULL,
+    `photo`           VARCHAR(255)            NULL,     -- optional uploaded vehicle photo filename
     `status`          ENUM('active','inactive') NOT NULL DEFAULT 'active',
     `created_at`      TIMESTAMP               NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`      TIMESTAMP               NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -269,6 +270,7 @@ CREATE TABLE IF NOT EXISTS `bookings` (
     -- Delivery-only fields (NULL for rides)
     `recipient_name`        VARCHAR(100) NULL,
     `recipient_phone`       VARCHAR(20)  NULL,
+    `sender_phone`          VARCHAR(20)  NULL,
     `package_description`   TEXT         NULL,
     `package_size`          ENUM('small','medium','large') NULL,
 
@@ -425,6 +427,31 @@ CREATE TABLE IF NOT EXISTS `notifications` (
     INDEX `idx_notif_recipient` (`recipient_role`, `recipient_id`),
     INDEX `idx_notif_unread`    (`is_read`),
     INDEX `idx_notif_created`   (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =============================================================================
+-- TRIP MESSAGES  (In-app chat between customer and driver during a trip)
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS `trip_messages` (
+    `id`          VARCHAR(20) NOT NULL,
+    `booking_id`  VARCHAR(20) NOT NULL,
+    `sender_role` ENUM('customer','driver') NOT NULL,
+    `sender_id`   VARCHAR(20) NOT NULL,
+    `body`        TEXT NOT NULL,
+    `created_at`  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    INDEX `idx_trip_messages_booking` (`booking_id`, `created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =============================================================================
+-- CHAT_READS  (Tracks last-read timestamp per booking per role)
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS `chat_reads` (
+    `booking_id`   VARCHAR(20) NOT NULL,
+    `role`         ENUM('customer','driver') NOT NULL,
+    `last_read_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                   ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`booking_id`, `role`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =============================================================================

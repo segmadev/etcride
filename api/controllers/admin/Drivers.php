@@ -20,9 +20,18 @@ class Drivers extends BaseController
 
     private function photoUrl(?string $f): ?string
     {
-        if (!$f) return null;
-        $scheme = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-        return $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . '/uploads/drivers/' . $f;
+        return $this->uploadUrl('drivers', $f);
+    }
+
+    private function mapDriverRecord(array $driver): array
+    {
+        $driver['photo_url'] = $this->photoUrl($driver['photo'] ?? null);
+        $driver['profile_photo_url'] = $driver['photo_url'];
+        $driver['kyc_front_url'] = $this->photoUrl($driver['kyc_id_front'] ?? null);
+        $driver['kyc_back_url'] = $this->photoUrl($driver['kyc_id_back'] ?? null);
+        $driver['driving_experience'] = $driver['driving_experience'] ?? null;
+        $driver['kyc_note'] = $driver['kyc_note'] ?? null;
+        return $driver;
     }
 
     // ── GET /admin/drivers ────────────────────────────────────────────────────
@@ -55,7 +64,7 @@ class Drivers extends BaseController
 
         $stmt = $this->db->prepare(
             "SELECT d.id, d.name, d.email, d.phone, d.photo, d.license_number,
-                    d.is_active, d.is_online, d.kyc_status, d.last_seen, d.created_at,
+                    d.is_active, d.is_online, d.kyc_status, d.driving_experience, d.last_seen, d.created_at,
                     v.id AS vehicle_id, v.plate_number, v.make, v.model, v.color,
                     vt.id AS driver_vehicle_type_id,
                     vt.name AS vehicle_type,
@@ -67,7 +76,9 @@ class Drivers extends BaseController
         );
         $stmt->execute($params);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        foreach ($rows as &$row) $row['photo_url'] = $this->photoUrl($row['photo']);
+        foreach ($rows as &$row) {
+            $row = $this->mapDriverRecord($row);
+        }
 
         $countStmt = $this->db->prepare("SELECT COUNT(*) FROM drivers d $where");
         $countStmt->execute($params);
@@ -110,8 +121,9 @@ class Drivers extends BaseController
             }
         }
 
-        $kycIdType   = $this->str('kyc_id_type')   ?: null;
-        $kycIdNumber = $this->str('kyc_id_number')  ?: null;
+        $kycIdType   = $this->str('kyc_id_type') ?: null;
+        $kycIdNumber = $this->str('kyc_id_number') ?: null;
+        $drivingExperience = $this->str('driving_experience') ?: null;
         $kycFront    = $kycIdType ? $this->saveUpload('kyc_id_front', $id . '_kf') : null;
         $kycBack     = $kycIdType ? $this->saveUpload('kyc_id_back',  $id . '_kb') : null;
 
@@ -126,6 +138,7 @@ class Drivers extends BaseController
             'vehicle_id'     => $vehicleId,
             'kyc_id_type'    => $kycIdType,
             'kyc_id_number'  => $kycIdNumber,
+            'driving_experience' => $drivingExperience,
             'kyc_id_front'   => $kycFront,
             'kyc_id_back'    => $kycBack,
             'kyc_status'     => $kycIdType ? 'pending' : 'not_submitted',
@@ -156,9 +169,7 @@ class Drivers extends BaseController
         if (!$driver) { echo utilities::apiMessage('Driver not found.', 404); return; }
 
         unset($driver['password'], $driver['reset_code']);
-        $driver['photo_url']     = $this->photoUrl($driver['photo'] ?? null);
-        $driver['kyc_front_url'] = $this->photoUrl($driver['kyc_id_front'] ?? null);
-        $driver['kyc_back_url']  = $this->photoUrl($driver['kyc_id_back']  ?? null);
+        $driver = $this->mapDriverRecord($driver);
 
         $s = $this->db->prepare(
             "SELECT COUNT(*) AS total, SUM(status='completed') AS completed,
@@ -221,17 +232,30 @@ class Drivers extends BaseController
         if (!is_array($driver)) { echo utilities::apiMessage('Driver not found.', 404); return; }
 
         $fields = [];
-        foreach (['kyc_id_type', 'kyc_id_number', 'kyc_note'] as $f) {
-            if ($this->str($f) !== '') $fields[$f] = $this->str($f);
+        foreach (['kyc_id_type', 'kyc_id_number', 'driving_experience'] as $f) {
+            if ($this->input($f) !== null) {
+                $fields[$f] = $this->str($f) !== '' ? $this->str($f) : null;
+            }
+        }
+
+        if ($this->input('kyc_note') !== null) {
+            $note = trim((string) $this->input('kyc_note', ''));
+            $fields['kyc_note'] = $note !== '' ? $note : null;
         }
 
         $kycFront = $this->saveUpload('kyc_id_front', $id . '_kf');
         $kycBack  = $this->saveUpload('kyc_id_back',  $id . '_kb');
+        $profilePhoto = $this->saveUpload('profile_photo', $id . '_kp');
         if ($kycFront) $fields['kyc_id_front'] = $kycFront;
         if ($kycBack)  $fields['kyc_id_back']  = $kycBack;
+        if ($profilePhoto) $fields['photo'] = $profilePhoto;
 
         $newStatus = $this->str('kyc_status');
         if (in_array($newStatus, ['not_submitted', 'pending', 'verified', 'rejected'], true)) {
+            if ($newStatus === 'rejected' && empty($fields['kyc_note'])) {
+                echo utilities::apiMessage('Provide a rejection reason before rejecting this KYC.', 422);
+                return;
+            }
             $fields['kyc_status'] = $newStatus;
         }
 
@@ -241,8 +265,11 @@ class Drivers extends BaseController
         $this->logActivity('admin', $me['id'], 'driver_kyc_updated', ['driver_id' => $id]);
         echo utilities::apiMessage('KYC updated.', 200, [
             'kyc_status'    => $fields['kyc_status'] ?? $driver['kyc_status'],
+            'kyc_note'      => array_key_exists('kyc_note', $fields) ? $fields['kyc_note'] : ($driver['kyc_note'] ?? null),
+            'driving_experience' => $fields['driving_experience'] ?? $driver['driving_experience'],
             'kyc_front_url' => $this->photoUrl($kycFront ?? $driver['kyc_id_front']),
             'kyc_back_url'  => $this->photoUrl($kycBack  ?? $driver['kyc_id_back']),
+            'photo_url'     => $this->photoUrl($profilePhoto ?? $driver['photo']),
         ]);
     }
 

@@ -8,6 +8,7 @@ driver-app/andriod
 driver-app/ios
 driver-app/linux
 driver-app/windows
+driver-app/web
 api/vendor
 vendor
 screens

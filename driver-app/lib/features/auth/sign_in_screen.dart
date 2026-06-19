@@ -11,9 +11,6 @@ import '../../core/constants/app_text_styles.dart';
 import '../../core/errors/app_exception.dart';
 import '../../shared/providers/providers.dart';
 import '../../shared/widgets/app_button.dart';
-import '../../shared/widgets/app_text_field.dart';
-
-// ── Tab enum ──────────────────────────────────────────────────────────────────
 
 enum _ContactTab { phone, email }
 
@@ -41,6 +38,15 @@ class _DriverSignInScreenState extends ConsumerState<DriverSignInScreen> {
       : _emailCtrl.text.trim();
 
   String get _authMode => ref.read(driverAuthModeProvider);
+  bool get _isContactStep => _step == 0;
+  bool get _isPhone => _tab == _ContactTab.phone;
+  String get _switchLabel =>
+      _isPhone ? 'Use email instead' : 'Use phone number instead';
+  String get _contactHint => _isPhone ? '08012345678' : 'Email';
+  bool get _otpAvailable => _authMode == 'otp' || _authMode == 'both';
+  String get _contactInstruction => _isPhone
+      ? 'Enter your phone number to continue'
+      : 'Enter your email address to continue';
 
   @override
   void dispose() {
@@ -49,8 +55,6 @@ class _DriverSignInScreenState extends ConsumerState<DriverSignInScreen> {
     _passwordCtrl.dispose();
     super.dispose();
   }
-
-  // ── Step 0: contact entered → CONTINUE ────────────────────────────────────
 
   Future<void> _onContinue() async {
     final contact = _contact;
@@ -62,19 +66,15 @@ class _DriverSignInScreenState extends ConsumerState<DriverSignInScreen> {
 
     final mode = _authMode;
 
-    if (mode == 'otp') {
-      // Send OTP immediately then go to OTP screen
+    if (mode == 'otp' || mode == 'both') {
       await _sendOtp(contact);
     } else {
-      // password or both → go to password step
       setState(() => _step = 1);
     }
   }
 
-  // ── Step 1: password entered → LOGIN ─────────────────────────────────────
-
   Future<void> _onLogin() async {
-    final contact  = _contact;
+    final contact = _contact;
     final password = _passwordCtrl.text;
 
     if (password.isEmpty) {
@@ -82,10 +82,13 @@ class _DriverSignInScreenState extends ConsumerState<DriverSignInScreen> {
       return;
     }
 
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final driver = await ref.read(driverAuthRepositoryProvider).login(
-        login:    contact,
+        login: contact,
         password: password,
       );
       ref.read(currentDriverProvider.notifier).state = driver;
@@ -101,7 +104,10 @@ class _DriverSignInScreenState extends ConsumerState<DriverSignInScreen> {
   }
 
   Future<void> _sendOtp(String contact) async {
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       await ref.read(driverAuthRepositoryProvider).sendOtp(contact: contact);
       if (!mounted) return;
@@ -115,8 +121,7 @@ class _DriverSignInScreenState extends ConsumerState<DriverSignInScreen> {
     }
   }
 
-  // After sign-in, route based on kyc_status
-  void _navigateAfterAuth(String kycStatus) {
+  void _navigateAfterAuth(String? kycStatus) {
     switch (kycStatus) {
       case 'verified':
         context.go(AppRoutes.home);
@@ -127,209 +132,285 @@ class _DriverSignInScreenState extends ConsumerState<DriverSignInScreen> {
     }
   }
 
-  // ── Build ─────────────────────────────────────────────────────────────────
+  void _toggleMethod() {
+    setState(() {
+      _tab = _isPhone ? _ContactTab.email : _ContactTab.phone;
+      _error = null;
+    });
+  }
+
+  void _onBackPressed() {
+    if (_step == 1) {
+      setState(() {
+        _step = 0;
+        _error = null;
+      });
+      return;
+    }
+
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go(AppRoutes.onboarding);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final mode = ref.watch(driverAuthModeProvider);
-
     return Scaffold(
       backgroundColor: AppColors.white,
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(26, 16, 26, 32),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Progress bars
-              _ProgressBars(count: 3, active: 0),
-              const SizedBox(height: 32),
-
-              // Big title
-              Text(
-                AppStrings.startJourney,
-                style: AppTextStyles.displayLarge.copyWith(
-                  fontSize: 38,
-                  fontWeight: FontWeight.w900,
-                  height: 1.1,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                _step == 0
-                    ? 'Enter your ${_tab == _ContactTab.phone ? 'phone number' : 'email'} to get started.'
-                    : 'Enter your password to continue.',
-                style: AppTextStyles.bodyLarge.copyWith(
-                  color: AppColors.textSecondary,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 30),
-
-              // Phone / Email tabs (only on step 0)
-              if (_step == 0) ...[
-                _ContactTabs(
-                  active: _tab,
-                  onChanged: (t) => setState(() { _tab = t; _error = null; }),
-                ),
-                const SizedBox(height: 20),
-
-                // Input field
-                if (_tab == _ContactTab.phone)
-                  _PhoneField(controller: _phoneCtrl, onSubmit: _onContinue)
-                else
-                  AppTextField(
-                    controller: _emailCtrl,
-                    hint: 'Email address',
-                    keyboardType: TextInputType.emailAddress,
-                    onSubmitted: (_) => _onContinue(),
-                  ),
-              ],
-
-              // Password field (step 1)
-              if (_step == 1) ...[
-                // Show contact as read-only label
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        _tab == _ContactTab.phone
-                            ? Icons.phone_outlined
-                            : Icons.email_outlined,
-                        size: 18,
-                        color: AppColors.textSecondary,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(_contact,
-                            style: AppTextStyles.bodyMedium
-                                .copyWith(color: AppColors.textSecondary)),
-                      ),
-                      GestureDetector(
-                        onTap: () => setState(() { _step = 0; _error = null; }),
-                        child: Text('Edit',
-                            style: AppTextStyles.labelSmall
-                                .copyWith(color: AppColors.primary)),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 12),
-                AppTextField(
-                  controller: _passwordCtrl,
-                  hint: AppStrings.password,
-                  obscureText: !_showPassword,
-                  onSubmitted: (_) => _onLogin(),
-                  suffixIcon: GestureDetector(
-                    onTap: () => setState(() => _showPassword = !_showPassword),
-                    child: Icon(
-                      _showPassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-                      size: 20,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                ),
-                // "Use OTP instead" option when mode is 'both'
-                if (mode == 'both') ...[
-                  const SizedBox(height: 12),
-                  GestureDetector(
-                    onTap: () => _sendOtp(_contact),
-                    child: Center(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(26, 18, 26, 30),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight - 48),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _TopBrandRow(onBackPressed: _onBackPressed),
+                    const SizedBox(height: 36),
+                    const _ProgressBars(count: 3, active: 0),
+                    const SizedBox(height: 76),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 308),
                       child: Text(
-                        'Sign in with OTP instead',
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.primary,
-                          decoration: TextDecoration.underline,
+                        _isContactStep ? 'Start Driving' : 'Enter Password',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontFamily: 'Poppins',
+                          fontSize: 24,
+                          fontWeight: FontWeight.w600,
+                          height: 1,
+                          letterSpacing: 0,
                         ),
                       ),
                     ),
-                  ),
-                ],
-              ],
-
-              // Error
-              if (_error != null) ...[
-                const SizedBox(height: 12),
-                Text(_error!,
-                    style: AppTextStyles.bodySmall.copyWith(color: AppColors.error)),
-              ],
-
-              const SizedBox(height: 32),
-
-              // Primary button
-              AppButton(
-                label: _step == 0 ? AppStrings.continueBtn : 'SIGN IN',
-                loading: _loading,
-                onPressed: _step == 0 ? _onContinue : _onLogin,
-              ),
-
-              const SizedBox(height: 24),
-
-              // Register link
-              Center(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text("Don't have an account? ",
-                        style: AppTextStyles.bodySmall
-                            .copyWith(color: AppColors.textSecondary)),
-                    GestureDetector(
-                      onTap: () => context.push(AppRoutes.register),
-                      child: Text('Register',
-                          style: AppTextStyles.bodySmall.copyWith(
-                              color: AppColors.primary,
-                              fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 14),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 260),
+                      child: Text(
+                        _isContactStep
+                            ? _contactInstruction
+                            : 'Enter your password to continue',
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          color: AppColors.textSecondary,
+                          fontWeight: FontWeight.w500,
+                          height: 1.45,
+                        ),
+                      ),
                     ),
+                    const SizedBox(height: 48),
+                    if (_isContactStep) ...[
+                      if (_isPhone)
+                        _PhoneContactField(
+                          controller: _phoneCtrl,
+                          onSubmit: _onContinue,
+                        )
+                      else
+                        _OutlinedInput(
+                          controller: _emailCtrl,
+                          hint: _contactHint,
+                          keyboardType: TextInputType.emailAddress,
+                          onSubmitted: (_) => _onContinue(),
+                        ),
+                    ] else ...[
+                      _SelectedContactCard(
+                        tab: _tab,
+                        contact: _contact,
+                        onEdit: () => setState(() {
+                          _step = 0;
+                          _error = null;
+                        }),
+                      ),
+                      const SizedBox(height: 16),
+                      _PasswordField(
+                        controller: _passwordCtrl,
+                        hint: 'Password',
+                        obscureText: !_showPassword,
+                        onSubmitted: (_) => _onLogin(),
+                        onToggleVisibility: () =>
+                            setState(() => _showPassword = !_showPassword),
+                      ),
+                      if (_otpAvailable) ...[
+                        const SizedBox(height: 28),
+                        Center(
+                          child: GestureDetector(
+                            onTap: () => _sendOtp(_contact),
+                            child: Text(
+                              'Use OTP instead',
+                              style: AppTextStyles.bodyMedium.copyWith(
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.w900,
+                                decoration: TextDecoration.underline,
+                                decorationColor: AppColors.primary,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                    if (_error != null) ...[
+                      const SizedBox(height: 14),
+                      Text(
+                        _error!,
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          color: AppColors.error,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 38),
+                    AppButton(
+                      label: _isContactStep ? 'CONTINUE' : 'SIGN IN',
+                      loading: _loading,
+                      onPressed: _isContactStep ? _onContinue : _onLogin,
+                    ),
+                    if (_isContactStep) ...[
+                      const SizedBox(height: 28),
+                      Center(
+                        child: GestureDetector(
+                          onTap: _toggleMethod,
+                          child: Text(
+                            _switchLabel,
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w900,
+                              decoration: TextDecoration.underline,
+                              decorationColor: AppColors.primary,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 40),
+                    Center(
+                      child: Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text(
+                            "Don't have an account? ",
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              color: AppColors.textSecondary,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          GestureDetector(
+                            onTap: () => context.push(AppRoutes.register),
+                            child: Text(
+                              'Register',
+                              style: AppTextStyles.bodyMedium.copyWith(
+                                color: AppColors.textPrimary,
+                                fontWeight: FontWeight.w800,
+                                decoration: TextDecoration.underline,
+                                decorationColor: AppColors.textPrimary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
                   ],
                 ),
               ),
-            ],
-          ),
+            );
+          },
         ),
       ),
     );
   }
 }
 
-// ── Phone field with Nigeria flag prefix ──────────────────────────────────────
+class _TopBrandRow extends StatelessWidget {
+  const _TopBrandRow({required this.onBackPressed});
 
-class _PhoneField extends StatelessWidget {
-  const _PhoneField({required this.controller, required this.onSubmit});
+  final VoidCallback onBackPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        GestureDetector(
+          onTap: onBackPressed,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.arrow_back_ios_new_rounded,
+                size: 18,
+                color: AppColors.primary,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                'Back',
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 12),
+        SizedBox(
+          width: 82,
+          child: SvgPicture.asset(
+            AppAssets.logoDark,
+            fit: BoxFit.contain,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PhoneContactField extends StatelessWidget {
+  const _PhoneContactField({
+    required this.controller,
+    required this.onSubmit,
+  });
+
   final TextEditingController controller;
   final VoidCallback onSubmit;
 
   @override
   Widget build(BuildContext context) {
     return Container(
+      height: 49,
+      padding: const EdgeInsets.symmetric(horizontal: 2),
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
+        color: const Color(0xFFF7F7F7),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(color: AppColors.divider),
       ),
       child: Row(
         children: [
-          // Flag prefix
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SvgPicture.asset(AppAssets.nigeriaFlag, width: 24, height: 24),
-                const SizedBox(width: 6),
-                Text('+234',
-                    style: AppTextStyles.bodyMedium
-                        .copyWith(fontWeight: FontWeight.w600)),
-                const SizedBox(width: 4),
-                const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
-              ],
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: Image.asset(
+              AppAssets.nigeriaFlagPng,
+              width: 35,
+              height: 35,
+              fit: BoxFit.cover,
             ),
           ),
-          Container(width: 1, height: 36, color: AppColors.divider),
+          const SizedBox(width: 12),
+          const Icon(
+            Icons.keyboard_arrow_down_rounded,
+            size: 20,
+            color: AppColors.textPrimary,
+          ),
+          const SizedBox(width: 10),
+          Text(
+            '+234',
+            style: AppTextStyles.bodyMedium.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(width: 12),
           Expanded(
             child: TextField(
               controller: controller,
@@ -337,14 +418,18 @@ class _PhoneField extends StatelessWidget {
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               onSubmitted: (_) => onSubmit(),
               decoration: InputDecoration(
-                hintText: '08012345678',
-                hintStyle: AppTextStyles.bodyMedium
-                    .copyWith(color: AppColors.textSecondary),
+                hintText: 'Phone Number',
+                hintStyle: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.textSecondary,
+                  fontWeight: FontWeight.w500,
+                ),
                 border: InputBorder.none,
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+                contentPadding: const EdgeInsets.symmetric(vertical: 13),
               ),
-              style: AppTextStyles.bodyMedium,
+              style: AppTextStyles.bodyMedium.copyWith(
+                color: AppColors.textPrimary,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ],
@@ -353,12 +438,18 @@ class _PhoneField extends StatelessWidget {
   }
 }
 
-// ── Contact tab bar ───────────────────────────────────────────────────────────
+class _OutlinedInput extends StatelessWidget {
+  const _OutlinedInput({
+    required this.controller,
+    required this.hint,
+    this.keyboardType,
+    this.onSubmitted,
+  });
 
-class _ContactTabs extends StatelessWidget {
-  const _ContactTabs({required this.active, required this.onChanged});
-  final _ContactTab active;
-  final ValueChanged<_ContactTab> onChanged;
+  final TextEditingController controller;
+  final String hint;
+  final TextInputType? keyboardType;
+  final ValueChanged<String>? onSubmitted;
 
   @override
   Widget build(BuildContext context) {
@@ -366,67 +457,136 @@ class _ContactTabs extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.divider),
       ),
-      padding: const EdgeInsets.all(4),
+      child: TextField(
+        controller: controller,
+        keyboardType: keyboardType,
+        onSubmitted: onSubmitted,
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: AppTextStyles.bodyMedium.copyWith(
+            color: AppColors.textSecondary,
+            fontWeight: FontWeight.w500,
+          ),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+        ),
+        style: AppTextStyles.bodyMedium.copyWith(
+          color: AppColors.textPrimary,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+class _PasswordField extends StatelessWidget {
+  const _PasswordField({
+    required this.controller,
+    required this.hint,
+    required this.obscureText,
+    required this.onSubmitted,
+    required this.onToggleVisibility,
+  });
+
+  final TextEditingController controller;
+  final String hint;
+  final bool obscureText;
+  final ValueChanged<String>? onSubmitted;
+  final VoidCallback onToggleVisibility;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7F7F7),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.divider),
+      ),
+      child: TextField(
+        controller: controller,
+        obscureText: obscureText,
+        onSubmitted: onSubmitted,
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: AppTextStyles.bodyMedium.copyWith(
+            color: AppColors.textSecondary,
+            fontWeight: FontWeight.w500,
+          ),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+          suffixIcon: GestureDetector(
+            onTap: onToggleVisibility,
+            child: Icon(
+              obscureText ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+              size: 20,
+              color: AppColors.textSecondary,
+            ),
+          ),
+        ),
+        style: AppTextStyles.bodyMedium.copyWith(
+          color: AppColors.textPrimary,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+class _SelectedContactCard extends StatelessWidget {
+  const _SelectedContactCard({
+    required this.tab,
+    required this.contact,
+    required this.onEdit,
+  });
+
+  final _ContactTab tab;
+  final String contact;
+  final VoidCallback onEdit;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7F7F7),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.divider),
+      ),
       child: Row(
         children: [
-          _Tab(
-            label: 'Phone Number',
-            selected: active == _ContactTab.phone,
-            onTap: () => onChanged(_ContactTab.phone),
+          Icon(
+            tab == _ContactTab.phone ? Icons.phone_outlined : Icons.email_outlined,
+            size: 18,
+            color: AppColors.textSecondary,
           ),
-          _Tab(
-            label: 'Email',
-            selected: active == _ContactTab.email,
-            onTap: () => onChanged(_ContactTab.email),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              contact,
+              style: AppTextStyles.bodyMedium.copyWith(
+                color: AppColors.textPrimary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          GestureDetector(
+            onTap: onEdit,
+            child: Text(
+              'Change',
+              style: AppTextStyles.bodyMedium.copyWith(
+                color: AppColors.textPrimary,
+                fontWeight: FontWeight.w800,
+                decoration: TextDecoration.underline,
+              ),
+            ),
           ),
         ],
       ),
     );
   }
 }
-
-class _Tab extends StatelessWidget {
-  const _Tab({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-  final String  label;
-  final bool    selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) => Expanded(
-        child: GestureDetector(
-          onTap: onTap,
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            decoration: BoxDecoration(
-              color: selected ? AppColors.white : Colors.transparent,
-              borderRadius: BorderRadius.circular(7),
-              boxShadow: selected
-                  ? [BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.08),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
-                    )]
-                  : null,
-            ),
-            child: Text(
-              label,
-              textAlign: TextAlign.center,
-              style: AppTextStyles.labelSmall.copyWith(
-                color: selected ? AppColors.textPrimary : AppColors.textSecondary,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-              ),
-            ),
-          ),
-        ),
-      );
-}
-
-// ── Small progress bar row (same as onboarding) ───────────────────────────────
 
 class _ProgressBars extends StatelessWidget {
   const _ProgressBars({required this.count, required this.active});

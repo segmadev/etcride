@@ -3,6 +3,49 @@ require_once ROOT . 'functions/BaseController.php';
 
 class Vehicles extends BaseController
 {
+    private string $uploadDir = ROOT . 'api/uploads/vehicles/';
+
+    private function saveUpload(string $field, string $prefix): ?string
+    {
+        if (empty($_FILES[$field]['name']) || ($_FILES[$field]['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK) {
+            return null;
+        }
+
+        $allowed = ['image/jpeg', 'image/png', 'image/webp'];
+        $tmp = $_FILES[$field]['tmp_name'] ?? '';
+        if (!is_string($tmp) || $tmp === '') {
+            return null;
+        }
+
+        $mime = mime_content_type($tmp);
+        if (!in_array($mime, $allowed, true) || (int) ($_FILES[$field]['size'] ?? 0) > 5 * 1024 * 1024) {
+            return null;
+        }
+
+        $ext = strtolower(pathinfo($_FILES[$field]['name'], PATHINFO_EXTENSION));
+        $filename = $prefix . '_' . uniqid() . '.' . $ext;
+
+        if (!is_dir($this->uploadDir)) {
+            mkdir($this->uploadDir, 0755, true);
+        }
+
+        move_uploaded_file($tmp, $this->uploadDir . $filename);
+        return $filename;
+    }
+
+    private function photoUrl(?string $f): ?string
+    {
+        return $this->uploadUrl('vehicles', $f);
+    }
+
+    private function mapVehicleRecord(array $vehicle): array
+    {
+        if (array_key_exists('photo', $vehicle)) {
+            $vehicle['photo_url'] = $this->photoUrl($vehicle['photo'] ?? null);
+        }
+        return $vehicle;
+    }
+
     // ── GET /admin/vehicles ───────────────────────────────────────────────────
     public function index(): void
     {
@@ -31,6 +74,10 @@ class Vehicles extends BaseController
              LIMIT $perPage OFFSET $offset"
         );
         $stmt->execute($params);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($rows as &$row) {
+            if (is_array($row)) $row = $this->mapVehicleRecord($row);
+        }
 
         $countStmt = $this->db->prepare("SELECT COUNT(*) FROM vehicles v $where");
         $countStmt->execute($params);
@@ -39,7 +86,7 @@ class Vehicles extends BaseController
             'total'    => (int) $countStmt->fetchColumn(),
             'page'     => $page,
             'per_page' => $perPage,
-            'data'     => $stmt->fetchAll(PDO::FETCH_ASSOC),
+            'data'     => $rows,
         ]);
     }
 
@@ -64,7 +111,7 @@ class Vehicles extends BaseController
         }
 
         $id = utilities::genID('VCL_', 10);
-        $this->quick_insert('vehicles', [
+        $fields = [
             'id'              => $id,
             'vehicle_type_id' => $vtId,
             'plate_number'    => $plate,
@@ -73,7 +120,23 @@ class Vehicles extends BaseController
             'color'           => $this->str('color'),
             'year'            => $this->str('year') ?: null,
             'status'          => 'active',
-        ]);
+        ];
+
+        $wantsPhoto = !empty($_FILES['photo']['name']);
+        if ($wantsPhoto && !$this->tableHasColumn('vehicles', 'photo')) {
+            echo utilities::apiMessage('Vehicle photo upload is not enabled on this server.', 400);
+            return;
+        }
+        if ($wantsPhoto) {
+            $photoFile = $this->saveUpload('photo', $id);
+            if ($photoFile === null) {
+                echo utilities::apiMessage('Invalid vehicle photo. Use jpeg/png/webp up to 5MB.', 422);
+                return;
+            }
+            $fields['photo'] = $photoFile;
+        }
+
+        $this->quick_insert('vehicles', $fields);
 
         $this->logActivity('admin', $me['id'], 'vehicle_created', ['id' => $id, 'plate' => $plate]);
 
@@ -96,7 +159,7 @@ class Vehicles extends BaseController
 
         if (!$vehicle) { echo utilities::apiMessage('Vehicle not found.', 404); return; }
 
-        echo utilities::apiMessage('Vehicle retrieved.', 200, $vehicle);
+        echo utilities::apiMessage('Vehicle retrieved.', 200, $this->mapVehicleRecord($vehicle));
     }
 
     // ── PUT /admin/vehicles/:id ───────────────────────────────────────────────
@@ -122,6 +185,20 @@ class Vehicles extends BaseController
                 echo utilities::apiMessage('Plate number already in use.', 409); return;
             }
             $fields['plate_number'] = $plate;
+        }
+
+        $wantsPhoto = !empty($_FILES['photo']['name']);
+        if ($wantsPhoto && !$this->tableHasColumn('vehicles', 'photo')) {
+            echo utilities::apiMessage('Vehicle photo upload is not enabled on this server.', 400);
+            return;
+        }
+        if ($wantsPhoto) {
+            $photoFile = $this->saveUpload('photo', $id);
+            if ($photoFile === null) {
+                echo utilities::apiMessage('Invalid vehicle photo. Use jpeg/png/webp up to 5MB.', 422);
+                return;
+            }
+            $fields['photo'] = $photoFile;
         }
 
         if (empty($fields)) { echo utilities::apiMessage('No fields to update.', 400); return; }

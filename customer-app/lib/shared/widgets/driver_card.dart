@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
+import '../../core/services/chat_notification_service.dart';
 import '../../core/utils/formatters.dart';
 import '../../data/models/booking_model.dart';
 import 'star_rating.dart';
@@ -14,6 +15,8 @@ class DriverCard extends StatelessWidget {
     this.statusIcon,
     this.trailing,
     this.showFare = true,
+    this.onChat,
+    this.chatUnread = 0,
   });
 
   final BookingModel booking;
@@ -21,6 +24,8 @@ class DriverCard extends StatelessWidget {
   final Widget? statusIcon;
   final Widget? trailing;
   final bool showFare;
+  final VoidCallback? onChat;
+  final int chatUnread;
 
   void _call() {
     final phone = booking.driverPhone;
@@ -30,13 +35,8 @@ class DriverCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-      decoration: const BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        boxShadow: [BoxShadow(color: Color(0x20000000), blurRadius: 20)],
-      ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -62,6 +62,17 @@ class DriverCard extends StatelessWidget {
                   ],
                 ),
               ),
+              if (onChat != null)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ValueListenableBuilder<Map<String, int>>(
+                    valueListenable: ChatNotificationService.instance.unreadCounts,
+                    builder: (_, counts, __) {
+                      final n = counts[booking.id] ?? chatUnread;
+                      return _ChatIconButton(onTap: onChat!, unread: n);
+                    },
+                  ),
+                ),
               if (booking.driverPhone?.isNotEmpty == true)
                 GestureDetector(
                   onTap: _call,
@@ -98,8 +109,52 @@ class DriverCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 8),
+
+          // ── Expanded trip details (visible when sheet is swiped up) ──────
+          if (booking.pickupAddress.isNotEmpty) ...[
+            const Divider(),
+            const SizedBox(height: 4),
+            _AddressRow(
+              icon: Icons.radio_button_checked_rounded,
+              iconColor: AppColors.primary,
+              label: booking.pickupAddress,
+            ),
+            const SizedBox(height: 8),
+            _AddressRow(
+              icon: Icons.location_on_rounded,
+              iconColor: AppColors.error,
+              label: booking.destinationAddress,
+            ),
+            const SizedBox(height: 10),
+          ],
         ],
       ),
+    );
+  }
+}
+
+class _AddressRow extends StatelessWidget {
+  const _AddressRow({required this.icon, required this.iconColor, required this.label});
+  final IconData icon;
+  final Color iconColor;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 16, color: iconColor),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            label,
+            style: AppTextStyles.bodySmall.copyWith(color: AppColors.textPrimary),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -121,6 +176,53 @@ class _Avatar extends StatelessWidget {
       radius: 26,
       backgroundColor: AppColors.surface,
       child: Icon(Icons.person_rounded, size: 30, color: AppColors.textSecondary),
+    );
+  }
+}
+
+class _ChatIconButton extends StatelessWidget {
+  const _ChatIconButton({required this.onTap, required this.unread});
+  final VoidCallback onTap;
+  final int unread;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: const BoxDecoration(
+                color: AppColors.primaryLight, shape: BoxShape.circle),
+            child: const Icon(Icons.chat_bubble_outline_rounded,
+                color: AppColors.primary, size: 20),
+          ),
+          if (unread > 0)
+            Positioned(
+              top: -2,
+              right: -2,
+              child: Container(
+                padding: const EdgeInsets.all(3),
+                decoration: const BoxDecoration(
+                    color: AppColors.error, shape: BoxShape.circle),
+                constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                child: Text(
+                  unread > 99 ? '99+' : '$unread',
+                  style: const TextStyle(
+                    color: AppColors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    height: 1,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

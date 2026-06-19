@@ -47,8 +47,10 @@ _$BookingModelImpl _$$BookingModelImplFromJson(Map<String, dynamic> json) =>
       alternativeTypes: json['alternativeTypes'] as List<dynamic>? ?? const [],
       arrivedAt: json['arrivedAt'] as String?,
       freeWaitingMinutes: (json['freeWaitingMinutes'] as num?)?.toInt() ?? 3,
-      waitingChargePerMin: (json['waitingChargePerMin'] as num?)?.toDouble() ?? 0.0,
-      waitingExtraCharge: (json['waitingExtraCharge'] as num?)?.toDouble() ?? 0.0,
+      waitingChargePerMin:
+          (json['waitingChargePerMin'] as num?)?.toDouble() ?? 0.0,
+      waitingExtraCharge:
+          (json['waitingExtraCharge'] as num?)?.toDouble() ?? 0.0,
     );
 
 Map<String, dynamic> _$$BookingModelImplToJson(_$BookingModelImpl instance) =>
@@ -99,6 +101,7 @@ const _$BookingStatusEnumMap = {
   BookingStatus.assigned: 'assigned',
   BookingStatus.accepted: 'accepted',
   BookingStatus.arrived: 'arrived',
+  BookingStatus.pickedUp: 'pickedUp',
   BookingStatus.inProgress: 'inProgress',
   BookingStatus.completed: 'completed',
   BookingStatus.cancelled: 'cancelled',

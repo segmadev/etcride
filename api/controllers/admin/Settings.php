@@ -44,11 +44,14 @@ class Settings extends BaseController
         $allowed = [
             'auto_assign_enabled', 'driver_search_radius_km', 'calc_method',
             'pay_mode', 'payment_provider',
+            // Payment gateway keys (stored in DB — also override with .env vars)
+            'flutterwave_public_key', 'flutterwave_secret_key', 'flutterwave_secret_hash',
             'cancellation_allowed_by', 'cancellation_window_minutes',
             'cancellation_fee_enabled', 'cancellation_fee_amount',
             'cancellation_fee_after_assignment',
             'email_notifications_enabled', 'fcm_enabled',
-            'min_booking_fare', 'app_name', 'support_email', 'support_phone',
+            'min_booking_fare', 'time_fare_enabled', 'time_fare_per_minute',
+            'app_name', 'support_email', 'support_phone',
             'currency', 'currency_symbol',
             // Map settings
             'google_maps_api_key', 'google_maps_web_key', 'google_maps_server_key',
@@ -66,6 +69,8 @@ class Settings extends BaseController
             'tpl_welcome_subject',           'tpl_welcome_body',
             // Driver app
             'driver_auth_mode', 'driver_locations_json',
+            // Delivery
+            'delivery_rules',
         ];
 
         $updated = [];

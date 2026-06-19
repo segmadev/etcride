@@ -16,6 +16,7 @@ import '../../features/booking/payment_methods_screen.dart';
 import '../../features/booking/requesting_screen.dart';
 import '../../features/booking/driver_assigned_screen.dart';
 import '../../features/booking/driver_chat_screen.dart';
+import '../../features/chat/chat_history_screen.dart';
 import '../../features/trip/trip_in_progress_screen.dart';
 import '../../features/trip/trip_completed_screen.dart';
 import '../../features/trip/payment_screen.dart';
@@ -24,6 +25,7 @@ import '../../features/trip/trip_details_screen.dart';
 import '../../features/trip/trip_receipt_screen.dart';
 import '../../features/courier/courier_screen.dart';
 import '../../features/courier/courier_receive_details_screen.dart';
+import '../../features/courier/courier_select_vehicle_screen.dart';
 import '../../features/courier/delivery_rules_screen.dart';
 import '../../features/profile/profile_screen.dart';
 import '../../features/settings/settings_screen.dart';
@@ -77,6 +79,7 @@ abstract final class AppRoutes {
   static const String requesting         = '/requesting';    // extra: bookingId (String)
   static const String driverAssigned     = '/driver-assigned'; // extra: bookingId (String)
   static const String driverChat         = '/driver-chat'; // extra: bookingId (String)
+  static const String chatHistory        = '/chat-history';
 
   // ── Trip ──────────────────────────────────────────────────────────────────
   static const String payment            = '/payment';           // extra: bookingId
@@ -87,9 +90,10 @@ abstract final class AppRoutes {
   static const String tripReceipt        = '/trip-receipt';      // extra: bookingId
 
   // ── Courier ───────────────────────────────────────────────────────────────
-  static const String courier            = '/courier';
+  static const String courier               = '/courier';
+  static const String courierSelectVehicle  = '/courier-select-vehicle';
   static const String courierReceiveDetails = '/courier-receive-details';
-  static const String deliveryRules      = '/delivery-rules';
+  static const String deliveryRules         = '/delivery-rules';
 
   // ── Profile & settings ────────────────────────────────────────────────────
   static const String profile            = '/profile';
@@ -189,6 +193,10 @@ final appRouter = GoRouter(
       pageBuilder: (_, state) =>
           _appPage(state, DriverChatScreen(bookingId: state.extra! as String)),
     ),
+    GoRoute(
+      path: AppRoutes.chatHistory,
+      pageBuilder: (_, state) => _appPage(state, const ChatHistoryScreen()),
+    ),
 
     // ── Trip ─────────────────────────────────────────────────────────────
     GoRoute(
@@ -232,12 +240,16 @@ final appRouter = GoRouter(
       pageBuilder: (_, state) => _appPage(state, const CourierScreen()),
     ),
     GoRoute(
-      path: AppRoutes.courierReceiveDetails,
-      pageBuilder: (_, state) => _appPage(state, const CourierReceiveDetailsScreen()),
-    ),
-    GoRoute(
       path: AppRoutes.deliveryRules,
       pageBuilder: (_, state) => _appPage(state, const DeliveryRulesScreen()),
+    ),
+    GoRoute(
+      path: AppRoutes.courierSelectVehicle,
+      pageBuilder: (_, state) => _appPage(state, const CourierSelectVehicleScreen()),
+    ),
+    GoRoute(
+      path: AppRoutes.courierReceiveDetails,
+      pageBuilder: (_, state) => _appPage(state, const CourierReceiveDetailsScreen()),
     ),
 
     // ── Profile & settings ────────────────────────────────────────────────

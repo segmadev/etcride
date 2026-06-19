@@ -30,6 +30,9 @@ dependencies:
   geocoding: ^3.0.0
   permission_handler: ^11.3.1
 
+  # ── Audio ─────────────────────────────────────────────────────────────────────
+  audioplayers: ^6.1.0
+
   # ── Assets ────────────────────────────────────────────────────────────────────
   flutter_svg: ^2.0.17
   cached_network_image: ^3.4.1
@@ -79,3 +82,4 @@ flutter:
     - assets/logos/
     - assets/logos/flutterwave-icon 1.svg
     - assets/splash/
+    - assets/sounds/

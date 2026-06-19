@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus, Search, Power, Camera, Eye, ChevronDown,
@@ -42,6 +42,13 @@ const KYC_LABELS: Record<KycStatus, string> = {
   verified:      'KYC Verified',
   rejected:      'KYC Rejected',
 };
+
+const DRIVING_EXPERIENCE_OPTIONS = [
+  { value: 'Less than 1 year', label: 'Less than 1 year' },
+  { value: '1 - 2 years', label: '1 - 2 years' },
+  { value: '3 - 5 years', label: '3 - 5 years' },
+  { value: '5+ years', label: '5+ years' },
+];
 
 function KycBadge({ status }: { status: KycStatus }) {
   return (
@@ -172,6 +179,7 @@ function CreateDriverModal({ open, onClose }: { open: boolean; onClose: () => vo
   const [kycOpen, setKycOpen]     = useState(false);
   const [kycIdType, setKycIdType] = useState('');
   const [kycIdNum, setKycIdNum]   = useState('');
+  const [drivingExperience, setDrivingExperience] = useState('');
   const [kycFront, setKycFront]   = useState<File | null>(null);
   const [kycBack, setKycBack]     = useState<File | null>(null);
   const [showPass, setShowPass]   = useState(false);
@@ -182,7 +190,7 @@ function CreateDriverModal({ open, onClose }: { open: boolean; onClose: () => vo
 
   const reset = useCallback(() => {
     setForm({ name: '', phone: '', email: '', password: '', license_number: '', vehicle_id: '' });
-    setPhoto(null); setKycOpen(false); setKycIdType(''); setKycIdNum('');
+    setPhoto(null); setKycOpen(false); setKycIdType(''); setKycIdNum(''); setDrivingExperience('');
     setKycFront(null); setKycBack(null); setExtraVehicles([]);
   }, []);
 
@@ -192,6 +200,7 @@ function CreateDriverModal({ open, onClose }: { open: boolean; onClose: () => vo
       password: form.password, license_number: form.license_number || undefined,
       vehicle_id: form.vehicle_id || undefined, photo: photo || undefined,
       kyc_id_type: kycIdType || undefined, kyc_id_number: kycIdNum || undefined,
+      driving_experience: drivingExperience || undefined,
       kyc_id_front: kycFront || undefined, kyc_id_back: kycBack || undefined,
     }),
     onSuccess: () => {
@@ -262,6 +271,13 @@ function CreateDriverModal({ open, onClose }: { open: boolean; onClose: () => vo
                     options={[{ value: 'NIN', label: 'NIN' }, { value: "Driver's License", label: "Driver's License" }, { value: "Voter's Card", label: "Voter's Card" }, { value: 'International Passport', label: 'International Passport' }]} />
                   <Input label="ID Number" value={kycIdNum} onChange={e => setKycIdNum(e.target.value)} placeholder="Enter ID number" />
                 </div>
+                <Select
+                  label="Driving Experience"
+                  value={drivingExperience}
+                  onChange={e => setDrivingExperience(e.target.value)}
+                  placeholder="Select experience…"
+                  options={DRIVING_EXPERIENCE_OPTIONS}
+                />
                 <div className="grid grid-cols-2 gap-3">
                   <DocUpload label="ID Front" value={kycFront} onChange={setKycFront} />
                   <DocUpload label="ID Back"  value={kycBack}  onChange={setKycBack} />
@@ -280,26 +296,96 @@ function CreateDriverModal({ open, onClose }: { open: boolean; onClose: () => vo
 // ── KYC Panel ─────────────────────────────────────────────────────────────────
 function KycPanel({ driver, onUpdated }: { driver: Driver; onUpdated: () => void }) {
   const { toast } = useToast();
+  const qc = useQueryClient();
+  const [currentStatus, setCurrentStatus] = useState<KycStatus>(driver.kyc_status);
   const [note, setNote]       = useState(driver.kyc_note ?? '');
   const [front, setFront]     = useState<File | null>(null);
   const [back, setBack]       = useState<File | null>(null);
+  const [profilePhoto, setProfilePhoto] = useState<File | null>(null);
   const [kycIdType, setType]  = useState(driver.kyc_id_type ?? '');
   const [kycIdNum, setNum]    = useState(driver.kyc_id_number ?? '');
+  const [drivingExperience, setDrivingExperience] = useState(driver.driving_experience ?? '');
+
+  useEffect(() => {
+    setCurrentStatus(driver.kyc_status);
+    setNote(driver.kyc_note ?? '');
+    setType(driver.kyc_id_type ?? '');
+    setNum(driver.kyc_id_number ?? '');
+    setDrivingExperience(driver.driving_experience ?? '');
+  }, [driver]);
 
   const mutation = useMutation({
-    mutationFn: (status: KycStatus) => driversApi.updateKyc(driver.id, { kyc_status: status, kyc_note: note || undefined, kyc_id_type: kycIdType || undefined, kyc_id_number: kycIdNum || undefined, kyc_id_front: front || undefined, kyc_id_back: back || undefined }),
-    onSuccess: () => { toast('KYC updated.', 'success'); onUpdated(); },
+    mutationFn: (status: KycStatus) => driversApi.updateKyc(driver.id, {
+      kyc_status: status,
+      kyc_note: note.trim(),
+      kyc_id_type: kycIdType,
+      kyc_id_number: kycIdNum,
+      driving_experience: drivingExperience,
+      kyc_id_front: front || undefined,
+      kyc_id_back: back || undefined,
+      profile_photo: profilePhoto || undefined,
+    }),
+    onSuccess: (updated, status) => {
+      const resolvedNote = updated.kyc_note ?? (note.trim() || null);
+      const resolvedExperience = updated.driving_experience ?? (drivingExperience || null);
+      setCurrentStatus(updated.kyc_status ?? status);
+      setNote(resolvedNote ?? '');
+      qc.setQueryData<Driver>(['driver', driver.id], current => current ? ({
+        ...current,
+        kyc_status: updated.kyc_status ?? status,
+        kyc_note: resolvedNote,
+        driving_experience: resolvedExperience,
+        photo_url: updated.photo_url ?? current.photo_url,
+        profile_photo_url: updated.photo_url ?? current.profile_photo_url,
+        kyc_front_url: updated.kyc_front_url ?? current.kyc_front_url,
+        kyc_back_url: updated.kyc_back_url ?? current.kyc_back_url,
+      }) : current);
+      toast(
+        status === 'verified'
+          ? 'Driver KYC verified.'
+          : status === 'rejected'
+              ? 'Driver KYC rejected.'
+              : 'KYC updated.',
+        'success',
+      );
+      onUpdated();
+    },
     onError: (e: unknown) => toast(getApiErrorMessage(e), 'error'),
   });
 
+  const handleSubmit = (status: KycStatus) => {
+    if (status === 'rejected' && note.trim() === '') {
+      toast('Enter a rejection reason before rejecting this KYC.', 'error');
+      return;
+    }
+    mutation.mutate(status);
+  };
+
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between"><KycBadge status={driver.kyc_status} /></div>
+      <div className="flex items-center justify-between"><KycBadge status={currentStatus} /></div>
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <div className="mb-3 flex items-center gap-3">
+          <Avatar url={driver.photo_url} name={driver.name} size="md" />
+          <div>
+            <p className="text-sm font-medium text-slate-800">Profile Photo</p>
+            <p className="text-xs text-slate-500">Used as the driver's avatar in the apps.</p>
+          </div>
+        </div>
+        <PhotoUpload value={profilePhoto} onChange={setProfilePhoto} label="Replace profile photo" />
+      </div>
       <div className="grid grid-cols-2 gap-3">
         <Select label="ID Type" value={kycIdType} onChange={e => setType(e.target.value)} placeholder="Select…"
           options={[{ value: 'NIN', label: 'NIN' }, { value: "Driver's License", label: "Driver's License" }, { value: "Voter's Card", label: "Voter's Card" }, { value: 'International Passport', label: 'International Passport' }]} />
         <Input label="ID Number" value={kycIdNum} onChange={e => setNum(e.target.value)} placeholder="ID number" />
       </div>
+      <Select
+        label="Driving Experience"
+        value={drivingExperience}
+        onChange={e => setDrivingExperience(e.target.value)}
+        placeholder="Select driving experience…"
+        options={DRIVING_EXPERIENCE_OPTIONS}
+      />
       <div className="grid grid-cols-2 gap-3">
         <div>
           <DocUpload label="ID Front" value={front} onChange={setFront} />
@@ -316,15 +402,15 @@ function KycPanel({ driver, onUpdated }: { driver: Driver; onUpdated: () => void
           className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none" />
       </div>
       <div className="flex gap-2">
-        <button onClick={() => mutation.mutate('verified')} disabled={mutation.isPending}
+        <button onClick={() => handleSubmit('verified')} disabled={mutation.isPending}
           className="flex items-center gap-1.5 rounded-xl bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700 transition-colors disabled:opacity-60">
           <CheckCircle size={14} /> Verify
         </button>
-        <button onClick={() => mutation.mutate('rejected')} disabled={mutation.isPending}
+        <button onClick={() => handleSubmit('rejected')} disabled={mutation.isPending}
           className="flex items-center gap-1.5 rounded-xl bg-red-500 px-3 py-2 text-sm font-medium text-white hover:bg-red-600 transition-colors disabled:opacity-60">
           <XCircle size={14} /> Reject
         </button>
-        <button onClick={() => mutation.mutate('pending')} disabled={mutation.isPending}
+        <button onClick={() => handleSubmit(currentStatus)} disabled={mutation.isPending}
           className="flex items-center gap-1.5 rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-60">
           Save
         </button>

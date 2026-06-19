@@ -169,11 +169,11 @@ class _ConfirmPickupScreenState extends ConsumerState<ConfirmPickupScreen> {
       pickupLat:     _pickupLatLng!.latitude,
       pickupLng:     _pickupLatLng!.longitude,
     ));
-    // If destination not yet chosen (e.g. "Choose on Map" or "Use Current Location"
-    // shortcuts), let user search for it before proceeding.
     final draft = ref.read(bookingDraftProvider);
     if (!draft.hasDestination) {
       showSearchDestinationDrawer(context);
+    } else if (draft.bookingType == 'delivery') {
+      context.push(AppRoutes.courierSelectVehicle);
     } else {
       showSelectRideDrawer(context);
     }

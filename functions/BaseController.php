@@ -74,6 +74,10 @@ class BaseController extends helper
     /** Read a value from the settings table */
     protected function setting(string $key, string $default = ''): string
     {
+        // .env vars take priority (map snake_key → UPPER_KEY)
+        $envKey = strtoupper($key);
+        if (!empty($_ENV[$envKey])) return $_ENV[$envKey];
+
         $row = $this->getall('settings', 'config_key = ?', [$key]);
         return is_array($row) ? (string) $row['config_value'] : $default;
     }
@@ -89,6 +93,37 @@ class BaseController extends helper
         $exists = ((int) $stmt->fetchColumn()) > 0;
         $this->columnExistsCache[$k] = $exists;
         return $exists;
+    }
+
+    protected function uploadUrl(string $folder, ?string $file): ?string
+    {
+        if (!$file) {
+            return null;
+        }
+
+        $scheme = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+        $scriptName = (string) ($_SERVER['SCRIPT_NAME'] ?? '/api/index.php');
+        $apiBase = trim(str_replace('\\', '/', dirname($scriptName)), '/');
+        // When the docroot IS the api/ folder (e.g. `php -S host:port -t api/` for
+        // local dev), dirname(SCRIPT_NAME) resolves to '' — uploads are already
+        // served from the docroot, so no extra path segment should be added.
+        // Only XAMPP/Apache deployments where api/ is a real subfolder (e.g.
+        // /etcride/api/index.php) produce a non-empty apiBase here.
+        if ($apiBase === '.') {
+            $apiBase = '';
+        }
+
+        // Routed through FrontContent@serveUpload (not the raw /uploads/ static
+        // path) so Access-Control-Allow-Origin is always applied — see that
+        // method for why direct static serving can't be relied on for CORS.
+        // Filename is a query param, not a path segment — PHP's built-in dev
+        // server short-circuits any URL path ending in a recognized extension
+        // straight to its own static handler without ever invoking PHP.
+        $path = '/' . $apiBase . '/files/' . trim($folder, '/');
+        $path = preg_replace('#/+#', '/', $path); // guard against any double slashes
+
+        return $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . $path
+             . '?file=' . rawurlencode($file);
     }
 
     protected function computeRouteSnapshot(
@@ -346,9 +381,18 @@ class BaseController extends helper
     /**
      * Calculate fare using zone pricing (preferred) or vehicle type default pricing.
      * Formula: base_fare + (distance_km × per_km_rate) + (num_stops × per_stop_fee)
+     *          + (duration_minutes × time_fare_per_minute)  [when time_fare_enabled = 1]
+     *
+     * @param float|null $durationMinutes  Actual trip duration in minutes (pass null for estimates)
      */
-    protected function calculateFare(string $vehicleTypeId, ?string $zoneId, float $distanceKm, int $numStops): float
-    {
+    protected function calculateFare(
+        string  $vehicleTypeId,
+        ?string $zoneId,
+        float   $distanceKm,
+        int     $numStops,
+        ?float  $durationMinutes = null,
+        string  $bookingType = 'ride'
+    ): float {
         $pricing = null;
 
         if ($zoneId) {
@@ -365,9 +409,21 @@ class BaseController extends helper
 
         if (!is_array($pricing)) return 0.00;
 
-        $fare    = (float) $pricing['base_fare']
-                 + ($distanceKm * (float) $pricing['per_km_rate'])
-                 + ($numStops   * (float) $pricing['per_stop_fee']);
+        $isDelivery = $bookingType === 'delivery';
+
+        // Delivery: distance-only fare (no per-stop fee, no time component)
+        $fare = (float) $pricing['base_fare']
+              + ($distanceKm * (float) $pricing['per_km_rate'])
+              + ($isDelivery ? 0.0 : $numStops * (float) $pricing['per_stop_fee']);
+
+        // ── Time-based component (rides only) ──────────────────────────────────
+        if (!$isDelivery && $durationMinutes !== null && $durationMinutes > 0
+            && $this->setting('time_fare_enabled', '0') === '1'
+        ) {
+            $perMinute = (float) $this->setting('time_fare_per_minute', '5');
+            $fare += $durationMinutes * $perMinute;
+        }
+
         $minFare = (float) $this->setting('min_booking_fare', '200');
 
         return max(round($fare, 2), $minFare);

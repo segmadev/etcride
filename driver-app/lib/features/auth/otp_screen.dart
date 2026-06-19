@@ -30,6 +30,9 @@ class _DriverOtpScreenState extends ConsumerState<DriverOtpScreen> {
   int     _resendCountdown = 60;
   Timer?  _timer;
 
+  bool get _canSubmit => _otp.length == 6;
+  String get _formattedResend => '00:${_resendCountdown.toString().padLeft(2, '0')}';
+
   @override
   void initState() {
     super.initState();
@@ -137,107 +140,187 @@ class _DriverOtpScreenState extends ConsumerState<DriverOtpScreen> {
   @override
   Widget build(BuildContext context) {
     final isPhone = !widget.contact.contains('@');
+    final title = isPhone ? 'Verify Your Number' : 'Verify Your Email';
+    final helper = isPhone
+        ? 'Enter the 6-digit code sent to your phone number to continue'
+        : 'Enter the 6-digit code sent to your email address to continue';
+    final activeIndex = _ctrls.indexWhere((controller) => controller.text.isEmpty);
+    final currentActiveIndex = activeIndex == -1 ? 5 : activeIndex;
 
     return Scaffold(
       backgroundColor: AppColors.white,
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(26, 16, 26, 32),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Back + progress
-              Row(
-                children: [
-                  GestureDetector(
-                    onTap: () => context.pop(),
-                    child: const Icon(Icons.arrow_back_rounded, size: 24),
-                  ),
-                  const SizedBox(width: 16),
-                  _ProgressBars(count: 3, active: 1),
-                ],
-              ),
-              const SizedBox(height: 32),
-
-              Text(
-                isPhone ? 'Verify your number' : 'Verify your email',
-                style: AppTextStyles.displayLarge.copyWith(
-                  fontSize: 34,
-                  fontWeight: FontWeight.w900,
-                  height: 1.1,
-                ),
-              ),
-              const SizedBox(height: 10),
-              RichText(
-                text: TextSpan(
-                  style: AppTextStyles.bodyLarge.copyWith(
-                      color: AppColors.textSecondary),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(26, 18, 26, 30),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight - 48),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    TextSpan(
-                        text: isPhone
-                            ? AppStrings.otpSentPhone
-                            : AppStrings.otpSentEmail),
-                    TextSpan(
-                      text: ' ${widget.contact}',
-                      style: const TextStyle(
-                          color: Colors.black, fontWeight: FontWeight.w700),
+                    Row(
+                      children: [
+                        GestureDetector(
+                          onTap: () => context.pop(),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.arrow_back_ios_new_rounded,
+                                size: 18,
+                                color: AppColors.primary,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Back',
+                                style: AppTextStyles.bodyMedium.copyWith(
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        const _ProgressBars(count: 3, active: 1),
+                      ],
                     ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 36),
-
-              // 6 boxes
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: List.generate(6, (i) {
-                  return _OtpBox(
-                    controller: _ctrls[i],
-                    focusNode:  _nodes[i],
-                    onChanged:  (v) => _onBoxChanged(v, i),
-                  );
-                }),
-              ),
-
-              if (_error != null) ...[
-                const SizedBox(height: 16),
-                Text(_error!,
-                    style: AppTextStyles.bodySmall
-                        .copyWith(color: AppColors.error)),
-              ],
-
-              const SizedBox(height: 32),
-
-              AppButton(
-                label:    AppStrings.verifyOtp,
-                loading:  _verifying,
-                onPressed: _verify,
-              ),
-
-              const SizedBox(height: 24),
-
-              // Resend timer
-              Center(
-                child: _resendCountdown > 0
-                    ? Text(
-                        '${AppStrings.resendCode} ${_resendCountdown}s',
-                        style: AppTextStyles.bodySmall
-                            .copyWith(color: AppColors.textSecondary),
-                      )
-                    : GestureDetector(
-                        onTap: _resending ? null : _resend,
+                    const SizedBox(height: 54),
+                    Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 320),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Text(
+                              title,
+                              textAlign: TextAlign.center,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontFamily: 'Poppins',
+                                fontSize: 24,
+                                fontWeight: FontWeight.w600,
+                                height: 1,
+                                letterSpacing: 0,
+                              ),
+                            ),
+                            const SizedBox(height: 30),
+                            _VerificationIllustration(isPhone: isPhone),
+                            const SizedBox(height: 22),
+                            Text(
+                              widget.contact,
+                              textAlign: TextAlign.center,
+                              style: AppTextStyles.bodyLarge.copyWith(
+                                color: AppColors.textPrimary,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              helper,
+                              textAlign: TextAlign.center,
+                              style: AppTextStyles.bodyMedium.copyWith(
+                                color: AppColors.textSecondary,
+                                fontWeight: FontWeight.w500,
+                                height: 1.45,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 34),
+                    Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 314),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: List.generate(6, (i) {
+                            return _OtpBox(
+                              controller: _ctrls[i],
+                              focusNode: _nodes[i],
+                              isActive: i == currentActiveIndex,
+                              onChanged: (v) => _onBoxChanged(v, i),
+                            );
+                          }),
+                        ),
+                      ),
+                    ),
+                    if (_error != null) ...[
+                      const SizedBox(height: 16),
+                      Center(
                         child: Text(
-                          _resending ? 'Sending...' : AppStrings.resendNow,
+                          _error!,
+                          textAlign: TextAlign.center,
                           style: AppTextStyles.bodySmall.copyWith(
-                            color: AppColors.primary,
+                            color: AppColors.error,
                             fontWeight: FontWeight.w700,
-                            decoration: TextDecoration.underline,
                           ),
                         ),
                       ),
+                    ],
+                    const SizedBox(height: 40),
+                    AppButton(
+                      label: 'VERIFY & CONTINUE',
+                      loading: _verifying,
+                      enabled: _canSubmit,
+                      onPressed: _verify,
+                    ),
+                    const SizedBox(height: 18),
+                    Center(
+                      child: _resendCountdown > 0
+                          ? Text(
+                              'Resend code in $_formattedResend',
+                              style: AppTextStyles.bodyMedium.copyWith(
+                                color: AppColors.textSecondary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            )
+                          : GestureDetector(
+                              onTap: _resending ? null : _resend,
+                              child: Text(
+                                _resending ? 'Sending...' : AppStrings.resendNow,
+                                style: AppTextStyles.bodyMedium.copyWith(
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.w800,
+                                  decoration: TextDecoration.underline,
+                                ),
+                              ),
+                            ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                ),
               ),
-            ],
-          ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _VerificationIllustration extends StatelessWidget {
+  const _VerificationIllustration({required this.isPhone});
+
+  final bool isPhone;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 85,
+      height: 85,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF9EBCF).withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Center(
+        child: Icon(
+          isPhone ? Icons.sms_outlined : Icons.email_outlined,
+          size: 36,
+          color: AppColors.primary,
         ),
       ),
     );
@@ -250,40 +333,52 @@ class _OtpBox extends StatelessWidget {
   const _OtpBox({
     required this.controller,
     required this.focusNode,
+    required this.isActive,
     required this.onChanged,
   });
   final TextEditingController controller;
   final FocusNode             focusNode;
+  final bool                  isActive;
   final ValueChanged<String>  onChanged;
 
   @override
-  Widget build(BuildContext context) => SizedBox(
-        width: 46,
-        height: 56,
-        child: TextField(
-          controller:  controller,
-          focusNode:   focusNode,
-          maxLength:   6, // allow paste
-          keyboardType: TextInputType.number,
-          textAlign:    TextAlign.center,
-          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-          onChanged:   onChanged,
-          style: AppTextStyles.h3.copyWith(fontWeight: FontWeight.w800),
-          decoration: InputDecoration(
-            counterText: '',
-            filled:      true,
-            fillColor:   AppColors.surface,
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide:   const BorderSide(color: AppColors.divider),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide:   const BorderSide(color: Colors.black, width: 2),
+  Widget build(BuildContext context) {
+    final hasValue = controller.text.isNotEmpty;
+
+    return SizedBox(
+      width: 46,
+      height: 46,
+      child: TextField(
+        controller: controller,
+        focusNode: focusNode,
+        maxLength: 1,
+        keyboardType: TextInputType.number,
+        textAlign: TextAlign.center,
+        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+        onChanged: onChanged,
+        style: AppTextStyles.bodyLarge.copyWith(
+          fontWeight: FontWeight.w800,
+          color: hasValue ? AppColors.success : AppColors.textPrimary,
+        ),
+        decoration: InputDecoration(
+          counterText: '',
+          filled: true,
+          fillColor: AppColors.white,
+          contentPadding: EdgeInsets.zero,
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(
+              color: isActive || hasValue ? AppColors.success : AppColors.divider,
             ),
           ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: AppColors.success, width: 1.5),
+          ),
         ),
-      );
+      ),
+    );
+  }
 }
 
 // ── Progress bars ─────────────────────────────────────────────────────────────

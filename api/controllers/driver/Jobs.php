@@ -3,6 +3,64 @@ require_once ROOT . 'functions/BaseController.php';
 
 class Jobs extends BaseController
 {
+    // ── GET /driver/chats ─────────────────────────────────────────────────────
+    /**
+     * Lists every job/booking this driver has exchanged at least one chat
+     * message on, most-recent-first, with the customer's name and a preview
+     * of the last message — i.e. the chat inbox / history page.
+     */
+    public function chatThreads(): void
+    {
+        $me = BaseController::$authDriver;
+
+        $stmt = $this->db->prepare("
+            SELECT b.id AS booking_id, b.status,
+                   u.name  AS other_name,
+                   m.body  AS last_message,
+                   m.sender_role AS last_sender_role,
+                   m.created_at  AS last_message_at,
+                   (
+                       SELECT COUNT(*)
+                       FROM trip_messages tm
+                       WHERE tm.booking_id  = b.id
+                         AND tm.sender_role = 'customer'
+                         AND tm.created_at  > COALESCE(
+                             (SELECT cr.last_read_at FROM chat_reads cr
+                              WHERE cr.booking_id = b.id AND cr.role = 'driver'),
+                             '1970-01-01'
+                         )
+                   ) AS unread_count
+            FROM bookings b
+            JOIN (
+                SELECT booking_id, MAX(created_at) AS max_created
+                FROM trip_messages
+                GROUP BY booking_id
+            ) latest ON latest.booking_id = b.id
+            JOIN trip_messages m
+                ON m.booking_id = latest.booking_id AND m.created_at = latest.max_created
+            LEFT JOIN users u ON u.id = b.customer_id
+            WHERE b.driver_id = ?
+            ORDER BY m.created_at DESC
+        ");
+        $stmt->execute([$me['id']]);
+        echo utilities::apiMessage('Chat threads retrieved.', 200, $stmt->fetchAll(PDO::FETCH_ASSOC));
+    }
+
+    public function markChatRead(string $id): void
+    {
+        $me = BaseController::$authDriver;
+        $booking = $this->getall('bookings', 'id = ? AND driver_id = ?', [$id, $me['id']], 'id');
+        if (!is_array($booking)) { echo utilities::apiMessage('Not found.', 404); return; }
+
+        $stmt = $this->db->prepare("
+            INSERT INTO chat_reads (booking_id, role, last_read_at)
+            VALUES (?, 'driver', NOW())
+            ON DUPLICATE KEY UPDATE last_read_at = NOW()
+        ");
+        $stmt->execute([$id]);
+        echo utilities::apiMessage('Marked as read.', 200);
+    }
+
     // ── GET /driver/jobs ──────────────────────────────────────────────────────
     public function index(): void
     {
@@ -12,7 +70,7 @@ class Jobs extends BaseController
         $perPage  = 20;
         $offset   = ($page - 1) * $perPage;
 
-        $activeStatuses = ['assigned', 'accepted', 'arrived', 'in_progress', 'payment_pending'];
+        $activeStatuses = ['assigned', 'accepted', 'arrived', 'picked_up', 'in_progress', 'payment_pending'];
 
         if ($status !== '') {
             // Explicit status filter requested — return exactly that
@@ -72,6 +130,65 @@ class Jobs extends BaseController
         $job['waiting_charge_per_min'] = (float) $this->setting('waiting_charge_per_min', '0');
 
         echo utilities::apiMessage('Job retrieved.', 200, $job);
+    }
+
+    // ── GET /driver/jobs/:id/messages ────────────────────────────────────────
+    /**
+     * Returns the in-app chat history for this job/booking.
+     * Optional ?since=<created_at> returns only messages after that timestamp,
+     * so the app can poll incrementally instead of re-fetching the whole thread.
+     */
+    public function getMessages(string $id): void
+    {
+        $me  = BaseController::$authDriver;
+        $job = $this->getall('bookings', 'id = ? AND driver_id = ?', [$id, $me['id']]);
+        if (!is_array($job)) {
+            echo utilities::apiMessage('Job not found.', 404);
+            return;
+        }
+
+        $since  = trim((string) $this->query('since', ''));
+        $where  = 'booking_id = ?';
+        $params = [$id];
+        if ($since !== '') {
+            $where   .= ' AND created_at > ?';
+            $params[] = $since;
+        }
+
+        $stmt = $this->db->prepare("SELECT * FROM trip_messages WHERE $where ORDER BY created_at ASC");
+        $stmt->execute($params);
+        echo utilities::apiMessage('Messages retrieved.', 200, $stmt->fetchAll(PDO::FETCH_ASSOC));
+    }
+
+    // ── POST /driver/jobs/:id/messages ───────────────────────────────────────
+    public function sendMessage(string $id): void
+    {
+        $me  = BaseController::$authDriver;
+        $job = $this->getall('bookings', 'id = ? AND driver_id = ?', [$id, $me['id']]);
+        if (!is_array($job)) {
+            echo utilities::apiMessage('Job not found.', 404);
+            return;
+        }
+
+        // Not using $this->str() here — it runs htmlspecialchars(), which
+        // corrupts plain chat text (e.g. "I'm" becomes "I&#039;m") since the
+        // apps render this as plain text, not HTML.
+        $body = trim((string) ($_POST['message'] ?? ''));
+        if ($body === '') {
+            echo utilities::apiMessage('Message text is required.', 422);
+            return;
+        }
+
+        $msgId = utilities::genID('MSG_', 10);
+        $this->quick_insert('trip_messages', [
+            'id'          => $msgId,
+            'booking_id'  => $id,
+            'sender_role' => 'driver',
+            'sender_id'   => $me['id'],
+            'body'        => $body,
+        ]);
+
+        echo utilities::apiMessage('Message sent.', 200, $this->getall('trip_messages', 'id = ?', [$msgId]));
     }
 
     // ── POST /driver/jobs/:id/accept ─────────────────────────────────────────
@@ -287,6 +404,69 @@ class Jobs extends BaseController
         echo utilities::apiMessage('Arrival confirmed.', 200);
     }
 
+    // ── POST /driver/jobs/:id/confirm-pickup-payment ─────────────────────────
+    // Delivery only, arrived status: driver confirms they have physically
+    // collected cash from the sender before picking up the package.
+    public function confirmPickupPayment(string $id): void
+    {
+        $me  = BaseController::$authDriver;
+        $job = $this->getall('bookings', 'id = ? AND driver_id = ?', [$id, $me['id']]);
+
+        if (!is_array($job)) { echo utilities::apiMessage('Job not found.', 404); return; }
+        if (($job['booking_type'] ?? '') !== 'delivery') {
+            echo utilities::apiMessage('Only available for delivery bookings.', 409);
+            return;
+        }
+        if ($job['status'] !== 'arrived') {
+            echo utilities::apiMessage("Payment can only be confirmed when status is 'arrived'.", 409);
+            return;
+        }
+        if (($job['payment_status'] ?? '') === 'paid') {
+            echo utilities::apiMessage('Payment already confirmed.', 200);
+            return;
+        }
+
+        $this->update('bookings', ['payment_status' => 'paid'], "id = '$id'");
+
+        $this->notify('customer', $job['customer_id'], 'Payment Received',
+            'The driver has confirmed receipt of your payment. Package pickup in progress.',
+            'payment_confirmed', $id);
+
+        echo utilities::apiMessage('Payment confirmed. You can now pick up the package.', 200);
+    }
+
+    // ── POST /driver/jobs/:id/pickup ─────────────────────────────────────────
+    // Delivery only: driver confirms package has been collected → arrived → picked_up
+    // Requires payment to be confirmed first (payment_status = 'paid').
+    public function pickup(string $id): void
+    {
+        $me  = BaseController::$authDriver;
+        $job = $this->getall('bookings', 'id = ? AND driver_id = ?', [$id, $me['id']]);
+
+        if (!is_array($job)) { echo utilities::apiMessage('Job not found.', 404); return; }
+        if (($job['booking_type'] ?? '') !== 'delivery') {
+            echo utilities::apiMessage('Pickup confirmation is only available for delivery bookings.', 409);
+            return;
+        }
+        if ($job['status'] !== 'arrived') {
+            echo utilities::apiMessage("Package pickup requires status 'arrived' (current: '{$job['status']}').", 409);
+            return;
+        }
+        if (($job['payment_status'] ?? '') !== 'paid') {
+            echo utilities::apiMessage('Payment must be confirmed before picking up the package.', 409);
+            return;
+        }
+
+        $this->update('bookings', ['status' => 'picked_up'], "id = '$id'");
+        $this->recordStatusChange($id, 'arrived', 'picked_up', 'driver', $me['id']);
+
+        $this->notify('customer', $job['customer_id'], 'Package Picked Up',
+            'The driver has collected your package and is heading to the destination.',
+            'package_picked_up', $id);
+
+        echo utilities::apiMessage('Package picked up.', 200);
+    }
+
     // ── POST /driver/jobs/:id/start ───────────────────────────────────────────
     public function start(string $id): void
     {
@@ -294,7 +474,7 @@ class Jobs extends BaseController
         $job = $this->getall('bookings', 'id = ? AND driver_id = ?', [$id, $me['id']]);
 
         if (!is_array($job)) { echo utilities::apiMessage('Job not found.', 404); return; }
-        $startable = ['accepted', 'arrived'];
+        $startable = ['accepted', 'arrived', 'picked_up'];
         if (!in_array($job['status'], $startable)) {
             echo utilities::apiMessage("Trip cannot start in '{$job['status']}' status.", 409);
             return;
@@ -371,9 +551,44 @@ class Jobs extends BaseController
 
         $now = date('Y-m-d H:i:s');
 
+        // ── Recalculate fare from actual GPS distance + trip duration ──────────
+        $fareUpdate     = [];
+        $distanceUpdate = [];
+        $actualDistanceKm  = isset($_POST['distance_km'])    ? (float) $_POST['distance_km']    : null;
+        $actualDurationMin = isset($_POST['duration_minutes']) ? (float) $_POST['duration_minutes'] : null;
+
+        if ($actualDistanceKm !== null && $actualDistanceKm > 0) {
+            // Recalculate using the same pricing formula with actual distance (+ time if enabled)
+            $zoneId = $this->getDefaultZoneId();
+            $vtId   = $job['vehicle_type_id'] ?? '';
+            $stopsCount = $this->db->query(
+                "SELECT COUNT(*) FROM booking_stops WHERE booking_id = '$id'"
+            )->fetchColumn();
+            $numStops = (int) $stopsCount;
+
+            $recalcFare = $vtId
+                ? $this->calculateFare($vtId, $zoneId, $actualDistanceKm, $numStops, $actualDurationMin)
+                : 0;
+
+            if ($recalcFare > 0) {
+                $fareUpdate['final_fare']       = $recalcFare;
+                $distanceUpdate['distance_km']  = $actualDistanceKm;
+                if ($actualDurationMin !== null) {
+                    $distanceUpdate['actual_duration_minutes'] = $actualDurationMin;
+                }
+            }
+        }
+
+        if (empty($fareUpdate)) {
+            // Fallback: use estimated fare if no GPS distance or recalc failed
+            if (!isset($job['final_fare']) || $job['final_fare'] === null || $job['final_fare'] === '') {
+                $fareUpdate['final_fare'] = $job['estimated_fare'];
+            }
+        }
+
         // Determine final status and payment handling
         $newStatus = 'completed';
-        $this->update('bookings', ['status' => $newStatus], "id = '$id'");
+        $this->update('bookings', array_merge($fareUpdate, $distanceUpdate, ['status' => $newStatus]), "id = '$id'");
         $this->recordStatusChange($id, 'in_progress', 'completed', 'driver', $me['id']);
 
         // Update trip record
@@ -399,7 +614,13 @@ class Jobs extends BaseController
 
         $this->logActivity('driver', $me['id'], 'trip_completed', ['booking_id' => $id]);
 
-        echo utilities::apiMessage('Trip completed.', 200, ['completed_at' => $now]);
+        $finalFare = $fareUpdate['final_fare'] ?? $job['final_fare'] ?? $job['estimated_fare'];
+        echo utilities::apiMessage('Trip completed.', 200, [
+            'completed_at'     => $now,
+            'final_fare'       => (float) $finalFare,
+            'distance_km'      => $actualDistanceKm ?? $job['distance_km'],
+            'duration_minutes' => $actualDurationMin,
+        ]);
     }
 
     // ── POST /driver/jobs/:id/confirm-payment ─────────────────────────────────
@@ -420,11 +641,15 @@ class Jobs extends BaseController
         }
 
         $now = date('Y-m-d H:i:s');
+        $fareUpdate = [];
+        if (!isset($job['final_fare']) || $job['final_fare'] === null || $job['final_fare'] === '') {
+            $fareUpdate['final_fare'] = $job['estimated_fare'];
+        }
 
-        $this->update('bookings', [
+        $this->update('bookings', array_merge($fareUpdate, [
             'status'         => 'completed',
             'payment_status' => 'paid',
-        ], "id = '$id'");
+        ]), "id = '$id'");
         $this->recordStatusChange($id, 'payment_pending', 'completed', 'driver', $me['id'], 'Payment confirmed by driver');
 
         // Update trip record if exists
@@ -479,13 +704,15 @@ class Jobs extends BaseController
         $offset  = ($page - 1) * $perPage;
 
         $stmt = $this->db->prepare(
-            "SELECT b.id, b.booking_code, b.booking_type, b.status, b.final_fare,
-                    b.pickup_address, b.destination_address, b.created_at,
-                    u.name AS customer_name
+            "SELECT b.id, b.booking_code, b.booking_type, b.status,
+                    b.estimated_fare, b.final_fare, b.payment_method, b.payment_status,
+                    b.distance_km, t.completed_at, b.pickup_address, b.destination_address,
+                    b.created_at, u.name AS customer_name
              FROM bookings b
              LEFT JOIN users u ON u.id = b.customer_id
+             LEFT JOIN trips t ON t.booking_id = b.id
              WHERE b.driver_id = ? AND b.status IN ('completed','cancelled')
-             ORDER BY b.created_at DESC
+             ORDER BY COALESCE(t.completed_at, b.updated_at, b.created_at) DESC
              LIMIT $perPage OFFSET $offset"
         );
         $stmt->execute([$me['id']]);

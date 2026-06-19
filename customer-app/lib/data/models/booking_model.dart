@@ -4,13 +4,15 @@ part 'booking_model.freezed.dart';
 part 'booking_model.g.dart';
 
 enum BookingStatus {
-  pending, assigned, accepted, arrived, inProgress, completed, cancelled, rejected, paymentPending, paid;
+  pending, assigned, accepted, arrived, pickedUp, inProgress, completed, cancelled, rejected, paymentPending, paid;
 
   static BookingStatus fromString(String s) => switch (s) {
     'pending'          => BookingStatus.pending,
     'assigned'         => BookingStatus.assigned,
     'accepted'         => BookingStatus.accepted,
     'arrived'          => BookingStatus.arrived,
+    'picked_up'        => BookingStatus.pickedUp,
+    'pickedUp'         => BookingStatus.pickedUp,
     'in_progress'      => BookingStatus.inProgress,
     'inProgress'       => BookingStatus.inProgress,
     'completed'        => BookingStatus.completed,
@@ -24,7 +26,8 @@ enum BookingStatus {
 
   bool get isActive => const {
     BookingStatus.pending, BookingStatus.assigned, BookingStatus.accepted,
-    BookingStatus.arrived, BookingStatus.inProgress, BookingStatus.paymentPending,
+    BookingStatus.arrived, BookingStatus.pickedUp, BookingStatus.inProgress,
+    BookingStatus.paymentPending,
   }.contains(this);
 
   bool get isCompleted => this == BookingStatus.completed || this == BookingStatus.paid;

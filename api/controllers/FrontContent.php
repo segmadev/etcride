@@ -25,6 +25,43 @@ class FrontContent extends BaseController
         ]);
     }
 
+    /**
+     * GET /files/:folder/:filename
+     * Streams an uploaded file (vehicle/driver photo, KYC image) with the right
+     * Content-Type. Routed through PHP (rather than served as a static file) so
+     * Access-Control-Allow-Origin is always present — ini.php sets it globally
+     * for every request that reaches a controller, but static files served
+     * directly by the web/dev server (bypassing PHP) never get it.
+     */
+    public function serveUpload(string $folder): void
+    {
+        $allowedFolders = ['vehicles', 'drivers'];
+        $filename = trim((string) $this->query('file', ''));
+        $safeName = basename($filename);
+
+        if (!in_array($folder, $allowedFolders, true) ||
+            $safeName === '' || $safeName !== $filename) {
+            http_response_code(404);
+            echo utilities::apiMessage('Not found', 404);
+            return;
+        }
+
+        $path = ROOT . 'api' . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR
+              . $folder . DIRECTORY_SEPARATOR . $safeName;
+
+        if (!is_file($path)) {
+            http_response_code(404);
+            echo utilities::apiMessage('Not found', 404);
+            return;
+        }
+
+        $mime = mime_content_type($path) ?: 'application/octet-stream';
+        header('Content-Type: ' . $mime);
+        header('Cache-Control: public, max-age=86400');
+        header('Content-Length: ' . filesize($path));
+        readfile($path);
+    }
+
     public function commonDetails(): void
     {
         echo utilities::apiMessage('Common details retrieved.', 200, [
@@ -270,6 +307,58 @@ class FrontContent extends BaseController
         return $resp !== false ? [json_decode($resp, true) ?? [], null] : [[], $err];
     }
 
+    /**
+     * GET /content/directions
+     * Proxies Google Directions API — returns the driving route polyline
+     * between two lat/lng points so the client can draw a real road line.
+     *
+     * Query params: origin=lat,lng  destination=lat,lng
+     * Response: { polyline, distance_meters, duration_seconds }
+     */
+    public function directions(): void
+    {
+        $origin = trim($this->query('origin', ''));
+        $dest   = trim($this->query('destination', ''));
+        if ($origin === '' || $dest === '') {
+            echo utilities::apiMessage('origin and destination are required.', 422);
+            return;
+        }
+
+        $apiKey = $this->setting('google_maps_server_key', '');
+        if ($apiKey === '') $apiKey = $this->setting('google_maps_api_key', '');
+        if ($apiKey === '') {
+            echo utilities::apiMessage('Google Maps API key not configured.', 503);
+            return;
+        }
+
+        [$data, $err] = $this->googleGet(
+            'https://maps.googleapis.com/maps/api/directions/json',
+            ['key' => $apiKey, 'origin' => $origin, 'destination' => $dest, 'mode' => 'driving']
+        );
+
+        if ($err !== null) {
+            echo utilities::apiMessage('Directions API unreachable: ' . $err, 502);
+            return;
+        }
+
+        $status = $data['status'] ?? '';
+        if ($status !== 'OK') {
+            $msg = $data['error_message'] ?? ($status !== '' ? $status : 'Directions API error');
+            echo utilities::apiMessage($msg, 502);
+            return;
+        }
+
+        $route    = $data['routes'][0]    ?? [];
+        $leg      = ($route['legs']  ?? [[]])[0] ?? [];
+        $polyline = $route['overview_polyline']['points'] ?? '';
+
+        echo utilities::apiMessage('OK', 200, [
+            'polyline'         => $polyline,
+            'distance_meters'  => (int)   ($leg['distance']['value']  ?? 0),
+            'duration_seconds' => (int)   ($leg['duration']['value']   ?? 0),
+        ]);
+    }
+
     public function vehicleTypes(): void
     {
         $type = $this->query('type', ''); // 'ride' | 'delivery' | ''
@@ -305,5 +394,15 @@ class FrontContent extends BaseController
         }
 
         echo utilities::apiMessage('Vehicle types retrieved.', 200, $rows);
+    }
+
+    // ── GET /content/delivery-rules ───────────────────────────────────────────
+    public function deliveryRules(): void
+    {
+        $raw     = $this->setting('delivery_rules', '[]');
+        $decoded = json_decode($raw, true);
+        echo utilities::apiMessage('Delivery rules retrieved.', 200, [
+            'rules' => is_array($decoded) ? $decoded : [],
+        ]);
     }
 }

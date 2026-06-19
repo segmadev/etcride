@@ -53,6 +53,10 @@ class JobModel {
     this.waitingChargePerMin = 0.0,
     this.cancelledByRole,
     this.cancellationReason,
+    this.recipientName,
+    this.recipientPhone,
+    this.senderPhone,
+    this.packageDescription,
   });
 
   final String  id;
@@ -81,22 +85,47 @@ class JobModel {
   final String? arrivedAt;
   final int     freeWaitingMinutes;
   final double  waitingChargePerMin;
-  final String? cancelledByRole;      // 'customer' | 'driver' | 'admin' | null
+  final String? cancelledByRole;
   final String? cancellationReason;
+  final String? recipientName;
+  final String? recipientPhone;
+  final String? senderPhone;
+  final String? packageDescription;
 
   double get displayFare => finalFare ?? estimatedFare;
 
-  // PHP lifecycle: pending → assigned → accepted → arrived → in_progress → payment_pending → completed
-  bool get isActive    => ['assigned', 'accepted', 'arrived', 'in_progress', 'payment_pending'].contains(status);
+  // PHP lifecycle: pending → assigned → accepted → arrived → [picked_up for delivery] → in_progress → payment_pending → completed
+  bool get isActive    => ['assigned', 'accepted', 'arrived', 'picked_up', 'in_progress', 'payment_pending'].contains(status);
   bool get isCompleted => status == 'completed';
   bool get isCancelled => status == 'cancelled';
 
   /// True when driver has accepted but not yet marked arrival
   bool get canArrive   => status == 'accepted';
-  /// True when driver has arrived at pickup, waiting to start
-  bool get canStart    => status == 'arrived';
+  /// True when driver can start the trip/delivery
+  bool get canStart => bookingType == 'delivery'
+      ? status == 'picked_up'          // delivery: must pick up package first
+      : status == 'arrived' || status == 'picked_up';
   /// True when trip is in progress
   bool get canComplete => status == 'in_progress';
+  /// Delivery only: payment already confirmed, driver can collect package
+  bool get canPickup   => status == 'arrived' && bookingType == 'delivery' && paymentStatus == 'paid';
+  /// Delivery only: arrived but waiting for payment before pickup
+  bool get deliveryNeedsPayment => status == 'arrived' && bookingType == 'delivery' && paymentStatus != 'paid';
+  /// Whether payment method is cash
+  bool get isCashPayment => (paymentMethod ?? 'cash').toLowerCase() == 'cash';
+
+  static double _toDouble(dynamic value, [double fallback = 0]) {
+    if (value == null) return fallback;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value.toString()) ?? fallback;
+  }
+
+  static double? _toNullableDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is String && value.trim().isEmpty) return null;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value.toString());
+  }
 
   factory JobModel.fromJson(Map<String, dynamic> j) {
     final List<JobStop> stops = [];
@@ -119,7 +148,11 @@ class JobModel {
       bookingType:          j['booking_type']?.toString()          ?? 'ride',
       pickupAddress:        j['pickup_address']?.toString()        ?? '',
       destinationAddress:   j['destination_address']?.toString()   ?? '',
-      estimatedFare:        double.tryParse(j['estimated_fare']?.toString() ?? '0') ?? 0,
+      estimatedFare:        _toDouble(
+                              j['estimated_fare'] ??
+                              j['fare'] ??
+                              j['final_fare'],
+                            ),
       createdAt:            j['created_at']?.toString()            ?? '',
       // PHP returns customer_name / customer_phone at top-level; user object as fallback
       passengerName:        (j['customer_name'] ?? user['name'] ?? j['passenger_name'])?.toString(),
@@ -129,10 +162,10 @@ class JobModel {
       destinationLat:       double.tryParse(j['destination_lat']?.toString()    ?? ''),
       destinationLng:       double.tryParse(j['destination_lng']?.toString()    ?? ''),
       stops:                stops,
-      finalFare:            double.tryParse(j['final_fare']?.toString()         ?? ''),
+      finalFare:            _toNullableDouble(j['final_fare']),
       paymentMethod:        j['payment_method']?.toString(),
       paymentStatus:        j['payment_status']?.toString(),
-      distanceKm:           double.tryParse(j['distance_km']?.toString()        ?? ''),
+      distanceKm:           _toNullableDouble(j['distance_km']),
       completedAt:          j['completed_at']?.toString(),
       durationMinutes:      int.tryParse(j['duration_minutes']?.toString()      ?? ''),
       routePolyline:        j['route_polyline']?.toString(),
@@ -141,6 +174,21 @@ class JobModel {
       waitingChargePerMin:  double.tryParse(j['waiting_charge_per_min']?.toString() ?? '0') ?? 0.0,
       cancelledByRole:      j['cancelled_by_role']?.toString(),
       cancellationReason:   j['cancellation_reason']?.toString(),
+      recipientName:        j['recipient_name']?.toString(),
+      recipientPhone:       j['recipient_phone']?.toString(),
+      senderPhone:          j['sender_phone']?.toString(),
+      packageDescription:   j['package_description']?.toString(),
     );
   }
+
+  factory JobModel.stub(String bookingId) => JobModel(
+    id:                 bookingId,
+    status:             'completed',
+    bookingRef:         '',
+    bookingType:        'ride',
+    pickupAddress:      '',
+    destinationAddress: '',
+    estimatedFare:      0,
+    createdAt:          '',
+  );
 }

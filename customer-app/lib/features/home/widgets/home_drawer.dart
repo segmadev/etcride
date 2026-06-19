@@ -5,6 +5,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/config/router.dart';
+import '../../../core/services/chat_notification_service.dart';
 import '../../auth/complete_profile_screen.dart';
 import '../../booking/search_destination_screen.dart';
 import '../../../shared/providers/providers.dart';
@@ -113,6 +114,21 @@ class HomeDrawer extends ConsumerWidget {
                     Navigator.pop(context);
                     context.push(AppRoutes.tripHistory);
                   }),
+                  ValueListenableBuilder<Map<String, int>>(
+                    valueListenable: ChatNotificationService.instance.unreadCounts,
+                    builder: (_, counts, __) {
+                      final total = counts.values.fold(0, (s, n) => s + n);
+                      return _DrawerItem(
+                        'Messages',
+                        null,
+                        () {
+                          Navigator.pop(context);
+                          context.push(AppRoutes.chatHistory);
+                        },
+                        badge: total > 0 ? (total > 99 ? '99+' : '$total') : null,
+                      );
+                    },
+                  ),
                   _DrawerItem(AppStrings.settings, null, () {
                     Navigator.pop(context);
                     context.push(AppRoutes.settings);
@@ -159,12 +175,14 @@ class _DrawerItem extends StatelessWidget {
   const _DrawerItem(
     this.label,
     this.icon,
-    this.onTap,
-  ) : iconWidget = null;
+    this.onTap, {
+    this.badge,
+  }) : iconWidget = null;
 
   const _DrawerItem.svg(
     this.label, {
     required this.onTap,
+    this.badge,
   })  : icon = null,
         iconWidget = null;
 
@@ -172,6 +190,7 @@ class _DrawerItem extends StatelessWidget {
   final IconData? icon;
   final Widget? iconWidget;
   final VoidCallback onTap;
+  final String? badge;
 
   @override
   Widget build(BuildContext context) {
@@ -180,9 +199,32 @@ class _DrawerItem extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-        child: Text(
-          label,
-          style: AppTextStyles.bodyLarge.copyWith(fontWeight: FontWeight.w800),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: AppTextStyles.bodyLarge.copyWith(fontWeight: FontWeight.w800),
+              ),
+            ),
+            if (badge != null)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppColors.error,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  badge!,
+                  style: const TextStyle(
+                    color: AppColors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    height: 1.2,
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );

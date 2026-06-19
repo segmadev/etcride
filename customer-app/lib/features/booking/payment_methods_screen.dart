@@ -70,13 +70,6 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
                 padding: const EdgeInsets.fromLTRB(22, 10, 22, 20),
                 children: [
                   _MethodRow(
-                    icon: Icons.account_balance_outlined,
-                    label: AppStrings.bankTransfer,
-                    selected: _selected == 'bank_transfer',
-                    onTap: () => _select('bank_transfer'),
-                  ),
-                  const Divider(height: 22),
-                  _MethodRow(
                     icon: Icons.payments_outlined,
                     label: AppStrings.cash,
                     selected: _selected == 'cash',

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -17,6 +18,7 @@ import '../../core/maps/google_maps_js_loader.dart';
 import '../../core/maps/maps_service.dart';
 import '../../data/models/booking_model.dart';
 import '../../shared/providers/providers.dart';
+import '../../shared/widgets/app_bottom_drawer.dart';
 import '../../shared/widgets/trip_quick_nav.dart';
 
 class DriverAssignedScreen extends ConsumerStatefulWidget {
@@ -71,11 +73,17 @@ class _DriverAssignedScreenState extends ConsumerState<DriverAssignedScreen> {
   // Driver position — updated by poll, animation handled inside _RoutedMapView
   LatLng? _driverTarget;
 
+  // Unread message count (driver → customer messages since last chat open)
+  int _unreadMsgCount = 0;
+  Timer? _msgPollTimer;
+  DateTime _lastMsgPollAt = DateTime.now();
+
   @override
   void initState() {
     super.initState();
     _load();
-    _pollTimer = Timer.periodic(const Duration(seconds: 5), (_) => _load());
+    _pollTimer    = Timer.periodic(const Duration(seconds: 5),  (_) => _load());
+    _msgPollTimer = Timer.periodic(const Duration(seconds: 10), (_) => _pollMessages());
   }
 
   Future<void> _load() async {
@@ -88,6 +96,8 @@ class _DriverAssignedScreenState extends ConsumerState<DriverAssignedScreen> {
       switch (b.status) {
         case BookingStatus.arrived:
           _startWaitingTimer(b);
+        case BookingStatus.pickedUp:
+          _cancelWaitingTimer();
         case BookingStatus.inProgress:
           _cancelWaitingTimer();
           _pollTimer?.cancel();
@@ -355,18 +365,32 @@ class _DriverAssignedScreenState extends ConsumerState<DriverAssignedScreen> {
     );
   }
 
+  Future<void> _pollMessages() async {
+    if (_booking == null) return;
+    try {
+      final msgs = await ref.read(bookingRepositoryProvider)
+          .getMessages(widget.bookingId, since: _lastMsgPollAt);
+      if (!mounted) return;
+      final fromDriver = msgs.where((m) => m.senderRole == 'driver').toList();
+      if (fromDriver.isNotEmpty) {
+        setState(() => _unreadMsgCount += fromDriver.length);
+        _lastMsgPollAt = fromDriver.last.createdAt;
+      }
+    } catch (_) {}
+  }
+
   void _openChat() {
     final b = _booking;
     if (b == null) return;
-    context.push(
-      AppRoutes.driverChat,
-      extra: widget.bookingId,
-    );
+    setState(() => _unreadMsgCount = 0);
+    _lastMsgPollAt = DateTime.now();
+    context.push(AppRoutes.driverChat, extra: widget.bookingId);
   }
 
   @override
   void dispose() {
     _pollTimer?.cancel();
+    _msgPollTimer?.cancel();
     _waitingTimer?.cancel();
     _noteCtrl.dispose();
     super.dispose();
@@ -374,8 +398,8 @@ class _DriverAssignedScreenState extends ConsumerState<DriverAssignedScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final b       = _booking;
-    final mapKey  = ref.watch(mapApiKeyProvider);
+    final b         = _booking;
+    final mapKey    = ref.watch(mapApiKeyProvider);
     final isArrived = b?.status == BookingStatus.arrived;
 
     return Scaffold(
@@ -432,26 +456,32 @@ class _DriverAssignedScreenState extends ConsumerState<DriverAssignedScreen> {
               ),
             ),
 
-          // ── Bottom driver card ────────────────────────────────────────────
-          Positioned(
-            left: 0, right: 0, bottom: 0,
+          // ── Bottom driver card (collapsible — drag down to see full map) ───
+          Positioned.fill(
             child: b == null
-                ? Container(
-                    color: AppColors.white,
-                    padding: const EdgeInsets.all(32),
-                    child: const Center(
-                        child: CircularProgressIndicator(
-                            color: AppColors.primary)),
+                ? Align(
+                    alignment: Alignment.bottomCenter,
+                    child: Container(
+                      width: double.infinity,
+                      color: AppColors.white,
+                      padding: const EdgeInsets.all(32),
+                      child: const Center(
+                          child: CircularProgressIndicator(
+                              color: AppColors.primary)),
+                    ),
                   )
-                : _AssignedSheet(
-                    booking:            b,
-                    noteCtrl:           _noteCtrl,
-                    cancelling:         _cancelling,
-                    waitingElapsedSecs: _waitingElapsedSecs,
-                    onCancel:  _cancel,
-                    onCall:    _showCallSheet,
-                    onChat:    _openChat,
-                    onNeedHelp: () => context.push(AppRoutes.help),
+                : CollapsibleMapSheet(
+                    child: _AssignedSheet(
+                      booking:            b,
+                      noteCtrl:           _noteCtrl,
+                      cancelling:         _cancelling,
+                      waitingElapsedSecs: _waitingElapsedSecs,
+                      unreadMsgCount:     _unreadMsgCount,
+                      onCancel:   _cancel,
+                      onCall:     _showCallSheet,
+                      onChat:     _openChat,
+                      onNeedHelp: () => context.push(AppRoutes.help),
+                    ),
                   ),
           ),
         ],
@@ -466,6 +496,7 @@ class _AssignedSheet extends StatelessWidget {
     required this.noteCtrl,
     required this.cancelling,
     required this.waitingElapsedSecs,
+    required this.unreadMsgCount,
     required this.onCancel,
     required this.onCall,
     required this.onChat,
@@ -476,6 +507,7 @@ class _AssignedSheet extends StatelessWidget {
   final TextEditingController noteCtrl;
   final bool cancelling;
   final int  waitingElapsedSecs;
+  final int  unreadMsgCount;
   final VoidCallback onCancel;
   final VoidCallback onCall;
   final VoidCallback onChat;
@@ -494,73 +526,90 @@ class _AssignedSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bottom = MediaQuery.of(context).padding.bottom;
     final name = booking.driverName ?? 'Driver';
     final plate = booking.vehiclePlate ?? '';
     final color = booking.vehicleColor ?? '';
     final vehicleName = booking.vehicleTypeName ?? 'Vehicle';
 
-    return Container(
-      padding: EdgeInsets.fromLTRB(20, 8, 20, bottom + 16),
-      decoration: const BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-        boxShadow: [
-          BoxShadow(color: Color(0x28000000), blurRadius: 24, offset: Offset(0, -4)),
-        ],
-      ),
+    final isDelivery = booking.bookingType == BookingType.delivery;
+    final isPickedUp = booking.status == BookingStatus.pickedUp;
+
+    // Heading & subtitle based on status
+    final (heading, subtitle) = switch (booking.status) {
+      BookingStatus.arrived  => isDelivery
+          ? ('Driver arrived', 'Driver has arrived to collect your package.')
+          : ('Your driver has arrived!', 'Please come out to the pickup spot.'),
+      BookingStatus.pickedUp => ('Package picked up', 'Your package has been collected'),
+      _                      => isDelivery
+          ? ('Driver heading to pickup', 'Meet your driver at the pickup spot.')
+          : ('Arriving in $_arrivingMins mins…', 'Meet your driver at the pickup spot.'),
+    };
+
+    // ETA shown in the right box for delivery bookings
+    final etaMins = switch (booking.status) {
+      BookingStatus.pickedUp =>
+          booking.routeDurationSeconds > 0
+              ? (booking.routeDurationSeconds / 60).ceil().clamp(1, 999)
+              : _arrivingMins,
+      _ => _arrivingMins,
+    };
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Center(
-            child: Container(
-              margin: const EdgeInsets.only(bottom: 18),
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppColors.divider,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-          if (booking.status == BookingStatus.arrived) ...[
-            // ── Arrived heading ──────────────────────────────────────────
+          // ── Heading row ───────────────────────────────────────────────────
+          if (isDelivery)
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(heading, style: AppTextStyles.h3),
+                      const SizedBox(height: 4),
+                      Text(
+                        subtitle,
+                        style: AppTextStyles.bodySmall
+                            .copyWith(color: AppColors.textSecondary),
+                      ),
+                    ],
+                  ),
+                ),
+                _EtaBox(minutes: etaMins),
+              ],
+            )
+          else ...[
             Align(
               alignment: Alignment.centerLeft,
-              child: Text('Your driver has arrived!', style: AppTextStyles.h4),
-            ),
-            const SizedBox(height: 6),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'Please come out to the pickup spot.',
-                style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
-              ),
-            ),
-            // ── Inline waiting-charge row (extra cost only) ──────────────
-            if (booking.waitingChargePerMin > 0) ...[
-              const SizedBox(height: 10),
-              _InlineWaitingCharge(
-                elapsedSecs:     waitingElapsedSecs,
-                freeWaitingSecs: booking.freeWaitingMinutes * 60,
-                chargePerMin:    booking.waitingChargePerMin,
-              ),
-            ],
-          ] else ...[
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'Arriving in $_arrivingMins mins…',
-                style: AppTextStyles.h4,
-              ),
+              child: Text(heading, style: AppTextStyles.h4),
             ),
             const SizedBox(height: 6),
             Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                'Meet your driver at the pickup spot.',
-                style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+                subtitle,
+                style: AppTextStyles.bodySmall
+                    .copyWith(color: AppColors.textSecondary),
               ),
+            ),
+          ],
+
+          // ── Delivery progress bar ─────────────────────────────────────────
+          if (isDelivery) ...[
+            const SizedBox(height: 14),
+            _DeliveryProgressBar(status: booking.status),
+          ],
+
+          // ── Inline waiting-charge row (arrived only) ─────────────────
+          if (booking.status == BookingStatus.arrived && booking.waitingChargePerMin > 0) ...[
+            const SizedBox(height: 10),
+            _InlineWaitingCharge(
+              elapsedSecs:     waitingElapsedSecs,
+              freeWaitingSecs: booking.freeWaitingMinutes * 60,
+              chargePerMin:    booking.waitingChargePerMin,
             ),
           ],
           const SizedBox(height: 18),
@@ -651,9 +700,38 @@ class _AssignedSheet extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 10),
-              _RoundAction(
-                icon: Icons.chat_bubble_outline_rounded,
-                onTap: onChat,
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  _RoundAction(
+                    icon: Icons.chat_bubble_outline_rounded,
+                    onTap: onChat,
+                  ),
+                  if (unreadMsgCount > 0)
+                    Positioned(
+                      top: -2,
+                      right: -2,
+                      child: Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: BoxDecoration(
+                          color: AppColors.error,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: AppColors.white, width: 1.5),
+                        ),
+                        constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                        child: Text(
+                          unreadMsgCount > 9 ? '9+' : unreadMsgCount.toString(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                            height: 1.0,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ],
           ),
@@ -703,25 +781,27 @@ class _AssignedSheet extends StatelessWidget {
           const SizedBox(height: 18),
           Row(
             children: [
-              Expanded(
-                child: SizedBox(
-                  height: 54,
-                  child: ElevatedButton(
-                    onPressed: cancelling ? null : onCancel,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFD9D9D9),
-                      foregroundColor: const Color(0xFF6B6B6B),
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-                    ),
-                    child: Text(
-                      cancelling ? '...' : 'CANCEL',
-                      style: AppTextStyles.labelLarge.copyWith(letterSpacing: 0.6),
+              if (!isPickedUp) ...[
+                Expanded(
+                  child: SizedBox(
+                    height: 54,
+                    child: ElevatedButton(
+                      onPressed: cancelling ? null : onCancel,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFD9D9D9),
+                        foregroundColor: const Color(0xFF6B6B6B),
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+                      ),
+                      child: Text(
+                        cancelling ? '...' : 'CANCEL',
+                        style: AppTextStyles.labelLarge.copyWith(letterSpacing: 0.6),
+                      ),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 14),
+                const SizedBox(width: 14),
+              ],
               Expanded(
                 child: SizedBox(
                   height: 54,
@@ -995,6 +1075,69 @@ class _InlineWaitingCharge extends StatelessWidget {
   }
 }
 
+// ── Delivery progress bar (courier bookings only) ─────────────────────────────
+
+class _DeliveryProgressBar extends StatelessWidget {
+  const _DeliveryProgressBar({required this.status});
+  final BookingStatus status;
+
+  int get _filled => switch (status) {
+    BookingStatus.accepted   => 1,
+    BookingStatus.arrived    => 2,
+    BookingStatus.pickedUp   => 3,
+    BookingStatus.inProgress => 4,
+    _                        => 1,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    const total = 4;
+    final filled = _filled;
+    return Row(
+      children: List.generate(total, (i) {
+        return Expanded(
+          child: Container(
+            margin: EdgeInsets.only(right: i < total - 1 ? 6 : 0),
+            height: 6,
+            decoration: BoxDecoration(
+              color: (i + 1) <= filled
+                  ? AppColors.primary
+                  : const Color(0xFFEDD9A3),
+              borderRadius: BorderRadius.circular(3),
+            ),
+          ),
+        );
+      }),
+    );
+  }
+}
+
+// ── ETA box (large number + "mins" shown top-right for delivery) ──────────────
+
+class _EtaBox extends StatelessWidget {
+  const _EtaBox({required this.minutes});
+  final int minutes;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.end,
+    children: [
+      Text(
+        minutes.toString(),
+        style: AppTextStyles.h1.copyWith(
+          fontSize: 30,
+          fontWeight: FontWeight.w800,
+          height: 1.0,
+        ),
+      ),
+      Text(
+        'mins',
+        style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+      ),
+    ],
+  );
+}
+
 class _RoundAction extends StatelessWidget {
   const _RoundAction({required this.icon, required this.onTap});
   final IconData icon;
@@ -1106,6 +1249,15 @@ class _RoutedMapViewState extends State<_RoutedMapView> {
   String?       _polyUsed;
   LatLngBounds? _routeBounds;
 
+  // ── Approach route (driver → pickup via real roads) ───────────────────────────
+  List<LatLng> _approachRoute     = [];
+  LatLng?      _lastApproachFetch;
+  static const double _kRefetchM = 120; // re-fetch approach route every 120 m moved
+
+  // ── Custom car icon for driver marker ────────────────────────────────────────
+  BitmapDescriptor? _carIcon;
+  static BitmapDescriptor? _cachedCarIcon; // process-level cache
+
   // ── Driver animation ─────────────────────────────────────────────────────────
   LatLng? _driverPos;
   double  _driverRot = 0;
@@ -1121,6 +1273,75 @@ class _RoutedMapViewState extends State<_RoutedMapView> {
     if (kIsWeb) _loadFuture = ensureGoogleMapsJsLoaded(apiKey: widget.apiKey);
     _buildRoute(widget.booking);
     if (widget.driverTarget != null) _driverPos = widget.driverTarget;
+    _loadCarIcon();
+    // Fetch the real-road approach route as soon as we have a driver position
+    if (widget.driverTarget != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _fetchApproachRoute(widget.driverTarget!);
+      });
+    }
+  }
+
+  Future<void> _loadCarIcon() async {
+    if (_cachedCarIcon != null) {
+      setState(() => _carIcon = _cachedCarIcon);
+      return;
+    }
+    try {
+      final icon = await _buildCircleMarkerIcon(
+        Icons.directions_car_rounded,
+        bg: const Color(0xFFE2A322),
+      );
+      _cachedCarIcon = icon;
+      if (mounted) setState(() => _carIcon = icon);
+    } catch (e, st) {
+      debugPrint('[CarIcon] failed to build car marker icon: $e\n$st');
+    }
+  }
+
+  /// Builds a circular bitmap marker from a Material icon.
+  /// Renders at physical-pixel resolution and passes imagePixelRatio so
+  /// google_maps_flutter scales it to the correct logical size on screen.
+  static Future<BitmapDescriptor> _buildCircleMarkerIcon(
+    IconData icon, {
+    Color bg = const Color(0xFFE2A322),
+    double size = 40, // logical pixels
+  }) async {
+    final dpr      = ui.PlatformDispatcher.instance.implicitView?.devicePixelRatio ?? 1.0;
+    final physSize = (size * dpr).roundToDouble();
+    final r        = physSize / 2;
+
+    final rec    = ui.PictureRecorder();
+    final canvas = Canvas(rec);
+
+    canvas.drawCircle(
+      Offset(r, r), r,
+      Paint()..color = bg,
+    );
+    canvas.drawCircle(
+      Offset(r, r), r - dpr,
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.25)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2 * dpr,
+    );
+
+    final tp = TextPainter(textDirection: TextDirection.ltr)
+      ..text = TextSpan(
+        text: String.fromCharCode(icon.codePoint),
+        style: TextStyle(
+          fontSize: physSize * 0.52,
+          fontFamily: icon.fontFamily,
+          color: Colors.white,
+          package: icon.fontPackage,
+        ),
+      )
+      ..layout();
+    tp.paint(canvas, Offset((physSize - tp.width) / 2, (physSize - tp.height) / 2));
+
+    final img  = await rec.endRecording().toImage(physSize.toInt(), physSize.toInt());
+    final data = await img.toByteData(format: ui.ImageByteFormat.png);
+    return BitmapDescriptor.bytes(data!.buffer.asUint8List(), imagePixelRatio: dpr);
   }
 
   @override
@@ -1199,6 +1420,38 @@ class _RoutedMapViewState extends State<_RoutedMapView> {
     });
   }
 
+  // ── Approach route (driver → pickup via Directions API) ─────────────────────
+
+  Future<void> _fetchApproachRoute(LatLng driverPos) async {
+    final b = widget.booking;
+    if (b == null || b.pickupLat == 0) return;
+    final isApproaching = b.status == BookingStatus.accepted ||
+                          b.status == BookingStatus.arrived;
+    debugPrint('[Approach] status=${b.status} isApproaching=$isApproaching driverPos=$driverPos');
+    if (!isApproaching) return;
+
+    // Skip if driver hasn't moved enough since last fetch
+    final last = _lastApproachFetch;
+    if (last != null && _haversineM(last, driverPos) < _kRefetchM) return;
+
+    _lastApproachFetch = driverPos;
+    final pickup = LatLng(b.pickupLat, b.pickupLng);
+    debugPrint('[Approach] fetching route: $driverPos → $pickup');
+    final pts = await MapsService.getDirectionsRoute(driverPos, pickup);
+    debugPrint('[Approach] got ${pts.length} points (${pts.length == 2 ? "straight line fallback" : "real route"})');
+    if (mounted) setState(() => _approachRoute = pts);
+  }
+
+  static double _haversineM(LatLng a, LatLng b) {
+    const r = 6371000.0;
+    final dLat = (b.latitude  - a.latitude)  * math.pi / 180;
+    final dLng = (b.longitude - a.longitude) * math.pi / 180;
+    final lat1 = a.latitude * math.pi / 180;
+    final lat2 = b.latitude * math.pi / 180;
+    final s1 = math.sin(dLat / 2), s2 = math.sin(dLng / 2);
+    return r * 2 * math.asin(math.sqrt(s1*s1 + math.cos(lat1)*math.cos(lat2)*s2*s2));
+  }
+
   // ── Driver animation (runs inside this widget — doesn't rebuild the parent) ──
 
   void _animateDriverTo(LatLng target) {
@@ -1207,6 +1460,7 @@ class _RoutedMapViewState extends State<_RoutedMapView> {
 
     _driverRot = _bearing(from, target);
     _animTimer?.cancel();
+    _fetchApproachRoute(target);
 
     const steps = 20;
     var i = 0;
@@ -1218,8 +1472,76 @@ class _RoutedMapViewState extends State<_RoutedMapView> {
         from.latitude  + (target.latitude  - from.latitude)  * f,
         from.longitude + (target.longitude - from.longitude) * f,
       ));
-      if (i >= steps) t.cancel();
+      if (i >= steps) {
+        t.cancel();
+        _followCamera(target);
+      }
     });
+  }
+
+  /// Pan the camera to keep the driver and their next waypoint both in frame.
+  void _followCamera(LatLng driverPos) {
+    final b = widget.booking;
+    if (b == null || _ctrl == null) return;
+
+    final isApproaching = b.status == BookingStatus.accepted ||
+                          b.status == BookingStatus.arrived;
+    final wLat = isApproaching ? b.pickupLat      : b.destinationLat;
+    final wLng = isApproaching ? b.pickupLng      : b.destinationLng;
+    if (wLat == 0) return;
+
+    final waypoint = LatLng(wLat, wLng);
+    if (_haversineM(driverPos, waypoint) < 10) return;
+
+    final sw = LatLng(
+      math.min(driverPos.latitude, waypoint.latitude),
+      math.min(driverPos.longitude, waypoint.longitude),
+    );
+    final ne = LatLng(
+      math.max(driverPos.latitude, waypoint.latitude),
+      math.max(driverPos.longitude, waypoint.longitude),
+    );
+    try {
+      _ctrl!.animateCamera(
+        CameraUpdate.newLatLngBounds(LatLngBounds(southwest: sw, northeast: ne), 100),
+      );
+    } catch (_) { _ctrl = null; }
+  }
+
+  void _copyDriverLocation() {
+    final dPos = _driverPos;
+    if (dPos == null) return;
+    final text = '${dPos.latitude.toStringAsFixed(6)}, ${dPos.longitude.toStringAsFixed(6)}';
+    Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Driver location copied to clipboard'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
+  void _openInGoogleMaps() {
+    final dPos   = _driverPos;
+    final b      = widget.booking;
+    final pickup = (b != null && b.pickupLat != 0)
+        ? LatLng(b.pickupLat, b.pickupLng)
+        : null;
+    if (pickup == null) return;
+
+    // If driver pos known, route from driver → pickup; otherwise just open pickup
+    final uri = dPos != null
+        ? Uri.parse(
+            'https://www.google.com/maps/dir/?api=1'
+            '&origin=${dPos.latitude},${dPos.longitude}'
+            '&destination=${pickup.latitude},${pickup.longitude}'
+            '&travelmode=driving',
+          )
+        : Uri.parse(
+            'https://www.google.com/maps/search/?api=1'
+            '&query=${pickup.latitude},${pickup.longitude}',
+          );
+    launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
   static double _bearing(LatLng from, LatLng to) {
@@ -1259,8 +1581,13 @@ class _RoutedMapViewState extends State<_RoutedMapView> {
           rotation: _driverRot,
           flat: true,
           anchor: const Offset(0.5, 0.5),
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
-          infoWindow: const InfoWindow(title: 'Driver'),
+          icon: _carIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+          infoWindow: InfoWindow(
+            title: 'Driver location',
+            snippet: '${_driverPos!.latitude.toStringAsFixed(5)}, '
+                     '${_driverPos!.longitude.toStringAsFixed(5)}  •  tap snippet to copy',
+            onTap: _copyDriverLocation,
+          ),
         ),
     };
   }
@@ -1294,10 +1621,12 @@ class _RoutedMapViewState extends State<_RoutedMapView> {
     final isApproaching = b?.status == BookingStatus.accepted ||
                           b?.status == BookingStatus.arrived;
     if (dPos != null && pickup != null && isApproaching) {
+      // Use real road route if fetched, otherwise straight line fallback
+      final approachPts = _approachRoute.isNotEmpty ? _approachRoute : [dPos, pickup];
       lines.add(Polyline(
         polylineId: const PolylineId('approach'),
-        points:     [dPos, pickup],
-        color:      const Color(0xFFE2A322),   // brand amber
+        points:     approachPts,
+        color:      const Color(0xFFE2A322),
         width:      4,
         patterns:   [PatternItem.dot, PatternItem.gap(8)],
         startCap:   Cap.roundCap,
@@ -1332,19 +1661,94 @@ class _RoutedMapViewState extends State<_RoutedMapView> {
     );
   }
 
-  Widget _map() => GoogleMap(
-        initialCameraPosition: CameraPosition(target: _initialTarget, zoom: 14),
-        markers:                 _markers,
-        polylines:               _polylines,
-        myLocationEnabled:       false,
-        myLocationButtonEnabled: false,
-        zoomControlsEnabled:     false,
-        mapToolbarEnabled:       false,
-        onMapCreated: (c) {
-          _ctrl = c;
-          _camVersion++;
-          _fitCamera();
-        },
+  Widget _map() {
+    final b = widget.booking;
+    final hasDriver = _driverPos != null;
+    return Stack(
+      children: [
+        GoogleMap(
+          initialCameraPosition: CameraPosition(target: _initialTarget, zoom: 14),
+          markers:                 _markers,
+          polylines:               _polylines,
+          myLocationEnabled:       false,
+          myLocationButtonEnabled: false,
+          zoomControlsEnabled:     false,
+          mapToolbarEnabled:       false,
+          onMapCreated: (c) {
+            _ctrl = c;
+            _camVersion++;
+            _fitCamera();
+          },
+        ),
+
+        // ── Map overlay action buttons ────────────────────────────────────
+        Positioned(
+          top: 12, right: 12,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Open route in Google Maps
+              if (b != null && b.pickupLat != 0)
+                _MapOverlayChip(
+                  icon: Icons.map_outlined,
+                  label: 'Maps',
+                  onTap: _openInGoogleMaps,
+                ),
+              if (b != null && b.pickupLat != 0) const SizedBox(height: 8),
+              // Copy driver coordinates
+              if (hasDriver)
+                _MapOverlayChip(
+                  icon: Icons.copy_rounded,
+                  label: 'Copy',
+                  onTap: _copyDriverLocation,
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Compact chip-style overlay button shown on top of the map ─────────────────
+
+class _MapOverlayChip extends StatelessWidget {
+  const _MapOverlayChip({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+  final IconData     icon;
+  final String       label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: const [
+              BoxShadow(color: Color(0x26000000), blurRadius: 8, offset: Offset(0, 2)),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 15, color: AppColors.textPrimary),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: AppTextStyles.caption.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ],
+          ),
+        ),
       );
 }
 
