@@ -9,14 +9,14 @@ class SmtpConfigs extends BaseController
     public function index(): void
     {
         $stmt = $this->db->query(
-            'SELECT id, name, host, port, username, encryption, from_name, from_email, is_active, created_at
+            'SELECT id, name, host, port, username, password, encryption, from_name, from_email, is_active, created_at
              FROM smtp_configs ORDER BY id ASC'
         );
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         // Never expose stored passwords
         foreach ($rows as &$row) {
-            $row['has_password'] = $row['password'] !== '' ? true : false;
+            $row['has_password'] = !empty($row['password']) ? true : false;
             unset($row['password']);
         }
 

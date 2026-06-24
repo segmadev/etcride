@@ -148,6 +148,13 @@ class _DriverSettingsScreenState extends ConsumerState<DriverSettingsScreen> {
               ),
 
               const Spacer(),
+              _SettingsTile(
+                icon: Icons.delete_outline_rounded,
+                label: 'Delete Account',
+                subtitle: 'Permanently delete your account',
+                onTap: () => context.push(AppRoutes.accountDeletion),
+              ),
+              const SizedBox(height: 12),
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton(

@@ -62,6 +62,6 @@ class AccountDeletionRepository {
 
   /// Cancel a pending deletion request
   Future<void> cancelRequest() async {
-    await _client.delete<void>('/driver/account/delete-request');
+    await _client.delete('/driver/account/delete-request');
   }
 }

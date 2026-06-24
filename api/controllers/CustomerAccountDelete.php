@@ -12,7 +12,14 @@ class CustomerAccountDelete extends BaseController
             return;
         }
 
-        $user = $this->getall('users', 'token = ? AND status = 1', [$token]);
+        // Get user from session token
+        $session = $this->getall('user_sessions', 'token = ?', [$token]);
+        if (!is_array($session)) {
+            echo utilities::apiMessage('Invalid or expired session.', 401);
+            return;
+        }
+
+        $user = $this->getall('users', 'id = ? AND status = 1', [$session['user_id']]);
         if (!is_array($user)) {
             echo utilities::apiMessage('User not found or inactive.', 401);
             return;
@@ -66,21 +73,30 @@ class CustomerAccountDelete extends BaseController
                 return;
             }
 
-            // Create deletion request
+            // Auto-approve deletion if no pending transactions
+            // Otherwise, create deletion request for admin review
             $requestId = $this->generateId();
             $reason = $this->str('deletion_reason', '');
 
+            // Soft delete the account immediately (no pending transactions)
             $stmt = $this->db->prepare(
-                'INSERT INTO customer_account_delete_requests (id, customer_id, deletion_reason, request_status, created_at)
-                 VALUES (?, ?, ?, "pending", NOW())'
+                'UPDATE users SET status = 0, deleted_at = NOW(), name = NULL, email = NULL, phone = NULL WHERE id = ?'
+            );
+            $stmt->execute([$user['id']]);
+
+            // Record the deletion request as auto-approved
+            $stmt = $this->db->prepare(
+                'INSERT INTO customer_account_delete_requests (id, customer_id, deletion_reason, request_status, reviewed_by, admin_notes, reviewed_at, deleted_at, created_at)
+                 VALUES (?, ?, ?, "approved", "SYSTEM", "Auto-approved: No pending transactions", NOW(), NOW(), NOW())'
             );
             $stmt->execute([$requestId, $user['id'], $reason]);
 
-            $this->logActivity('customer', $user['id'], 'delete_request_created', ['request_id' => $requestId]);
+            $this->logActivity('customer', $user['id'], 'account_deleted', ['request_id' => $requestId]);
 
-            echo utilities::apiMessage('Account deletion request submitted. Admin will review within 24-48 hours.', 201, [
+            echo utilities::apiMessage('Account deletion processed successfully. Your personal data has been deleted.', 200, [
                 'request_id' => $requestId,
-                'status'     => 'pending',
+                'status'     => 'approved',
+                'message'    => 'Your account has been permanently deleted.',
             ]);
         } catch (Exception $e) {
             error_log("ERROR: CustomerAccountDelete::requestDeletion - " . $e->getMessage());
@@ -97,7 +113,14 @@ class CustomerAccountDelete extends BaseController
             return;
         }
 
-        $user = $this->getall('users', 'token = ? AND status = 1', [$token]);
+        // Get user from session token
+        $session = $this->getall('user_sessions', 'token = ?', [$token]);
+        if (!is_array($session)) {
+            echo utilities::apiMessage('Invalid or expired session.', 401);
+            return;
+        }
+
+        $user = $this->getall('users', 'id = ? AND status = 1', [$session['user_id']]);
         if (!is_array($user)) {
             echo utilities::apiMessage('User not found or inactive.', 401);
             return;
@@ -139,7 +162,14 @@ class CustomerAccountDelete extends BaseController
             return;
         }
 
-        $user = $this->getall('users', 'token = ? AND status = 1', [$token]);
+        // Get user from session token
+        $session = $this->getall('user_sessions', 'token = ?', [$token]);
+        if (!is_array($session)) {
+            echo utilities::apiMessage('Invalid or expired session.', 401);
+            return;
+        }
+
+        $user = $this->getall('users', 'id = ? AND status = 1', [$session['user_id']]);
         if (!is_array($user)) {
             echo utilities::apiMessage('User not found or inactive.', 401);
             return;

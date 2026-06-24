@@ -14,8 +14,10 @@ import '../../features/notifications/notifications_screen.dart';
 import '../../features/onboarding/onboarding_screen.dart';
 import '../../features/profile/driver_profile_screen.dart';
 import '../../features/settings/settings_screen.dart';
+import '../../features/settings/account_deletion_screen.dart';
 import '../../features/splash/splash_screen.dart';
 import '../../features/support/help_support_screen.dart';
+import '../../features/help/terms_and_policy_screen.dart';
 import '../../features/vehicle/assigned_vehicle_screen.dart';
 
 CustomTransitionPage<void> _page(GoRouterState state, Widget child) {
@@ -48,6 +50,8 @@ abstract final class AppRoutes {
   static const String notifications = '/notifications';
   static const String help = '/help';
   static const String settings = '/settings';
+  static const String accountDeletion = '/account-deletion';
+  static const String termsAndPolicy = '/terms-and-policy';
   static const String chat        = '/chat';
   static const String chatHistory = '/chat-history';
 }
@@ -111,8 +115,19 @@ final appRouter = GoRouter(
       pageBuilder: (_, state) => _page(state, const HelpSupportScreen()),
     ),
     GoRoute(
+      path: AppRoutes.termsAndPolicy,
+      pageBuilder: (_, state) => _page(
+        state,
+        TermsAndPolicyScreen(tab: state.extra as String? ?? 'terms'),
+      ),
+    ),
+    GoRoute(
       path: AppRoutes.settings,
       pageBuilder: (_, state) => _page(state, const DriverSettingsScreen()),
+    ),
+    GoRoute(
+      path: AppRoutes.accountDeletion,
+      pageBuilder: (_, state) => _page(state, const AccountDeletionScreen()),
     ),
     GoRoute(
       path: AppRoutes.chat,

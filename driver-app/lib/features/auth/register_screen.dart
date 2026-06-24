@@ -261,12 +261,12 @@ class _DriverRegisterScreenState
               const SizedBox(height: 20),
 
               // Terms checkbox
-              GestureDetector(
-                onTap: () => setState(() => _agreedTerms = !_agreedTerms),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  GestureDetector(
+                    onTap: () => setState(() => _agreedTerms = !_agreedTerms),
+                    child: Container(
                       width: 22,
                       height: 22,
                       margin: const EdgeInsets.only(top: 1),
@@ -285,36 +285,60 @@ class _DriverRegisterScreenState
                               size: 15, color: Colors.white)
                           : null,
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: RichText(
-                        text: TextSpan(
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Wrap(
+                      children: [
+                        Text(
+                          'I agree to the ',
                           style: AppTextStyles.bodySmall.copyWith(
-                              color: AppColors.textSecondary, height: 1.5),
-                          children: const [
-                            TextSpan(text: 'I agree to the '),
-                            TextSpan(
-                              text: 'Terms & Conditions',
-                              style: TextStyle(
-                                  color: Colors.black,
-                                  fontWeight: FontWeight.w700,
-                                  decoration: TextDecoration.underline),
-                            ),
-                            TextSpan(text: ' and '),
-                            TextSpan(
-                              text: 'Privacy Policy',
-                              style: TextStyle(
-                                  color: Colors.black,
-                                  fontWeight: FontWeight.w700,
-                                  decoration: TextDecoration.underline),
-                            ),
-                            TextSpan(text: ' of ETCRide.'),
-                          ],
+                            color: AppColors.textSecondary,
+                            height: 1.5,
+                          ),
                         ),
-                      ),
+                        GestureDetector(
+                          onTap: () => context.push(AppRoutes.termsAndPolicy, extra: 'terms'),
+                          child: Text(
+                            'Terms & Conditions',
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: Colors.black,
+                              fontWeight: FontWeight.w700,
+                              decoration: TextDecoration.underline,
+                              height: 1.5,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          ' and ',
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.textSecondary,
+                            height: 1.5,
+                          ),
+                        ),
+                        GestureDetector(
+                          onTap: () => context.push(AppRoutes.termsAndPolicy, extra: 'policy'),
+                          child: Text(
+                            'Privacy Policy',
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: Colors.black,
+                              fontWeight: FontWeight.w700,
+                              decoration: TextDecoration.underline,
+                              height: 1.5,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          ' of ETCRide.',
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.textSecondary,
+                            height: 1.5,
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
 
               if (_error != null) ...[

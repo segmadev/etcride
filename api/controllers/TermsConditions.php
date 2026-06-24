@@ -6,8 +6,8 @@ class TermsConditions extends BaseController
     // ── GET /content/terms-conditions ──────────────────────────────────────────
     public function getTermsAndConditions(): void
     {
-        $tcSetting = $this->getall('settings', "key = 'terms_and_conditions'");
-        $ppSetting = $this->getall('settings', "key = 'privacy_policy'");
+        $tcSetting = $this->getall('settings', '`key` = ?', ['terms_and_conditions']);
+        $ppSetting = $this->getall('settings', '`key` = ?', ['privacy_policy']);
 
         $tcValue = is_array($tcSetting) ? $tcSetting['value'] : '';
         $ppValue = is_array($ppSetting) ? $ppSetting['value'] : '';
@@ -29,13 +29,19 @@ class TermsConditions extends BaseController
             return;
         }
 
-        $user = $this->getall('users', 'token = ? AND status = 1', [$token]);
+        $session = $this->getall('user_sessions', 'token = ?', [$token]);
+        if (!is_array($session)) {
+            echo utilities::apiMessage('Invalid or expired session.', 401);
+            return;
+        }
+
+        $user = $this->getall('users', 'id = ? AND status = 1', [$session['user_id']]);
         if (!is_array($user)) {
             echo utilities::apiMessage('User not found or inactive.', 401);
             return;
         }
 
-        $tcSetting = $this->getall('settings', "key = 'terms_and_conditions'");
+        $tcSetting = $this->getall('settings', '`key` = ?', ['terms_and_conditions']);
         if (!is_array($tcSetting)) {
             echo utilities::apiMessage('Terms & Conditions not configured.', 500);
             return;
@@ -88,13 +94,19 @@ class TermsConditions extends BaseController
             return;
         }
 
-        $user = $this->getall('users', 'token = ? AND status = 1', [$token]);
+        $session = $this->getall('user_sessions', 'token = ?', [$token]);
+        if (!is_array($session)) {
+            echo utilities::apiMessage('Invalid or expired session.', 401);
+            return;
+        }
+
+        $user = $this->getall('users', 'id = ? AND status = 1', [$session['user_id']]);
         if (!is_array($user)) {
             echo utilities::apiMessage('User not found or inactive.', 401);
             return;
         }
 
-        $tcSetting = $this->getall('settings', "key = 'terms_and_conditions'");
+        $tcSetting = $this->getall('settings', '`key` = ?', ['terms_and_conditions']);
         if (!is_array($tcSetting)) {
             echo utilities::apiMessage('Terms & Conditions not configured.', 500);
             return;
@@ -127,13 +139,19 @@ class TermsConditions extends BaseController
             return;
         }
 
-        $driver = $this->getall('drivers', 'token = ? AND status = 1', [$token]);
+        $session = $this->getall('driver_sessions', 'token = ?', [$token]);
+        if (!is_array($session)) {
+            echo utilities::apiMessage('Invalid or expired session.', 401);
+            return;
+        }
+
+        $driver = $this->getall('drivers', 'id = ? AND status = 1', [$session['driver_id']]);
         if (!is_array($driver)) {
             echo utilities::apiMessage('Driver not found or inactive.', 401);
             return;
         }
 
-        $tcSetting = $this->getall('settings', "key = 'terms_and_conditions'");
+        $tcSetting = $this->getall('settings', '`key` = ?', ['terms_and_conditions']);
         if (!is_array($tcSetting)) {
             echo utilities::apiMessage('Terms & Conditions not configured.', 500);
             return;
@@ -186,13 +204,19 @@ class TermsConditions extends BaseController
             return;
         }
 
-        $driver = $this->getall('drivers', 'token = ? AND status = 1', [$token]);
+        $session = $this->getall('driver_sessions', 'token = ?', [$token]);
+        if (!is_array($session)) {
+            echo utilities::apiMessage('Invalid or expired session.', 401);
+            return;
+        }
+
+        $driver = $this->getall('drivers', 'id = ? AND status = 1', [$session['driver_id']]);
         if (!is_array($driver)) {
             echo utilities::apiMessage('Driver not found or inactive.', 401);
             return;
         }
 
-        $tcSetting = $this->getall('settings', "key = 'terms_and_conditions'");
+        $tcSetting = $this->getall('settings', '`key` = ?', ['terms_and_conditions']);
         if (!is_array($tcSetting)) {
             echo utilities::apiMessage('Terms & Conditions not configured.', 500);
             return;

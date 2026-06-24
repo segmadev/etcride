@@ -331,8 +331,9 @@ class _AccountDeletionScreenState extends ConsumerState<AccountDeletionScreen> {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: AppColors.info.withValues(alpha: 0.1),
+              color: AppColors.warning.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.warning.withValues(alpha: 0.2)),
             ),
             child: Text(
               'Your account will be deleted shortly. '
