@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../shared/providers/providers.dart';
+import '../../data/repositories/terms_repository.dart';
 
 class TermsAndPolicyScreen extends ConsumerStatefulWidget {
   final String tab; // 'terms' or 'policy'
@@ -33,10 +34,6 @@ class _TermsAndPolicyScreenState extends ConsumerState<TermsAndPolicyScreen>
 
   @override
   Widget build(BuildContext context) {
-    final termsAsync = ref.watch(
-      FutureProvider((ref) => ref.read(termsRepositoryProvider).getTermsAndConditions()),
-    );
-
     return Scaffold(
       backgroundColor: AppColors.white,
       appBar: AppBar(
@@ -57,54 +54,68 @@ class _TermsAndPolicyScreenState extends ConsumerState<TermsAndPolicyScreen>
           ],
         ),
       ),
-      body: termsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (err, stack) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.error_outline, size: 48, color: AppColors.error),
-                const SizedBox(height: 12),
-                Text('Failed to load documents', style: AppTextStyles.h4),
-                const SizedBox(height: 8),
-                Text(
-                  err.toString(),
-                  style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-          ),
-        ),
-        data: (data) => TabBarView(
-          controller: _tabController,
-          children: [
-            // Terms & Conditions
-            SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Text(
-                data.termsAndConditions,
-                style: AppTextStyles.bodySmall.copyWith(
-                  color: AppColors.textPrimary,
-                  height: 1.5,
+      body: FutureBuilder<TermsAndConditionsData>(
+        future: ref.read(termsRepositoryProvider).getTermsAndConditions(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (snapshot.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.error_outline, size: 48, color: AppColors.error),
+                    const SizedBox(height: 12),
+                    Text('Failed to load documents', style: AppTextStyles.h4),
+                    const SizedBox(height: 8),
+                    Text(
+                      snapshot.error.toString(),
+                      style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
                 ),
               ),
-            ),
-            // Privacy Policy
-            SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Text(
-                data.privacyPolicy,
-                style: AppTextStyles.bodySmall.copyWith(
-                  color: AppColors.textPrimary,
-                  height: 1.5,
+            );
+          }
+
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          final data = snapshot.data!;
+          return TabBarView(
+            controller: _tabController,
+            children: [
+              // Terms & Conditions
+              SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  data.termsAndConditions,
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.textPrimary,
+                    height: 1.5,
+                  ),
                 ),
               ),
-            ),
-          ],
-        ),
+              // Privacy Policy
+              SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  data.privacyPolicy,
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.textPrimary,
+                    height: 1.5,
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

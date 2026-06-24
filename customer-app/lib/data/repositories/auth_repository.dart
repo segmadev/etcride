@@ -3,6 +3,7 @@ import '../../core/network/api_client.dart';
 import '../../core/network/api_endpoints.dart';
 import '../../core/storage/secure_storage.dart';
 import '../models/user_model.dart';
+import 'terms_repository.dart';
 
 class AuthRepository {
   const AuthRepository(this._client, this._storage);
@@ -223,10 +224,14 @@ class AuthRepository {
     return UserModel.fromJson(jsonDecode(json) as Map<String, dynamic>);
   }
 
-  Future<void> logout() => _storage.clearAll();
+  Future<void> logout() {
+    TermsRepository.clearCache();
+    return _storage.clearAll();
+  }
 
   Future<void> logoutRemote() async {
     await _client.post<void>(ApiEndpoints.logout);
+    TermsRepository.clearCache();
     await _storage.clearAll();
   }
 

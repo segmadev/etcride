@@ -30,6 +30,7 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> with TickerProviderSt
   _LoginMethod _method = _LoginMethod.phone;
   List<String> _emailSuggestions = const [];
   bool _registrationSuccess = false;
+  bool _agreedTerms = false;
   late final AnimationController _introCtrl = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 2100),
@@ -55,7 +56,10 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> with TickerProviderSt
   }
 
   Future<void> _continue() async {
-    if (!_isValid) return;
+    if (!_isValid || !_agreedTerms) {
+      setState(() => _error = 'Please accept Terms & Conditions and Privacy Policy to continue.');
+      return;
+    }
     final raw = _contactCtrl.text.trim().replaceAll(' ', '');
     final contact = _method == _LoginMethod.phone ? _normalizeNgPhone(raw) : raw;
 
@@ -357,15 +361,92 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> with TickerProviderSt
                         const SizedBox(height: 8),
                         Text(_error!, style: AppTextStyles.bodySmall.copyWith(color: AppColors.error)),
                       ],
-                      const SizedBox(height: 32),
+                      const SizedBox(height: 24),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          GestureDetector(
+                            onTap: () => setState(() => _agreedTerms = !_agreedTerms),
+                            child: Container(
+                              width: 22,
+                              height: 22,
+                              margin: const EdgeInsets.only(top: 1),
+                              decoration: BoxDecoration(
+                                color: _agreedTerms ? Colors.black : Colors.transparent,
+                                border: Border.all(
+                                  color: _agreedTerms ? Colors.black : AppColors.textSecondary,
+                                  width: 1.5,
+                                ),
+                                borderRadius: BorderRadius.circular(5),
+                              ),
+                              child: _agreedTerms
+                                  ? const Icon(Icons.check, size: 15, color: Colors.white)
+                                  : null,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Wrap(
+                              children: [
+                                Text(
+                                  'I agree to the ',
+                                  style: AppTextStyles.bodySmall.copyWith(
+                                    color: AppColors.textSecondary,
+                                    height: 1.5,
+                                  ),
+                                ),
+                                GestureDetector(
+                                  onTap: () => context.push(AppRoutes.termsAndPolicy, extra: 'terms'),
+                                  child: Text(
+                                    'Terms & Conditions',
+                                    style: AppTextStyles.bodySmall.copyWith(
+                                      color: Colors.black,
+                                      fontWeight: FontWeight.w700,
+                                      decoration: TextDecoration.underline,
+                                      height: 1.5,
+                                    ),
+                                  ),
+                                ),
+                                Text(
+                                  ' and ',
+                                  style: AppTextStyles.bodySmall.copyWith(
+                                    color: AppColors.textSecondary,
+                                    height: 1.5,
+                                  ),
+                                ),
+                                GestureDetector(
+                                  onTap: () => context.push(AppRoutes.termsAndPolicy, extra: 'policy'),
+                                  child: Text(
+                                    'Privacy Policy',
+                                    style: AppTextStyles.bodySmall.copyWith(
+                                      color: Colors.black,
+                                      fontWeight: FontWeight.w700,
+                                      decoration: TextDecoration.underline,
+                                      height: 1.5,
+                                    ),
+                                  ),
+                                ),
+                                Text(
+                                  ' of ETCRide.',
+                                  style: AppTextStyles.bodySmall.copyWith(
+                                    color: AppColors.textSecondary,
+                                    height: 1.5,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
                       _FadeSlide(
                         controller: _introCtrl,
                         interval: const Interval(0.84, 1.00, curve: Curves.easeOut),
                         from: const Offset(0, 14),
                         child: AppButton(
                           label: AppStrings.continueBtn,
-                          onPressed: _isValid && !_loading ? _continue : null,
-                          enabled: _isValid && !_loading,
+                          onPressed: _isValid && _agreedTerms && !_loading ? _continue : null,
+                          enabled: _isValid && _agreedTerms && !_loading,
                         ),
                       ),
                       const SizedBox(height: 16),

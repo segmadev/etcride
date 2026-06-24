@@ -49,13 +49,44 @@ class TermsRepository {
 
   final ApiClient _client;
 
-  /// Fetch current Terms & Conditions and Privacy Policy
+  // Cache to prevent repeated API calls
+  static TermsAndConditionsData? _cachedTerms;
+  static int _cacheAttempts = 0;
+  static const int _maxCacheAttempts = 2;
+
+  /// Fetch current Terms & Conditions and Privacy Policy (with caching)
   Future<TermsAndConditionsData> getTermsAndConditions() async {
-    final data = await _client.get<Map<String, dynamic>>(
-      '/content/terms-conditions',
-    );
-    if (data == null) throw const FormatException('Empty response.');
-    return TermsAndConditionsData.fromJson(data);
+    // Return cached data if available
+    if (_cachedTerms != null) {
+      return _cachedTerms!;
+    }
+
+    // Prevent infinite loop - only attempt 2 times max
+    if (_cacheAttempts >= _maxCacheAttempts) {
+      return TermsAndConditionsData(
+        termsAndConditions: 'Terms & Conditions unavailable. Please try again later.',
+        privacyPolicy: 'Privacy Policy unavailable. Please try again later.',
+        termsVersion: DateTime.now().toIso8601String(),
+      );
+    }
+
+    _cacheAttempts++;
+    try {
+      final data = await _client.get<Map<String, dynamic>>(
+        '/content/terms-conditions',
+      );
+      if (data == null) throw const FormatException('Empty response.');
+      _cachedTerms = TermsAndConditionsData.fromJson(data);
+      return _cachedTerms!;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Clear the cache (call after logout)
+  static void clearCache() {
+    _cachedTerms = null;
+    _cacheAttempts = 0;
   }
 
   /// Accept current Terms & Conditions (customer)

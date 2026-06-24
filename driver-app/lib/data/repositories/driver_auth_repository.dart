@@ -5,6 +5,7 @@ import '../../core/network/api_client.dart';
 import '../../core/network/api_endpoints.dart';
 import '../../core/storage/secure_storage.dart';
 import '../models/driver_model.dart';
+import 'terms_repository.dart';
 
 class DriverAuthRepository {
   const DriverAuthRepository(this._client, this._storage);
@@ -162,6 +163,7 @@ class DriverAuthRepository {
     try {
       await _client.post<void>(ApiEndpoints.driverLogout);
     } catch (_) {}
+    TermsRepository.clearCache();
     await _storage.clearAll();
   }
 

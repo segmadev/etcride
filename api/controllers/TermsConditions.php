@@ -6,11 +6,11 @@ class TermsConditions extends BaseController
     // ── GET /content/terms-conditions ──────────────────────────────────────────
     public function getTermsAndConditions(): void
     {
-        $tcSetting = $this->getall('settings', '`key` = ?', ['terms_and_conditions']);
-        $ppSetting = $this->getall('settings', '`key` = ?', ['privacy_policy']);
+        $tcSetting = $this->getall('settings', 'config_key = ?', ['terms_and_conditions']);
+        $ppSetting = $this->getall('settings', 'config_key = ?', ['privacy_policy']);
 
-        $tcValue = is_array($tcSetting) ? $tcSetting['value'] : '';
-        $ppValue = is_array($ppSetting) ? $ppSetting['value'] : '';
+        $tcValue = is_array($tcSetting) ? $tcSetting['config_value'] : '';
+        $ppValue = is_array($ppSetting) ? $ppSetting['config_value'] : '';
         $tcUpdatedAt = is_array($tcSetting) ? $tcSetting['updated_at'] : null;
 
         echo utilities::apiMessage('Terms & Conditions and Privacy Policy retrieved', 200, [
