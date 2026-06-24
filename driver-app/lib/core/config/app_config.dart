@@ -3,8 +3,8 @@
 abstract final class AppConfig {
   // ── API ─────────────────────────────────────────────────────────────────
   /// Base URL for the PHP backend.  No trailing slash.
-  // static const String baseUrl = 'https://testapi.eksuth.org.ng/api/';
-  static const String baseUrl = 'http://10.159.5.20:8055/';
+  static const String baseUrl = 'https://testapi.eksuth.org.ng/api/';
+  // static const String baseUrl = 'http://10.159.5.20:8055/';
   // static const String baseUrl = 'http://localhost:8055/';
 
   /// Request timeout in seconds.

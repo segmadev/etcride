@@ -95,4 +95,11 @@ $router->group('/admin', function ($r) {
     $r->put('/trip-reports/:id/approve-cancellation', 'admin/TripReports@approveCancellation');
     $r->put('/trip-reports/:id/reject-cancellation',  'admin/TripReports@rejectCancellation');
 
+    // ── Account Deletion Requests ──────────────────────────────────────────────
+    $r->get('/account-deletion-requests',             'admin/AccountDeletionRequests@index');
+    $r->put('/customer-deletion/:id/approve',         'admin/AccountDeletionRequests@approveCustomer');
+    $r->put('/customer-deletion/:id/reject',          'admin/AccountDeletionRequests@rejectCustomer');
+    $r->put('/driver-deletion/:id/approve',           'admin/AccountDeletionRequests@approveDriver');
+    $r->put('/driver-deletion/:id/reject',            'admin/AccountDeletionRequests@rejectDriver');
+
 }, ['auth' => true, 'authType' => 'admin']);

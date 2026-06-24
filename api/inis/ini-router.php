@@ -17,6 +17,7 @@ $router->get('/content/geocode',       'FrontContent@geocode');
 $router->get('/content/driver-auth-config', 'FrontContent@driverAuthConfig');
 $router->get('/content/driver-locations',   'FrontContent@driverLocations');
 $router->get('/live-chat/settings',         'LiveChat@getSettings');
+$router->get('/content/terms-conditions',   'TermsConditions@getTermsAndConditions');
 // Serves uploaded files (vehicle/driver photos, KYC images) through PHP so CORS
 // headers are always applied — direct /uploads/* static serving bypasses PHP
 // entirely on some servers (e.g. `php -S`), so .htaccess-based CORS never runs.
@@ -43,6 +44,19 @@ $router->group('/auth', function ($r) {
     $r->put('/profile',              'auth@updateProfile');
     $r->post('/send-contact-otp',    'auth@sendContactOtp');
     $r->post('/verify-contact-otp',  'auth@verifyContactOtp');
+}, ['auth' => true, 'authType' => 'customer']);
+
+// ── Terms & Conditions (customer) ──────────────────────────────────────────────
+$router->group('', function ($r) {
+    $r->post('/auth/accept-terms',        'TermsConditions@acceptTerms');
+    $r->get('/profile/terms-status',      'TermsConditions@getTermsStatus');
+}, ['auth' => true, 'authType' => 'customer']);
+
+// ── Account Deletion (customer) ────────────────────────────────────────────────
+$router->group('', function ($r) {
+    $r->post('/account/delete-request',   'CustomerAccountDelete@requestDeletion');
+    $r->get('/account/delete-request',    'CustomerAccountDelete@getRequestStatus');
+    $r->delete('/account/delete-request', 'CustomerAccountDelete@cancelRequest');
 }, ['auth' => true, 'authType' => 'customer']);
 
 // ── Fare estimation (public) ──────────────────────────────────────────────────
@@ -139,5 +153,14 @@ $router->group('/driver', function ($r) {
     // Notifications
     $r->get('/notifications',              'driver/Jobs@notifications');
     $r->put('/notifications/:id/read',     'driver/Jobs@markNotificationRead');
+
+    // Terms & Conditions
+    $r->post('/auth/accept-terms',         'TermsConditions@driverAcceptTerms');
+    $r->get('/auth/terms-status',          'TermsConditions@driverGetTermsStatus');
+
+    // Account Deletion
+    $r->post('/account/delete-request',    'driver/AccountDelete@requestDeletion');
+    $r->get('/account/delete-request',     'driver/AccountDelete@getRequestStatus');
+    $r->delete('/account/delete-request',  'driver/AccountDelete@cancelRequest');
 
 }, ['auth' => true, 'authType' => 'driver']);

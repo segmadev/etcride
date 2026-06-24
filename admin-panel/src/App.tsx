@@ -22,6 +22,7 @@ const ProfilePage         = lazy(() => import('./pages/profile/ProfilePage').the
 const EmailTemplatesPage  = lazy(() => import('./pages/emailTemplates/EmailTemplatesPage').then(m => ({ default: m.EmailTemplatesPage })));
 const PaymentsPage        = lazy(() => import('./pages/payments/PaymentsPage'));
 const LiveChatPage        = lazy(() => import('./pages/settings/LiveChatPage').then(m => ({ default: m.default })));
+const AccountDeletionPage = lazy(() => import('./pages/account-deletion/AccountDeletionPage').then(m => ({ default: m.AccountDeletionPage })));
 
 // ── React Query client ────────────────────────────────────────────────────────
 const queryClient = new QueryClient({
@@ -73,6 +74,7 @@ export default function App() {
               <Route path="/profile"         element={<ProfilePage />} />
               <Route path="/payments"        element={<PaymentsPage />} />
               <Route path="/live-chat"       element={<LiveChatPage />} />
+              <Route path="/account-deletion" element={<AccountDeletionPage />} />
             </Route>
 
             {/* Fallback */}

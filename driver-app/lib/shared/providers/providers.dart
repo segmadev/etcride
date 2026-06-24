@@ -6,6 +6,8 @@ import '../../data/models/job_model.dart';
 import '../../data/repositories/content_repository.dart';
 import '../../data/repositories/driver_auth_repository.dart';
 import '../../data/repositories/driver_repository.dart';
+import '../../data/repositories/terms_repository.dart';
+import '../../data/repositories/account_deletion_repository.dart';
 
 final apiClientProvider = Provider<ApiClient>((_) => ApiClient.instance);
 
@@ -24,6 +26,14 @@ final driverRepositoryProvider = Provider<DriverRepository>((ref) {
 
 final contentRepositoryProvider = Provider<ContentRepository>((ref) {
   return ContentRepository(ref.read(apiClientProvider));
+});
+
+final termsRepositoryProvider = Provider<TermsRepository>((ref) {
+  return TermsRepository(ref.read(apiClientProvider));
+});
+
+final accountDeletionRepositoryProvider = Provider<AccountDeletionRepository>((ref) {
+  return AccountDeletionRepository(ref.read(apiClientProvider));
 });
 
 final currentDriverProvider = StateProvider<DriverModel?>((ref) => null);

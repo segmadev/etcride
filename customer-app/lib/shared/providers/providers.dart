@@ -8,6 +8,8 @@ import '../../data/repositories/auth_repository.dart';
 import '../../data/repositories/booking_repository.dart';
 import '../../data/repositories/content_repository.dart';
 import '../../data/repositories/trip_reports_repository.dart';
+import '../../data/repositories/terms_repository.dart';
+import '../../data/repositories/account_deletion_repository.dart';
 
 // ── Infrastructure ────────────────────────────────────────────────────────────
 
@@ -31,6 +33,14 @@ final contentRepositoryProvider = Provider<ContentRepository>((ref) => ContentRe
     ));
 
 final tripReportsRepositoryProvider = Provider<TripReportsRepository>((ref) => TripReportsRepository(
+      ref.read(apiClientProvider),
+    ));
+
+final termsRepositoryProvider = Provider<TermsRepository>((ref) => TermsRepository(
+      ref.read(apiClientProvider),
+    ));
+
+final accountDeletionRepositoryProvider = Provider<AccountDeletionRepository>((ref) => AccountDeletionRepository(
       ref.read(apiClientProvider),
     ));
 
