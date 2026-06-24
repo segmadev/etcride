@@ -24,9 +24,11 @@ abstract final class ApiEndpoints {
   static const String driverRegister      = '/driver/auth/register';
   static const String driverSendOtp       = '/driver/auth/send-otp';
   static const String driverVerifyOtp     = '/driver/auth/verify-otp';
-  static const String driverLogout        = '/driver/auth/logout';
-  static const String driverGetProfile    = '/driver/auth/profile';  // GET — fresh from DB
-  static const String driverUpdateProfile = '/driver/auth/profile';  // PUT
+  static const String driverLogout             = '/driver/auth/logout';
+  static const String driverGetProfile         = '/driver/auth/profile';  // GET — fresh from DB
+  static const String driverUpdateProfile      = '/driver/auth/profile';  // PUT
+  static const String driverSendContactOtp     = '/driver/auth/send-contact-otp';
+  static const String driverVerifyContactOtp   = '/driver/auth/verify-contact-otp';
 
   // ── Driver availability & location ────────────────────────────────────────
   static const String driverAvailability  = '/driver/availability';

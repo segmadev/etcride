@@ -1,18 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/config/router.dart';
+import '../../../shared/widgets/live_chat_widget.dart';
 
-class HelpScreen extends StatefulWidget {
+class HelpScreen extends ConsumerStatefulWidget {
   const HelpScreen({super.key});
 
   @override
-  State<HelpScreen> createState() => _HelpScreenState();
+  ConsumerState<HelpScreen> createState() => _HelpScreenState();
 }
 
-class _HelpScreenState extends State<HelpScreen> {
+class _HelpScreenState extends ConsumerState<HelpScreen> {
   final _faqs = const [
     (
       'How do I cancel a ride?',
@@ -123,6 +125,10 @@ class _HelpScreenState extends State<HelpScreen> {
               icon: Icons.headset_mic_outlined,
               label: AppStrings.contactSupport,
               onTap: () => context.push(AppRoutes.contactSupport),
+            ),
+            const SizedBox(height: 8),
+            LiveChatButton(
+              style: AppTextStyles.bodyMedium,
             ),
             const SizedBox(height: 22),
             Text('Common Topics', style: AppTextStyles.h4.copyWith(fontWeight: FontWeight.w800)),

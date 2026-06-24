@@ -28,15 +28,12 @@ class CompleteProfileScreen extends ConsumerStatefulWidget {
 }
 
 class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
-  final _formKey     = GlobalKey<FormState>();
-  final _nameCtrl    = TextEditingController();
-  final _emailCtrl   = TextEditingController();
-  final _phoneCtrl   = TextEditingController();
-  final _passCtrl    = TextEditingController();
-  final _confirmCtrl = TextEditingController();
-  bool _loading      = false;
-  bool _obscurePass  = true;
-  bool _obscureConf  = true;
+  final _formKey   = GlobalKey<FormState>();
+  final _nameCtrl  = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
+  bool    _loading = false;
+  String? _error;
 
   void _autoFillFromUser(UserModel user) {
     if (_nameCtrl.text.trim().isEmpty && user.name.trim().isNotEmpty) {
@@ -84,31 +81,28 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
 
   Future<void> _save() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
-    setState(() => _loading = true);
+    setState(() { _loading = true; _error = null; });
     try {
       final user = await ref.read(authRepositoryProvider).updateProfile(
-        name:     _nameCtrl.text.trim(),
-        email:    _emailCtrl.text.trim(),
-        phone:    _phoneCtrl.text.trim(),
-        password: _passCtrl.text,
+        name:  _nameCtrl.text.trim(),
+        email: _emailCtrl.text.trim(),
+        phone: _phoneCtrl.text.trim(),
       );
-      ref.read(currentUserProvider.notifier).state = user;
       if (!mounted) return;
+      ref.read(currentUserProvider.notifier).state = user;
       if (widget.asSheet) {
         Navigator.of(context).pop();
       } else {
         context.go(AppRoutes.home);
       }
     } catch (e) {
-      if (mounted) {
-        final msg = (e is AppException) ? e.message : e.toString();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(msg),
-            backgroundColor: AppColors.error,
-          ),
-        );
-      }
+      if (!mounted) return;
+      final msg = (e is AppException) ? e.message : 'Could not save profile. Please try again.';
+      setState(() => _error = msg);
+      // SnackBar as secondary signal for non-sheet mode (sheet hides it anyway)
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(msg), backgroundColor: AppColors.error),
+      );
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -119,8 +113,6 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
     _nameCtrl.dispose();
     _emailCtrl.dispose();
     _phoneCtrl.dispose();
-    _passCtrl.dispose();
-    _confirmCtrl.dispose();
     super.dispose();
   }
 
@@ -218,52 +210,26 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
               ),
               const SizedBox(height: 16),
 
-              AppTextField(
-                controller: _passCtrl,
-                label: AppStrings.password,
-                hint: 'Min. 6 characters',
-                obscureText: _obscurePass,
-                textInputAction: TextInputAction.next,
-                validator: Validators.password,
-                suffixIcon: IconButton(
-                  icon: Icon(
-                    _obscurePass
-                        ? Icons.visibility_off_rounded
-                        : Icons.visibility_rounded,
-                    size: 20,
-                    color: AppColors.textHint,
+              if (_error != null) ...[
+                const SizedBox(height: 16),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: AppColors.error.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppColors.error.withValues(alpha: 0.25)),
                   ),
-                  onPressed: () =>
-                      setState(() => _obscurePass = !_obscurePass),
+                  child: Text(
+                    _error!,
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.error,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
-              ),
+              ],
               const SizedBox(height: 16),
-
-              AppTextField(
-                controller: _confirmCtrl,
-                label: AppStrings.confirmPassword,
-                hint: 'Re-enter password',
-                obscureText: _obscureConf,
-                textInputAction: TextInputAction.done,
-                validator: (v) {
-                  if (v == null || v.isEmpty) return 'Required';
-                  if (v != _passCtrl.text) return 'Passwords do not match';
-                  return null;
-                },
-                suffixIcon: IconButton(
-                  icon: Icon(
-                    _obscureConf
-                        ? Icons.visibility_off_rounded
-                        : Icons.visibility_rounded,
-                    size: 20,
-                    color: AppColors.textHint,
-                  ),
-                  onPressed: () =>
-                      setState(() => _obscureConf = !_obscureConf),
-                ),
-                onSubmitted: (_) => _save(),
-              ),
-              const SizedBox(height: 32),
 
               AppButton(label: AppStrings.saveProfile, onPressed: _save),
               const SizedBox(height: 16),

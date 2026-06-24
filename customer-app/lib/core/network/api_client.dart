@@ -64,13 +64,22 @@ class ApiClient {
         options: Options(method: method),
       );
     } on DioException catch (e) {
+      print('DioException in request: ${e.message}');
+      print('  Status Code: ${e.response?.statusCode}');
+      print('  Response: ${e.response?.data}');
+      print('  Error: ${e.error}');
       final err = e.error;
       if (err is AppException) throw err;
       rethrow;
     }
 
     final body = response.data;
-    if (body == null) throw const ParseException('Empty server response.');
+    if (body == null) {
+      print('Empty response body for $path');
+      throw const ParseException('Empty server response.');
+    }
+
+    print('API Response for $path: $body');
 
     final codeRaw = body['code'];
     final code = switch (codeRaw) {
@@ -80,6 +89,7 @@ class ApiClient {
     };
     if (code != null && code >= 400) {
       final msg = body['message']?.toString().trim();
+      print('Error response: code=$code, message=$msg');
       throw ApiException(
         (msg == null || msg.isEmpty) ? 'Request failed.' : msg,
         statusCode: code,
@@ -99,7 +109,10 @@ class ApiClient {
   Future<T?> post<T>(String path, {
     dynamic body,
     T Function(dynamic)? fromJson,
-  }) => request(path: path, method: 'POST', data: body, fromJson: fromJson);
+  }) {
+    print('ApiClient.post called: path=$path, body=$body');
+    return request(path: path, method: 'POST', data: body, fromJson: fromJson);
+  }
 
   Future<T?> put<T>(String path, {
     dynamic body,

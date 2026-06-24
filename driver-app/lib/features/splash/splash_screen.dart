@@ -32,7 +32,24 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
 
     if (!mounted) return;
     final driver = ref.read(currentDriverProvider);
-    context.go(driver != null ? AppRoutes.home : AppRoutes.onboarding);
+    if (driver != null) {
+      context.go(AppRoutes.home);
+    } else {
+      final storage      = ref.read(secureStorageProvider);
+      final seenOnboarding = await storage.hasSeenOnboarding;
+      if (!mounted) return;
+      if (!seenOnboarding) {
+        // First ever launch — mark seen and show onboarding once.
+        await storage.setHasSeenOnboarding();
+        if (!mounted) return;
+        context.go(AppRoutes.onboarding);
+      } else {
+        // Device has seen onboarding — go to sign-in or register.
+        final returning = await storage.hasLoggedInBefore;
+        if (!mounted) return;
+        context.go(returning ? AppRoutes.signIn : AppRoutes.register);
+      }
+    }
   }
 
   @override

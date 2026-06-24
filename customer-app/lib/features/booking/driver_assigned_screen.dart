@@ -16,10 +16,12 @@ import '../../core/constants/app_text_styles.dart';
 import '../../core/config/router.dart';
 import '../../core/maps/google_maps_js_loader.dart';
 import '../../core/maps/maps_service.dart';
+import '../../core/utils/formatters.dart';
 import '../../data/models/booking_model.dart';
 import '../../shared/providers/providers.dart';
 import '../../shared/widgets/app_bottom_drawer.dart';
 import '../../shared/widgets/trip_quick_nav.dart';
+import 'search_destination_screen.dart';
 
 class DriverAssignedScreen extends ConsumerStatefulWidget {
   const DriverAssignedScreen({super.key, required this.bookingId});
@@ -67,7 +69,9 @@ class _DriverAssignedScreenState extends ConsumerState<DriverAssignedScreen> {
   Timer? _pollTimer;
   Timer? _waitingTimer;
   int    _waitingElapsedSecs = 0;
-  bool _cancelling = false;
+  bool _cancelling        = false;
+  bool _editingLocation   = false;
+  bool _initiatingPayment = false;
   final _noteCtrl = TextEditingController();
 
   // Driver position — updated by poll, animation handled inside _RoutedMapView
@@ -258,6 +262,104 @@ class _DriverAssignedScreenState extends ConsumerState<DriverAssignedScreen> {
     } catch (_) {}
   }
 
+  // ── Edit location ────────────────────────────────────────────────────────────
+
+  Future<void> _editLocation(bool isPickup) async {
+    if (_editingLocation) return;
+    final b = _booking;
+    if (b == null || b.status != BookingStatus.assigned) return;
+
+    final oldDraft = ref.read(bookingDraftProvider);
+    ref.read(bookingDraftProvider.notifier).state = oldDraft.copyWith(
+      pickupAddress:      b.pickupAddress,
+      pickupLat:          b.pickupLat,
+      pickupLng:          b.pickupLng,
+      destinationAddress: b.destinationAddress,
+      destinationLat:     b.destinationLat,
+      destinationLng:     b.destinationLng,
+    );
+
+    final result = await showAppBottomDrawer<SearchDestinationResult>(
+      context: context,
+      child: SearchDestinationScreen(
+        asSheet:              true,
+        focusPickupInitially: isPickup,
+        pickupOnly:           isPickup,
+      ),
+    );
+
+    if (!mounted) return;
+    final newDraft = ref.read(bookingDraftProvider);
+    ref.read(bookingDraftProvider.notifier).state = oldDraft;
+
+    if (result == null) return;
+
+    final newLat  = isPickup ? newDraft.pickupLat        : newDraft.destinationLat;
+    final newLng  = isPickup ? newDraft.pickupLng        : newDraft.destinationLng;
+    final newAddr = isPickup ? newDraft.pickupAddress    : newDraft.destinationAddress;
+    if (newLat == 0) return;
+
+    final label = isPickup ? 'pickup' : 'destination';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text('Change $label?',
+            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+        content: Text(
+          'New $label:\n$newAddr\n\nYour fare will be recalculated automatically.',
+          style: const TextStyle(fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: AppColors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20)),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Confirm'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _editingLocation = true);
+    try {
+      final res = await ref.read(bookingRepositoryProvider).updateBookingLocation(
+        b.id,
+        pickupLat:          isPickup ? newLat  : null,
+        pickupLng:          isPickup ? newLng  : null,
+        pickupAddress:      isPickup ? newAddr : null,
+        destinationLat:     isPickup ? null    : newLat,
+        destinationLng:     isPickup ? null    : newLng,
+        destinationAddress: isPickup ? null    : newAddr,
+      );
+      if (!mounted) return;
+      final newFare = (res['estimated_fare'] as num?)?.toDouble() ?? 0.0;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+            'Location updated. New fare: ${AppFormatters.naira(newFare)}'),
+        backgroundColor: AppColors.success,
+      ));
+      _load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(e.toString()),
+          backgroundColor: AppColors.error,
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _editingLocation = false);
+    }
+  }
+
   Future<void> _cancel() async {
     final b = _booking;
     final isArrived = b?.status == BookingStatus.arrived;
@@ -387,6 +489,41 @@ class _DriverAssignedScreenState extends ConsumerState<DriverAssignedScreen> {
     context.push(AppRoutes.driverChat, extra: widget.bookingId);
   }
 
+  Future<void> _initiateFlutterwavePayment() async {
+    if (_initiatingPayment) return;
+    setState(() => _initiatingPayment = true);
+    try {
+      final result = await ref
+          .read(bookingRepositoryProvider)
+          .initiatePayment(widget.bookingId);
+      final link = result['payment_link'] as String?;
+      if (link == null || link.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(result['link_error'] as String? ?? 'Payment link unavailable.'),
+          backgroundColor: AppColors.error,
+        ));
+        return;
+      }
+      if (!await launchUrl(Uri.parse(link), mode: LaunchMode.externalApplication)) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Could not open payment page.'),
+          backgroundColor: AppColors.error,
+        ));
+      }
+      // The 5s poll in _load() will detect paymentStatus → 'paid' and hide the banner.
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString()), backgroundColor: AppColors.error),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _initiatingPayment = false);
+    }
+  }
+
   @override
   void dispose() {
     _pollTimer?.cancel();
@@ -477,10 +614,13 @@ class _DriverAssignedScreenState extends ConsumerState<DriverAssignedScreen> {
                       cancelling:         _cancelling,
                       waitingElapsedSecs: _waitingElapsedSecs,
                       unreadMsgCount:     _unreadMsgCount,
-                      onCancel:   _cancel,
-                      onCall:     _showCallSheet,
-                      onChat:     _openChat,
-                      onNeedHelp: () => context.push(AppRoutes.help),
+                      initiatingPayment:  _initiatingPayment,
+                      onCancel:      _cancel,
+                      onCall:        _showCallSheet,
+                      onChat:        _openChat,
+                      onNeedHelp:    () => context.push(AppRoutes.help),
+                      onEditLocation: _editingLocation ? null : _editLocation,
+                      onPayNow:      _initiateFlutterwavePayment,
                     ),
                   ),
           ),
@@ -497,10 +637,13 @@ class _AssignedSheet extends StatelessWidget {
     required this.cancelling,
     required this.waitingElapsedSecs,
     required this.unreadMsgCount,
+    required this.initiatingPayment,
     required this.onCancel,
     required this.onCall,
     required this.onChat,
     required this.onNeedHelp,
+    required this.onPayNow,
+    this.onEditLocation,
   });
 
   final BookingModel booking;
@@ -508,12 +651,63 @@ class _AssignedSheet extends StatelessWidget {
   final bool cancelling;
   final int  waitingElapsedSecs;
   final int  unreadMsgCount;
+  final bool initiatingPayment;
   final VoidCallback onCancel;
   final VoidCallback onCall;
   final VoidCallback onChat;
   final VoidCallback onNeedHelp;
+  final VoidCallback onPayNow;
+  final void Function(bool isPickup)? onEditLocation;
 
   String _short(String addr) => addr.split(',').first.trim();
+
+  void _showEditSheet(BuildContext context) {
+    final bottom = MediaQuery.of(context).padding.bottom;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        padding: EdgeInsets.fromLTRB(20, 16, 20, bottom + 20),
+        decoration: const BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Center(
+              child: Container(
+                width: 40, height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: AppColors.divider,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.my_location_rounded, color: AppColors.primary),
+              title: Text('Change pickup', style: AppTextStyles.bodyMedium),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+              onTap: () {
+                Navigator.pop(context);
+                onEditLocation!(true);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.location_on_outlined, color: AppColors.primary),
+              title: Text('Change destination', style: AppTextStyles.bodyMedium),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+              onTap: () {
+                Navigator.pop(context);
+                onEditLocation!(false);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   int get _arrivingMins {
     // Prefer driver-to-pickup ETA (calculated server-side from driver's live location).
@@ -601,6 +795,56 @@ class _AssignedSheet extends StatelessWidget {
           if (isDelivery) ...[
             const SizedBox(height: 14),
             _DeliveryProgressBar(status: booking.status),
+          ],
+
+          // ── Flutterwave payment prompt (delivery, non-cash, unpaid) ──────
+          if (isDelivery &&
+              booking.paymentMethod == PaymentMethod.flutterwave &&
+              booking.paymentStatus != 'paid') ...[
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF8E6),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFE2A322).withValues(alpha: 0.35)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.credit_card_rounded, size: 22, color: Color(0xFFE2A322)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Payment required before driver can pick up your package.',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: const Color(0xFF7A5800),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  SizedBox(
+                    height: 36,
+                    child: ElevatedButton(
+                      onPressed: initiatingPayment ? null : onPayNow,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFE2A322),
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      child: initiatingPayment
+                          ? const SizedBox(
+                              width: 14, height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Text('PAY NOW', style: TextStyle(fontFamily: 'Inter', fontSize: 12, fontWeight: FontWeight.w700)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ],
 
           // ── Inline waiting-charge row (arrived only) ─────────────────
@@ -753,12 +997,21 @@ class _AssignedSheet extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('From ${_short(booking.pickupAddress)}', style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.w700)),
+                    Text('From ${_short(booking.pickupAddress)}',
+                        style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.w700)),
                     const SizedBox(height: 14),
-                    Text('To ${_short(booking.destinationAddress)}', style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.w700)),
+                    Text('To ${_short(booking.destinationAddress)}',
+                        style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.w700)),
                   ],
                 ),
               ),
+              if (onEditLocation != null && booking.status == BookingStatus.assigned)
+                IconButton(
+                  icon: const Icon(Icons.edit_location_alt_outlined,
+                      size: 22, color: AppColors.primary),
+                  tooltip: 'Edit location',
+                  onPressed: () => _showEditSheet(context),
+                ),
             ],
           ),
           const SizedBox(height: 14),

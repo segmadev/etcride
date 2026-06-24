@@ -6,6 +6,7 @@ import '../../../core/constants/app_text_styles.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/config/router.dart';
 import '../../../core/services/chat_notification_service.dart';
+import '../../../shared/widgets/live_chat_widget.dart';
 import '../../auth/complete_profile_screen.dart';
 import '../../booking/search_destination_screen.dart';
 import '../../../shared/providers/providers.dart';
@@ -141,6 +142,10 @@ class HomeDrawer extends ConsumerWidget {
                     Navigator.pop(context);
                     context.push(AppRoutes.contactSupport);
                   }),
+                  const SizedBox(height: 8),
+                  LiveChatButton(
+                    style: AppTextStyles.bodyMedium,
+                  ),
                 ],
               ),
             ),

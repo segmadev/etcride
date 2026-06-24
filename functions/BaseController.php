@@ -219,7 +219,10 @@ class BaseController extends helper
         }
     }
 
-    /** Send FCM push notification via Firebase HTTP v1 API */
+    /**
+     * Send FCM push via the HTTP v1 API (replaces deprecated Legacy API).
+     * Requires FCM_PROJECT_ID and FCM_SERVICE_ACCOUNT_PATH in .env.
+     */
     private function dispatchFCM(
         string  $role,
         string  $recipientId,
@@ -238,28 +241,128 @@ class BaseController extends helper
         $rec = $this->getall($table, 'id = ?', [$recipientId], 'fcm_token');
         if (!is_array($rec) || empty($rec['fcm_token'])) return;
 
-        $serverKey = $_ENV['FCM_SERVER_KEY'] ?? '';
-        if (empty($serverKey)) return;
+        $projectId = $_ENV['FCM_PROJECT_ID'] ?? '';
+        if (empty($projectId)) return;
+
+        $accessToken = $this->getFcmAccessToken();
+        if (!$accessToken) return;
 
         $payload = json_encode([
-            'to'           => $rec['fcm_token'],
-            'notification' => ['title' => $title, 'body' => $body],
-            'data'         => ['type' => $type, 'booking_id' => $bookingId],
+            'message' => [
+                'token'        => $rec['fcm_token'],
+                'notification' => ['title' => $title, 'body' => $body],
+                'data'         => [
+                    'type'       => $type,
+                    'booking_id' => $bookingId ?? '',
+                ],
+                'android' => [
+                    'priority'     => 'high',
+                    'notification' => ['channel_id' => 'etcride_main'],
+                ],
+                'apns' => [
+                    'headers' => ['apns-priority' => '10'],
+                    'payload' => ['aps' => ['sound' => 'default']],
+                ],
+            ],
         ]);
 
-        $ch = curl_init('https://fcm.googleapis.com/fcm/send');
+        $url = "https://fcm.googleapis.com/v1/projects/{$projectId}/messages:send";
+        $ch  = curl_init($url);
         curl_setopt_array($ch, [
             CURLOPT_POST           => true,
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_HTTPHEADER     => [
-                'Authorization: key=' . $serverKey,
+                'Authorization: Bearer ' . $accessToken,
                 'Content-Type: application/json',
             ],
-            CURLOPT_POSTFIELDS     => $payload,
-            CURLOPT_TIMEOUT        => 5,
+            CURLOPT_POSTFIELDS => $payload,
+            CURLOPT_TIMEOUT    => 5,
         ]);
-        curl_exec($ch);
+        $result = curl_exec($ch);
         curl_close($ch);
+
+        if ($result && str_contains((string) $result, '"error"')) {
+            error_log('[FCM] dispatch failed for ' . $role . '/' . $recipientId . ': ' . $result);
+        }
+    }
+
+    /**
+     * Get a valid OAuth2 access token for the FCM HTTP v1 API.
+     * Signs a JWT with the service account private key, exchanges it at
+     * Google's token endpoint, and caches the result for up to 55 minutes.
+     */
+    private function getFcmAccessToken(): ?string
+    {
+        $cacheFile = sys_get_temp_dir() . '/etcride_fcm_token.json';
+
+        // Return cached token if still valid (at least 60 s left)
+        if (file_exists($cacheFile)) {
+            $cached = json_decode((string) file_get_contents($cacheFile), true);
+            if (is_array($cached) && ($cached['expires'] ?? 0) > time() + 60) {
+                return $cached['token'];
+            }
+        }
+
+        $saPath = $_ENV['FCM_SERVICE_ACCOUNT_PATH'] ?? '';
+        if (empty($saPath) || !file_exists($saPath)) {
+            error_log('[FCM] Service account file not found: ' . $saPath);
+            return null;
+        }
+
+        $sa = json_decode((string) file_get_contents($saPath), true);
+        if (!is_array($sa) || empty($sa['private_key']) || empty($sa['client_email'])) {
+            error_log('[FCM] Invalid service account JSON.');
+            return null;
+        }
+
+        $now    = time();
+        $header = $this->b64url(json_encode(['alg' => 'RS256', 'typ' => 'JWT']));
+        $claims = $this->b64url(json_encode([
+            'iss'   => $sa['client_email'],
+            'scope' => 'https://www.googleapis.com/auth/firebase.messaging',
+            'aud'   => 'https://oauth2.googleapis.com/token',
+            'iat'   => $now,
+            'exp'   => $now + 3600,
+        ]));
+
+        $signingInput = "{$header}.{$claims}";
+        if (!openssl_sign($signingInput, $sig, $sa['private_key'], OPENSSL_ALGO_SHA256)) {
+            error_log('[FCM] Failed to sign JWT.');
+            return null;
+        }
+        $jwt = "{$signingInput}." . $this->b64url($sig);
+
+        $ch = curl_init('https://oauth2.googleapis.com/token');
+        curl_setopt_array($ch, [
+            CURLOPT_POST           => true,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POSTFIELDS     => http_build_query([
+                'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+                'assertion'  => $jwt,
+            ]),
+            CURLOPT_TIMEOUT => 10,
+        ]);
+        $response = (string) curl_exec($ch);
+        curl_close($ch);
+
+        $data  = json_decode($response, true);
+        $token = $data['access_token'] ?? null;
+        if (!$token) {
+            error_log('[FCM] Token exchange failed: ' . $response);
+            return null;
+        }
+
+        file_put_contents($cacheFile, json_encode([
+            'token'   => $token,
+            'expires' => $now + (int) ($data['expires_in'] ?? 3600),
+        ]));
+
+        return $token;
+    }
+
+    private function b64url(string $data): string
+    {
+        return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
     }
 
     // ── Activity log ──────────────────────────────────────────────────────────

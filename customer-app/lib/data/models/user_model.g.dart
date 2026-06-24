@@ -14,6 +14,7 @@ _$UserModelImpl _$$UserModelImplFromJson(Map<String, dynamic> json) =>
       email: json['email'] as String? ?? '',
       profilePhoto: json['profilePhoto'] as String? ?? '',
       isVerified: json['isVerified'] as bool? ?? false,
+      hasPassword: json['hasPassword'] as bool? ?? false,
       rating: (json['rating'] as num?)?.toDouble() ?? 0.0,
       createdAt: json['createdAt'] as String?,
     );
@@ -26,6 +27,7 @@ Map<String, dynamic> _$$UserModelImplToJson(_$UserModelImpl instance) =>
       'email': instance.email,
       'profilePhoto': instance.profilePhoto,
       'isVerified': instance.isVerified,
+      'hasPassword': instance.hasPassword,
       'rating': instance.rating,
       'createdAt': instance.createdAt,
     };

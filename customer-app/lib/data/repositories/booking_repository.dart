@@ -279,6 +279,32 @@ class BookingRepository {
         .toList();
   }
 
+  /// Update pickup / destination of a pending or assigned booking.
+  /// Returns a map with `estimated_fare`, `distance_km`, and the updated
+  /// address strings from the server.
+  Future<Map<String, dynamic>> updateBookingLocation(
+    String id, {
+    double? pickupLat,
+    double? pickupLng,
+    String? pickupAddress,
+    double? destinationLat,
+    double? destinationLng,
+    String? destinationAddress,
+  }) async {
+    final data = await _client.put<Map<String, dynamic>>(
+      ApiEndpoints.bookingLocation(id),
+      body: {
+        if (pickupLat != null) 'pickup_lat': pickupLat,
+        if (pickupLng != null) 'pickup_lng': pickupLng,
+        if (pickupAddress != null) 'pickup_address': pickupAddress,
+        if (destinationLat != null) 'destination_lat': destinationLat,
+        if (destinationLng != null) 'destination_lng': destinationLng,
+        if (destinationAddress != null) 'destination_address': destinationAddress,
+      },
+    );
+    return data ?? {};
+  }
+
   /// Fetch active vehicle types for the booking flow.
   Future<List<dynamic>> getVehicleTypes({String? bookingType}) async {
     final data = await _client.get<List<dynamic>>(

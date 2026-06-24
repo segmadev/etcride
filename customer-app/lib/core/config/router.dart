@@ -7,6 +7,7 @@ import '../../features/auth/phone_screen.dart';
 import '../../features/auth/otp_screen.dart';
 import '../../features/auth/login_screen.dart';
 import '../../features/auth/complete_profile_screen.dart';
+import '../../features/auth/set_password_screen.dart';
 import '../../features/location_permission/location_permission_screen.dart';
 import '../../features/home/home_screen.dart';
 import '../../features/booking/search_destination_screen.dart';
@@ -30,6 +31,7 @@ import '../../features/courier/delivery_rules_screen.dart';
 import '../../features/profile/profile_screen.dart';
 import '../../features/settings/settings_screen.dart';
 import '../../features/notifications/notifications_screen.dart';
+import '../../features/reports/reports_history_screen.dart';
 import '../../features/help/help_screen.dart';
 import '../../features/help/contact_support_screen.dart';
 import '../../features/help/report_issue_screen.dart';
@@ -66,6 +68,7 @@ abstract final class AppRoutes {
   static const String login              = '/login';
   static const String otp                = '/otp';          // extra: OtpExtra
   static const String completeProfile    = '/complete-profile';
+  static const String setPassword        = '/set-password';
   static const String locationPermission = '/location-permission';
 
   // ── Main ──────────────────────────────────────────────────────────────────
@@ -99,6 +102,7 @@ abstract final class AppRoutes {
   static const String profile            = '/profile';
   static const String settings           = '/settings';
   static const String notifications      = '/notifications';
+  static const String reportsHistory      = '/reports-history';
 
   // ── Help ──────────────────────────────────────────────────────────────────
   static const String help               = '/help';
@@ -136,9 +140,17 @@ final appRouter = GoRouter(
         final extra = state.extra as OtpExtra;
         return _appPage(
           state,
-          OtpScreen(contact: extra.contact, contactType: extra.contactType),
+          OtpScreen(
+            contact: extra.contact,
+            contactType: extra.contactType,
+            isRegistration: extra.isRegistration,
+          ),
         );
       },
+    ),
+    GoRoute(
+      path: AppRoutes.setPassword,
+      pageBuilder: (_, state) => _appPage(state, const SetPasswordScreen()),
     ),
     GoRoute(
       path: AppRoutes.completeProfile,
@@ -264,6 +276,10 @@ final appRouter = GoRouter(
     GoRoute(
       path: AppRoutes.notifications,
       pageBuilder: (_, state) => _appPage(state, const NotificationsScreen()),
+    ),
+    GoRoute(
+      path: AppRoutes.reportsHistory,
+      pageBuilder: (_, state) => _appPage(state, const ReportsHistoryScreen()),
     ),
 
     // ── Help ──────────────────────────────────────────────────────────────

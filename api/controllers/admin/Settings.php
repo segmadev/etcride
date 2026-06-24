@@ -71,6 +71,12 @@ class Settings extends BaseController
             'driver_auth_mode', 'driver_locations_json',
             // Delivery
             'delivery_rules',
+            // Contact verification
+            'phone_verification_enabled', 'email_verification_enabled',
+            // SMS provider
+            'sms_provider', 'sms_api_key', 'sms_sender_id',
+            // Email provider
+            'email_provider', 'termii_email_config_id',
         ];
 
         $updated = [];

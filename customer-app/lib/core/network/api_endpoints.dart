@@ -28,7 +28,11 @@ abstract final class ApiEndpoints {
   static String paymentMethod(String id)  => '/bookings/$id/payment-method';
   static String rateBooking(String id)    => '/bookings/$id/rate';
   static String findDriver(String id)     => '/bookings/$id/find-driver';
+  static String bookingLocation(String id)=> '/bookings/$id/location';
   static String bookingMessages(String id) => '/bookings/$id/messages';
+  static String reportTrip(String id)     => '/bookings/$id/report';
+  static String reportStatus(String id)   => '/bookings/$id/report-status';
+  static String requestCancellation(String id) => '/bookings/$id/request-cancellation';
   static const String chatThreads          = '/chats';
   static String markChatRead(String id)   => '/chats/$id/read';
 
@@ -38,8 +42,10 @@ abstract final class ApiEndpoints {
   static const String markAllNotifRead    = '/notifications/read-all';
 
   // ── OTP auth (new flow) ───────────────────────────────────────────────────
-  static const String sendOtp   = '/auth/send-otp';
-  static const String verifyOtp = '/auth/verify-otp';
+  static const String sendOtp          = '/auth/send-otp';
+  static const String verifyOtp        = '/auth/verify-otp';
+  static const String sendContactOtp   = '/auth/send-contact-otp';
+  static const String verifyContactOtp = '/auth/verify-contact-otp';
 
   // ── Content ───────────────────────────────────────────────────────────────
   static const String vehicleTypes         = '/content/vehicle-types';

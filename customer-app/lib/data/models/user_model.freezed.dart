@@ -26,6 +26,7 @@ mixin _$UserModel {
   String get email => throw _privateConstructorUsedError;
   String get profilePhoto => throw _privateConstructorUsedError;
   bool get isVerified => throw _privateConstructorUsedError;
+  bool get hasPassword => throw _privateConstructorUsedError;
   double get rating => throw _privateConstructorUsedError;
   String? get createdAt => throw _privateConstructorUsedError;
 
@@ -51,6 +52,7 @@ abstract class $UserModelCopyWith<$Res> {
       String email,
       String profilePhoto,
       bool isVerified,
+      bool hasPassword,
       double rating,
       String? createdAt});
 }
@@ -76,6 +78,7 @@ class _$UserModelCopyWithImpl<$Res, $Val extends UserModel>
     Object? email = null,
     Object? profilePhoto = null,
     Object? isVerified = null,
+    Object? hasPassword = null,
     Object? rating = null,
     Object? createdAt = freezed,
   }) {
@@ -104,6 +107,10 @@ class _$UserModelCopyWithImpl<$Res, $Val extends UserModel>
           ? _value.isVerified
           : isVerified // ignore: cast_nullable_to_non_nullable
               as bool,
+      hasPassword: null == hasPassword
+          ? _value.hasPassword
+          : hasPassword // ignore: cast_nullable_to_non_nullable
+              as bool,
       rating: null == rating
           ? _value.rating
           : rating // ignore: cast_nullable_to_non_nullable
@@ -131,6 +138,7 @@ abstract class _$$UserModelImplCopyWith<$Res>
       String email,
       String profilePhoto,
       bool isVerified,
+      bool hasPassword,
       double rating,
       String? createdAt});
 }
@@ -154,6 +162,7 @@ class __$$UserModelImplCopyWithImpl<$Res>
     Object? email = null,
     Object? profilePhoto = null,
     Object? isVerified = null,
+    Object? hasPassword = null,
     Object? rating = null,
     Object? createdAt = freezed,
   }) {
@@ -182,6 +191,10 @@ class __$$UserModelImplCopyWithImpl<$Res>
           ? _value.isVerified
           : isVerified // ignore: cast_nullable_to_non_nullable
               as bool,
+      hasPassword: null == hasPassword
+          ? _value.hasPassword
+          : hasPassword // ignore: cast_nullable_to_non_nullable
+              as bool,
       rating: null == rating
           ? _value.rating
           : rating // ignore: cast_nullable_to_non_nullable
@@ -204,6 +217,7 @@ class _$UserModelImpl implements _UserModel {
       this.email = '',
       this.profilePhoto = '',
       this.isVerified = false,
+      this.hasPassword = false,
       this.rating = 0.0,
       this.createdAt});
 
@@ -228,13 +242,16 @@ class _$UserModelImpl implements _UserModel {
   final bool isVerified;
   @override
   @JsonKey()
+  final bool hasPassword;
+  @override
+  @JsonKey()
   final double rating;
   @override
   final String? createdAt;
 
   @override
   String toString() {
-    return 'UserModel(id: $id, phone: $phone, name: $name, email: $email, profilePhoto: $profilePhoto, isVerified: $isVerified, rating: $rating, createdAt: $createdAt)';
+    return 'UserModel(id: $id, phone: $phone, name: $name, email: $email, profilePhoto: $profilePhoto, isVerified: $isVerified, hasPassword: $hasPassword, rating: $rating, createdAt: $createdAt)';
   }
 
   @override
@@ -250,6 +267,8 @@ class _$UserModelImpl implements _UserModel {
                 other.profilePhoto == profilePhoto) &&
             (identical(other.isVerified, isVerified) ||
                 other.isVerified == isVerified) &&
+            (identical(other.hasPassword, hasPassword) ||
+                other.hasPassword == hasPassword) &&
             (identical(other.rating, rating) || other.rating == rating) &&
             (identical(other.createdAt, createdAt) ||
                 other.createdAt == createdAt));
@@ -258,7 +277,7 @@ class _$UserModelImpl implements _UserModel {
   @JsonKey(includeFromJson: false, includeToJson: false)
   @override
   int get hashCode => Object.hash(runtimeType, id, phone, name, email,
-      profilePhoto, isVerified, rating, createdAt);
+      profilePhoto, isVerified, hasPassword, rating, createdAt);
 
   /// Create a copy of UserModel
   /// with the given fields replaced by the non-null parameter values.
@@ -284,6 +303,7 @@ abstract class _UserModel implements UserModel {
       final String email,
       final String profilePhoto,
       final bool isVerified,
+      final bool hasPassword,
       final double rating,
       final String? createdAt}) = _$UserModelImpl;
 
@@ -302,6 +322,8 @@ abstract class _UserModel implements UserModel {
   String get profilePhoto;
   @override
   bool get isVerified;
+  @override
+  bool get hasPassword;
   @override
   double get rating;
   @override

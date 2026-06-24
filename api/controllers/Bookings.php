@@ -919,6 +919,80 @@ class Bookings extends BaseController
         echo utilities::apiMessage('Booking cancelled.', 200);
     }
 
+    // ── PUT /bookings/:id/location ────────────────────────────────────────────
+    public function updateLocation(string $id): void
+    {
+        $me = BaseController::$authUser;
+        $booking = $this->getall('bookings', 'id = ? AND customer_id = ?', [$id, $me['id']]);
+        if (!$booking) { echo utilities::apiMessage('Booking not found.', 404); return; }
+
+        if (!in_array($booking['status'], ['pending', 'assigned'])) {
+            echo utilities::apiMessage('Location can only be changed before a driver starts the trip.', 409);
+            return;
+        }
+
+        $pickupLat   = isset($_POST['pickup_lat'])          ? (float)  $_POST['pickup_lat']          : null;
+        $pickupLng   = isset($_POST['pickup_lng'])          ? (float)  $_POST['pickup_lng']          : null;
+        $pickupAddr  = isset($_POST['pickup_address'])      ? trim((string) $_POST['pickup_address']) : null;
+        $destLat     = isset($_POST['destination_lat'])     ? (float)  $_POST['destination_lat']     : null;
+        $destLng     = isset($_POST['destination_lng'])     ? (float)  $_POST['destination_lng']     : null;
+        $destAddr    = isset($_POST['destination_address']) ? trim((string) $_POST['destination_address']) : null;
+
+        $newPickupLat  = $pickupLat  ?? (float) $booking['pickup_lat'];
+        $newPickupLng  = $pickupLng  ?? (float) $booking['pickup_lng'];
+        $newPickupAddr = $pickupAddr ?? (string) $booking['pickup_address'];
+        $newDestLat    = $destLat    ?? (float) $booking['destination_lat'];
+        $newDestLng    = $destLng    ?? (float) $booking['destination_lng'];
+        $newDestAddr   = $destAddr   ?? (string) $booking['destination_address'];
+
+        // Recompute distance
+        $distanceKm = round($this->haversine($newPickupLat, $newPickupLng, $newDestLat, $newDestLng), 2);
+
+        // Recompute fare
+        $vtId   = (string) $booking['vehicle_type_id'];
+        $zoneId = $this->getDefaultZoneId();
+        $bookingType = (string) ($booking['booking_type'] ?? 'ride');
+        $newFare = $this->calculateFare($vtId, $zoneId, $distanceKm, 0, null, $bookingType);
+
+        $update = [
+            'pickup_lat'          => $newPickupLat,
+            'pickup_lng'          => $newPickupLng,
+            'pickup_address'      => $newPickupAddr,
+            'destination_lat'     => $newDestLat,
+            'destination_lng'     => $newDestLng,
+            'destination_address' => $newDestAddr,
+            'distance_km'         => $distanceKm,
+            'estimated_fare'      => $newFare,
+        ];
+
+        // Recompute route polyline in background if route columns exist
+        if ($this->tableHasColumn('bookings', 'route_polyline')) {
+            $snap = $this->computeRouteSnapshot($newPickupLat, $newPickupLng, $newDestLat, $newDestLng, []);
+            if (is_array($snap)) {
+                $update['route_polyline'] = $snap['polyline'] ?? null;
+                if ($this->tableHasColumn('bookings', 'route_distance_meters'))
+                    $update['route_distance_meters'] = $snap['distance_meters'] ?? null;
+                if ($this->tableHasColumn('bookings', 'route_duration_seconds'))
+                    $update['route_duration_seconds'] = $snap['duration_seconds'] ?? null;
+                if (!empty($snap['distance_meters']))
+                    $distanceKm = round(((float) $snap['distance_meters']) / 1000, 2);
+                // Recompute fare with road distance
+                $newFare = $this->calculateFare($vtId, $zoneId, $distanceKm, 0, null, $bookingType);
+                $update['distance_km']    = $distanceKm;
+                $update['estimated_fare'] = $newFare;
+            }
+        }
+
+        $this->update('bookings', $update, "id = '$id'");
+
+        echo utilities::apiMessage('Location updated.', 200, [
+            'estimated_fare'      => $newFare,
+            'distance_km'         => $distanceKm,
+            'pickup_address'      => $newPickupAddr,
+            'destination_address' => $newDestAddr,
+        ]);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     /**

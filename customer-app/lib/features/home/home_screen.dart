@@ -11,6 +11,8 @@ import '../../core/constants/app_text_styles.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/config/router.dart';
 import '../../core/maps/google_maps_js_loader.dart';
+import '../../core/services/notification_service.dart';
+import '../../core/services/biometric_service.dart';
 import '../../shared/providers/providers.dart';
 import 'widgets/home_drawer.dart';
 import 'widgets/home_bottom_sheet.dart';
@@ -37,6 +39,49 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void initState() {
     super.initState();
     _locateUser();
+    _checkBiometricPrompt();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) NotificationService.instance.consumePending(context);
+    });
+  }
+
+  Future<void> _checkBiometricPrompt() async {
+    // Check if biometrics are available but not enabled
+    final available = await BiometricService.instance.isAvailable;
+    final enabled = await BiometricService.instance.isEnabled;
+
+    if (available && !enabled && mounted) {
+      // Show biometric enable prompt after a delay so UI is fully loaded
+      Future.delayed(const Duration(seconds: 2), () {
+        if (!mounted) return;
+        _showBiometricPrompt();
+      });
+    }
+  }
+
+  void _showBiometricPrompt() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Enable Biometric Sign-In'),
+        content: const Text(
+          'Use your fingerprint or face to quickly sign in to your account. It\'s secure and convenient.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Later'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              context.push('/settings');
+            },
+            child: const Text('Enable'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<Position?> _getPosition() async {

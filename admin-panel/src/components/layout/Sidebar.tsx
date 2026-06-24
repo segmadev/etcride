@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, BookOpen, Users, Car, Settings,
   BarChart2, MapPin, Map, Layers, LogOut, ChevronLeft,
-  ChevronRight, Truck, Mail, X, CreditCard,
+  ChevronRight, Truck, Mail, X, CreditCard, AlertCircle, MessageCircle,
 } from 'lucide-react';
 import { cn } from '../../utils';
 import { useAuthStore } from '../../store/authStore';
@@ -18,7 +18,9 @@ const navItems = [
   { to: '/zones',          icon: MapPin,          label: 'Zones' },
   { to: '/map',            icon: Map,             label: 'Map Settings' },
   { to: '/settings',       icon: Settings,        label: 'Settings' },
+  { to: '/live-chat',      icon: MessageCircle,   label: 'Live Chat' },
   { to: '/payments',        icon: CreditCard,      label: 'Payments' },
+  { to: '/trip-reports',   icon: AlertCircle,     label: 'Trip Reports' },
   { to: '/email-templates',icon: Mail,            label: 'Email Templates' },
   { to: '/reports',        icon: BarChart2,       label: 'Reports' },
 ];

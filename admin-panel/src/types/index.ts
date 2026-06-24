@@ -51,6 +51,18 @@ export interface BookingStatusHistory {
   note: string;
 }
 
+export interface TripReport {
+  id?: string | number;
+  report_id?: string | number;
+  report_reason?: string;
+  report_status?: string;
+  description?: string;
+  created_at?: string;
+  cancellation_id?: string | number;
+  cancellation_status?: string;
+  admin_notes?: string;
+}
+
 export interface Booking {
   id: string;
   booking_code?: string | null;
@@ -78,12 +90,19 @@ export interface Booking {
   driver_id?: string | null;
   driver_name?: string | null;
   driver_phone?: string | null;
+  // Trip report info
+  report_id?: string | number | null;
+  report_reason?: string | null;
+  report_status?: string | null;
+  cancellation_id?: string | number | null;
+  cancellation_status?: string | null;
   stops?: BookingStop[];
   status_history?: BookingStatusHistory[];
   // full detail (from show endpoint)
   customer?: { id: string; name: string; phone: string; email: string | null } | null;
   driver?: { id: string; name: string; phone: string; last_seen: string | null; vehicle_id: string | null } | null;
   payment?: { id: string; provider: string; amount: number; status: string; created_at: string } | null;
+  trip_report?: TripReport | null;
   history?: BookingStatusHistory[];
 }
 

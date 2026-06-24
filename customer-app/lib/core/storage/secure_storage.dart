@@ -33,8 +33,35 @@ class SecureStorage {
   Future<void> deleteUser() =>
       _storage.delete(key: AppConfig.userKey);
 
-  // ── Nuke everything (logout) ──────────────────────────────────────────────
-  Future<void> clearAll() => _storage.deleteAll();
+  // ── Device-level flags (survive logout) ──────────────────────────────────
+  Future<bool> get hasSeenOnboarding async =>
+      (await _storage.read(key: AppConfig.hasSeenOnboardingKey)) == 'true';
+
+  Future<void> setHasSeenOnboarding() =>
+      _storage.write(key: AppConfig.hasSeenOnboardingKey, value: 'true');
+
+  Future<bool> get hasLoggedInBefore async =>
+      (await _storage.read(key: AppConfig.hasLoggedInBeforeKey)) == 'true';
+
+  Future<void> setHasLoggedInBefore() =>
+      _storage.write(key: AppConfig.hasLoggedInBeforeKey, value: 'true');
+
+  Future<bool> get biometricsEnabled async =>
+      (await _storage.read(key: AppConfig.biometricsEnabledKey)) == 'true';
+
+  Future<void> setBiometricsEnabled({required bool enabled}) =>
+      _storage.write(
+        key: AppConfig.biometricsEnabledKey,
+        value: enabled ? 'true' : 'false',
+      );
+
+  // ── Logout — clears auth data but preserves device flags ─────────────────
+  Future<void> clearAll() async {
+    await Future.wait([
+      _storage.delete(key: AppConfig.tokenKey),
+      _storage.delete(key: AppConfig.userKey),
+    ]);
+  }
 
   Future<bool> get isLoggedIn async =>
       (await getToken()) != null;

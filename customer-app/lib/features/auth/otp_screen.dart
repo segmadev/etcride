@@ -18,10 +18,12 @@ class OtpScreen extends ConsumerStatefulWidget {
   const OtpScreen({
     super.key,
     required this.contact,
-    required this.contactType, // 'email' | 'phone'
+    required this.contactType,   // 'email' | 'phone'
+    this.isRegistration = false,
   });
   final String contact;
   final String contactType;
+  final bool   isRegistration;
 
   @override
   ConsumerState<OtpScreen> createState() => _OtpScreenState();
@@ -58,9 +60,15 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
         otp: otp,
       );
       ref.read(currentUserProvider.notifier).state = user;
+      await ref.read(secureStorageProvider).setHasLoggedInBefore();
       if (!mounted) return;
-      // If profile incomplete, go to home anyway (gate is at booking time)
-      context.go(AppRoutes.home);
+      // Route to set-password if the user has never set one (works for both
+      // new registrations and legacy accounts that pre-date the password step).
+      if (!user.hasPassword) {
+        context.go(AppRoutes.setPassword);
+      } else {
+        context.go(AppRoutes.home);
+      }
     } catch (e) {
       setState(() { _error = e.toString(); _loading = false; });
       _controller.clear();

@@ -25,6 +25,7 @@ import '../../data/models/driver_model.dart';
 import '../onboarding/location_permission_screen.dart';
 import '../../data/models/job_model.dart';
 import '../../core/services/chat_notification_service.dart';
+import '../../core/services/notification_service.dart';
 import '../../services/location_service.dart';
 import '../../shared/providers/providers.dart';
 import '../../shared/widgets/app_bottom_drawer.dart';
@@ -94,6 +95,9 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
         statusBarIconBrightness: Brightness.dark,
       ),
     );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) DriverNotificationService.instance.consumePending(context);
+    });
   }
 
   @override
@@ -1638,6 +1642,7 @@ class _HomeTabState extends ConsumerState<_HomeTab> {
         key: ValueKey('payment_${job.id}'),
         job: job,
         processing: _processingPayment,
+        onMenuTap: widget.onMenuTap,
         onConfirm: () async {
           setState(() => _processingPayment = true);
           await _doJobAction(
@@ -1659,6 +1664,7 @@ class _HomeTabState extends ConsumerState<_HomeTab> {
         ['accepted', 'arrived', 'picked_up', 'in_progress'].contains(job.status)) {
       return _TripFlowScreen(
         key: ValueKey('active_${job.id}'),
+        onMenuTap: widget.onMenuTap,
         map: _TripMapView(job: job),
         child: _ActiveTripView(
           job: job,
@@ -1856,37 +1862,36 @@ class _OfflineDashboardScroll extends ConsumerWidget {
 }
 
 class _TripFlowScreen extends StatelessWidget {
-  const _TripFlowScreen({super.key, required this.map, required this.child});
+  const _TripFlowScreen({
+    super.key,
+    required this.map,
+    required this.child,
+    required this.onMenuTap,
+  });
 
   final Widget map;
   final Widget child;
+  final VoidCallback onMenuTap;
 
   @override
   Widget build(BuildContext context) {
     return Stack(
       children: [
         Positioned.fill(child: map),
-        Positioned.fill(
-          child: IgnorePointer(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.white.withValues(alpha: 0.06),
-                    Colors.white.withValues(alpha: 0.02),
-                    Colors.black.withValues(alpha: 0.04),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
         // `child` (_ActiveTripView) owns its own CollapsibleMapSheet, so it
         // needs the full Stack height to size its drag range against — no
         // bottom padding here, otherwise a dead gap reappears below it.
         Positioned.fill(child: child),
+        // Floating hamburger menu button — top-left, over the map
+        Positioned(
+          top: 12,
+          left: 12,
+          child: _MapOverlayChip(
+            icon: Icons.menu_rounded,
+            label: 'Menu',
+            onTap: onMenuTap,
+          ),
+        ),
       ],
     );
   }
@@ -3331,6 +3336,11 @@ class _ActiveTripViewState extends State<_ActiveTripView> {
             ),
           ],
         ),
+        // ── Delivery + non-cash: show payment status while heading to pickup ──
+        if (widget.job.bookingType == 'delivery' && !widget.job.isCashPayment) ...[
+          const SizedBox(height: 16),
+          _DeliveryPaymentStatusBanner(paymentStatus: widget.job.paymentStatus ?? 'pending'),
+        ],
         _TripMoreDetails(job: widget.job),
         _TripPrimaryButton(
           label: 'START NAVIGATION',
@@ -4145,6 +4155,47 @@ class _TripPrimaryButton extends StatelessWidget {
   }
 }
 
+class _DeliveryPaymentStatusBanner extends StatelessWidget {
+  const _DeliveryPaymentStatusBanner({required this.paymentStatus});
+  final String paymentStatus;
+
+  @override
+  Widget build(BuildContext context) {
+    final isPaid = paymentStatus == 'paid';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: isPaid ? const Color(0xFFD9E9DA) : const Color(0xFFF1EBDD),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          isPaid
+              ? const Icon(Icons.check_circle_outline_rounded, color: Color(0xFF1E7E34), size: 22)
+              : const SizedBox(
+                  width: 20, height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: _kAmber),
+                ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Text(
+              isPaid
+                  ? 'Payment confirmed — you can now pick up the package when you arrive.'
+                  : 'Waiting for customer to pay before you can pick up the package.',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: isPaid ? const Color(0xFF1E7E34) : const Color(0xFF6A5500),
+                fontWeight: FontWeight.w600,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _TripNoticeBanner extends StatelessWidget {
   const _TripNoticeBanner({
     required this.icon,
@@ -4289,6 +4340,10 @@ class _TripMapViewState extends State<_TripMapView> {
   LatLng? _lastApproachFetch;
   static const double _kRefetchM = 120;
 
+  // En-route track (driver → destination, live-updating after pickup)
+  List<LatLng> _inProgressRoute = [];
+  LatLng? _lastInProgressFetch;
+
   // Custom person icon for pickup marker
   BitmapDescriptor? _personIcon;
   static BitmapDescriptor? _cachedPersonIcon;
@@ -4308,8 +4363,11 @@ class _TripMapViewState extends State<_TripMapView> {
     _buildRoute(widget.job);
     if (!kIsWeb) _startPosStream();
     _loadPersonIcon();
-    // Seed approach route from initial driver position
-    WidgetsBinding.instance.addPostFrameCallback((_) => _fetchApproachRoute());
+    // Seed approach / in-progress route from initial driver position
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _fetchApproachRoute();
+      _fetchInProgressRoute();
+    });
   }
 
   Future<void> _loadPersonIcon() async {
@@ -4393,7 +4451,6 @@ class _TripMapViewState extends State<_TripMapView> {
   @override
   void didUpdateWidget(_TripMapView old) {
     super.didUpdateWidget(old);
-    // Rebuild only when route-relevant fields change; status change alone is fine
     final changed =
         widget.job.id != old.job.id ||
         widget.job.routePolyline != old.job.routePolyline ||
@@ -4401,6 +4458,13 @@ class _TripMapViewState extends State<_TripMapView> {
         widget.job.destinationLat != old.job.destinationLat;
     if (changed) {
       _buildRoute(widget.job);
+    }
+    // Clear cached in-progress route when status changes so the first update
+    // after pickup always fetches a fresh driver→destination route immediately.
+    if (widget.job.status != old.job.status) {
+      _lastInProgressFetch = null;
+      _inProgressRoute = [];
+      _fetchInProgressRoute();
     }
   }
 
@@ -4437,6 +4501,7 @@ class _TripMapViewState extends State<_TripMapView> {
     }
     _animateTo(to);
     _fetchApproachRoute();
+    _fetchInProgressRoute();
   }
 
   Future<void> _fetchApproachRoute() async {
@@ -4460,6 +4525,23 @@ class _TripMapViewState extends State<_TripMapView> {
       '[Approach] got ${pts.length} points (${pts.length == 2 ? "straight line fallback" : "real route"})',
     );
     if (mounted) setState(() => _approachRoute = pts);
+  }
+
+  Future<void> _fetchInProgressRoute() async {
+    final j = widget.job;
+    final dPos = _driverPos;
+    final dLat = j.destinationLat, dLng = j.destinationLng;
+    final isEnRoute = j.status == 'picked_up' || j.status == 'in_progress';
+    if (!isEnRoute || dPos == null || dLat == null) return;
+
+    final last = _lastInProgressFetch;
+    if (last != null && _haversineM(last, dPos) < _kRefetchM) return;
+
+    _lastInProgressFetch = dPos;
+    final dest = LatLng(dLat, dLng!);
+    debugPrint('[InProgress] fetching route: $dPos → $dest');
+    final pts = await MapsService.getDirectionsRoute(dPos, dest);
+    if (mounted) setState(() => _inProgressRoute = pts);
   }
 
   static double _haversineM(LatLng a, LatLng b) {
@@ -4562,7 +4644,8 @@ class _TripMapViewState extends State<_TripMapView> {
     final markers = <Marker>{};
     final j = widget.job;
 
-    if (j.pickupLat != null) {
+    final isEnRoute = j.status == 'picked_up' || j.status == 'in_progress';
+    if (j.pickupLat != null && !isEnRoute) {
       markers.add(
         Marker(
           markerId: const MarkerId('pickup'),
@@ -4616,43 +4699,66 @@ class _TripMapViewState extends State<_TripMapView> {
   Set<Polyline> get _polylines {
     final lines = <Polyline>{};
     final j = widget.job;
-
-    // ── Full route (pickup → destination) ────────────────────────────────────
-    if (_routePts.length >= 2) {
-      lines.add(
-        Polyline(
-          polylineId: const PolylineId('route'),
-          points: _routePts,
-          color: _kAmber,
-          width: 5,
-          startCap: Cap.roundCap,
-          endCap: Cap.roundCap,
-        ),
-      );
-    }
-
-    // ── Approach line (driver current pos → pickup) ───────────────────────────
-    // Shown when driver accepted but hasn't started the trip yet (status:
-    // 'accepted' or 'arrived'). A dashed amber line so it's visually distinct.
     final dPos = _driverPos;
-    final pLat = j.pickupLat, pLng = j.pickupLng;
-    final isApproaching = j.status == 'accepted' || j.status == 'arrived';
-    if (dPos != null && pLat != null && pLng != null && isApproaching) {
-      final pickup = LatLng(pLat, pLng);
-      final approachPts = _approachRoute.isNotEmpty
-          ? _approachRoute
-          : [dPos, pickup];
-      lines.add(
-        Polyline(
-          polylineId: const PolylineId('approach'),
-          points: approachPts,
-          color: _kAmber.withValues(alpha: 0.75),
-          width: 4,
-          patterns: [PatternItem.dot, PatternItem.gap(8)],
-          startCap: Cap.roundCap,
-          endCap: Cap.roundCap,
-        ),
-      );
+    final isEnRoute = j.status == 'picked_up' || j.status == 'in_progress';
+
+    if (isEnRoute) {
+      // ── Live route: driver current pos → destination ──────────────────────
+      // Updates every _kRefetchM metres of movement.
+      final dLat = j.destinationLat, dLng = j.destinationLng;
+      if (dPos != null && dLat != null) {
+        final dest = LatLng(dLat, dLng!);
+        final pts = _inProgressRoute.isNotEmpty
+            ? _inProgressRoute
+            : [dPos, dest];
+        if (pts.length >= 2) {
+          lines.add(
+            Polyline(
+              polylineId: const PolylineId('route'),
+              points: pts,
+              color: _kAmber,
+              width: 5,
+              startCap: Cap.roundCap,
+              endCap: Cap.roundCap,
+            ),
+          );
+        }
+      }
+    } else {
+      // ── Static route (pickup → destination) ──────────────────────────────
+      if (_routePts.length >= 2) {
+        lines.add(
+          Polyline(
+            polylineId: const PolylineId('route'),
+            points: _routePts,
+            color: _kAmber,
+            width: 5,
+            startCap: Cap.roundCap,
+            endCap: Cap.roundCap,
+          ),
+        );
+      }
+
+      // ── Approach line (driver → pickup, dashed) ───────────────────────────
+      final pLat = j.pickupLat, pLng = j.pickupLng;
+      final isApproaching = j.status == 'accepted' || j.status == 'arrived';
+      if (dPos != null && pLat != null && pLng != null && isApproaching) {
+        final pickup = LatLng(pLat, pLng);
+        final approachPts = _approachRoute.isNotEmpty
+            ? _approachRoute
+            : [dPos, pickup];
+        lines.add(
+          Polyline(
+            polylineId: const PolylineId('approach'),
+            points: approachPts,
+            color: _kAmber.withValues(alpha: 0.75),
+            width: 4,
+            patterns: [PatternItem.dot, PatternItem.gap(8)],
+            startCap: Cap.roundCap,
+            endCap: Cap.roundCap,
+          ),
+        );
+      }
     }
 
     return lines;
@@ -4674,19 +4780,21 @@ class _TripMapViewState extends State<_TripMapView> {
 
   void _openInGoogleMaps() {
     final j = widget.job;
-    final pLat = j.pickupLat, pLng = j.pickupLng;
-    if (pLat == null) return;
+    final isEnRoute = j.status == 'picked_up' || j.status == 'in_progress';
+    final lat = isEnRoute ? j.destinationLat : j.pickupLat;
+    final lng = isEnRoute ? j.destinationLng : j.pickupLng;
+    if (lat == null) return;
     final dPos = _driverPos;
     final uri = dPos != null
         ? Uri.parse(
             'https://www.google.com/maps/dir/?api=1'
             '&origin=${dPos.latitude},${dPos.longitude}'
-            '&destination=$pLat,$pLng'
+            '&destination=$lat,$lng'
             '&travelmode=driving',
           )
         : Uri.parse(
             'https://www.google.com/maps/search/?api=1'
-            '&query=$pLat,$pLng',
+            '&query=$lat,$lng',
           );
     launchUrl(uri, mode: LaunchMode.externalApplication);
   }
@@ -4794,16 +4902,19 @@ class _PaymentView extends StatelessWidget {
     required this.job,
     required this.processing,
     required this.onConfirm,
+    required this.onMenuTap,
   });
   final JobModel job;
   final bool processing;
   final VoidCallback onConfirm;
+  final VoidCallback onMenuTap;
 
   @override
   Widget build(BuildContext context) {
     final method = (job.paymentMethod ?? 'Cash').trim();
 
     return _TripFlowScreen(
+      onMenuTap: onMenuTap,
       map: _TripMapView(job: job),
       child: CollapsibleMapSheet(
         backgroundColor: const Color(0xFFF4F4F4),

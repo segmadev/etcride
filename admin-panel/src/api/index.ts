@@ -12,3 +12,9 @@ export { mapSettingsApi } from './mapSettings';
 export { emailTemplatesApi } from './emailTemplates';
 export { paymentsApi } from './payments';
 export type { Payment, PaymentsFilter } from './payments';
+export { smtpConfigsApi } from './smtpConfigs';
+export type { SmtpConfig, SmtpConfigPayload } from './smtpConfigs';
+
+// Trip Reports API
+export { tripReportsApi } from './tripReports';
+export type { TripReport, TripReportDetail } from './tripReports';

@@ -250,11 +250,7 @@ class Auth extends BaseController
 
         $appName = $this->setting('app_name', 'ETCRide');
         if ($isEmail) {
-            $this->mailer->smtpmailer(
-                $contact,
-                "Your $appName driver code",
-                "Hi,\n\nYour one-time code is: $otp\n\nThis code expires in 10 minutes.\n\n— $appName Team"
-            );
+            $this->mailer->sendOtpEmail($contact, $otp, $appName);
         } else {
             require_once ROOT . 'functions/sms.php';
             Sms::send($contact, "Your $appName driver code is: $otp. Valid for 10 mins.");
@@ -394,6 +390,15 @@ class Auth extends BaseController
                     return;
                 }
 
+                // OTP verification gate for email change
+                if ($this->setting('email_verification_enabled', '0') === '1' && $email !== ($me['email'] ?? '')) {
+                    $emailToken = trim($this->str('email_token'));
+                    if (!$this->consumeContactToken('change_email:' . $email, $emailToken)) {
+                        echo utilities::apiMessage('Please verify your new email address with an OTP first.', 403);
+                        return;
+                    }
+                }
+
                 $fields['email'] = $email;
             }
         }
@@ -413,5 +418,113 @@ class Auth extends BaseController
         }
 
         echo utilities::apiMessage('Profile updated.', 200, $this->driverPayload($driver));
+    }
+
+    // ── POST /driver/auth/send-contact-otp ───────────────────────────────────
+    // Authenticated — sends OTP to a new email the driver wants to set.
+    public function sendContactOtp(): void
+    {
+        $err = $this->requireFields(['contact', 'type']);
+        if ($err) { echo $err; return; }
+
+        $contact = trim($this->str('contact'));
+        $type    = trim($this->str('type')); // 'email' (phone locked for drivers)
+
+        if ($type !== 'email') {
+            echo utilities::apiMessage('Only email verification is supported for driver profiles.', 422);
+            return;
+        }
+        if (!filter_var($contact, FILTER_VALIDATE_EMAIL)) {
+            echo utilities::apiMessage('Enter a valid email address.', 422);
+            return;
+        }
+
+        $contactKey = 'change_email:' . $contact;
+        $otp     = str_pad((string) mt_rand(0, 999999), 6, '0', STR_PAD_LEFT);
+        $hash    = password_hash($otp, PASSWORD_DEFAULT);
+        $expires = date('Y-m-d H:i:s', time() + 600);
+
+        $this->delete('otp_requests', 'contact = ? AND used = 0', [$contactKey]);
+        $this->quick_insert('otp_requests', [
+            'id'           => utilities::genID('OTP_', 10),
+            'contact'      => $contactKey,
+            'contact_type' => 'email',
+            'otp_hash'     => $hash,
+            'expires_at'   => $expires,
+            'used'         => 0,
+        ]);
+
+        $appName = $this->setting('app_name', 'ETCRide');
+        $this->mailer->sendOtpEmail($contact, $otp, $appName);
+
+        $devMode = defined('APP_ENV') ? (APP_ENV !== 'production') : (strtolower((string) ($_ENV['APP_ENV'] ?? 'development')) !== 'production');
+        $extra   = $devMode ? ['_dev_otp' => $otp] : [];
+
+        echo utilities::apiMessage('OTP sent successfully.', 200, array_merge(['contact' => $contact, 'type' => 'email'], $extra));
+    }
+
+    // ── POST /driver/auth/verify-contact-otp ─────────────────────────────────
+    // Authenticated — verifies OTP for contact change; returns a verification_token.
+    public function verifyContactOtp(): void
+    {
+        $err = $this->requireFields(['contact', 'type', 'otp']);
+        if ($err) { echo $err; return; }
+
+        $contact = trim($this->str('contact'));
+        $type    = trim($this->str('type'));
+        $otp     = trim($this->str('otp'));
+
+        $devMode    = defined('APP_ENV') ? (APP_ENV !== 'production') : (strtolower((string) ($_ENV['APP_ENV'] ?? 'development')) !== 'production');
+        $contactKey = 'change_email:' . $contact;
+        $bypass     = $devMode && $otp === '123456';
+
+        if (!$bypass) {
+            $stmt = $this->db->prepare(
+                "SELECT * FROM otp_requests
+                 WHERE contact = ? AND used = 0 AND expires_at > NOW()
+                 ORDER BY created_at DESC LIMIT 1"
+            );
+            $stmt->execute([$contactKey]);
+            $otpRow = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$otpRow || !password_verify($otp, $otpRow['otp_hash'])) {
+                echo utilities::apiMessage('Invalid or expired code.', 400);
+                return;
+            }
+
+            $token = bin2hex(random_bytes(32));
+            $this->update('otp_requests', ['used' => 1, 'verification_token' => $token], "id = '{$otpRow['id']}'");
+        } else {
+            $token = 'dev_bypass_' . bin2hex(random_bytes(8));
+            $this->delete('otp_requests', 'contact = ?', [$contactKey]);
+            $this->quick_insert('otp_requests', [
+                'id'                 => utilities::genID('OTP_', 10),
+                'contact'            => $contactKey,
+                'contact_type'       => $type,
+                'otp_hash'           => password_hash('used', PASSWORD_DEFAULT),
+                'expires_at'         => date('Y-m-d H:i:s', time() + 600),
+                'used'               => 1,
+                'verification_token' => $token,
+            ]);
+        }
+
+        echo utilities::apiMessage('Contact verified.', 200, ['verification_token' => $token]);
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private function consumeContactToken(string $contactKey, string $token): bool
+    {
+        if ($token === '') return false;
+        $stmt = $this->db->prepare(
+            "SELECT id FROM otp_requests
+             WHERE contact = ? AND verification_token = ? AND used = 1 AND expires_at > NOW()
+             LIMIT 1"
+        );
+        $stmt->execute([$contactKey, $token]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row) return false;
+        $this->delete('otp_requests', 'id = ?', [$row['id']]);
+        return true;
     }
 }

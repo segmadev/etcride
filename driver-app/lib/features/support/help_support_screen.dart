@@ -5,6 +5,7 @@ import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../shared/providers/providers.dart';
 import '../../shared/widgets/app_back_button.dart';
+import '../../shared/widgets/live_chat_widget.dart';
 
 class HelpSupportScreen extends ConsumerWidget {
   const HelpSupportScreen({super.key});
@@ -60,6 +61,10 @@ class HelpSupportScreen extends ConsumerWidget {
                         label: 'Email Support',
                         value: (email?.isNotEmpty ?? false) ? email! : 'Not available',
                         onTap: (email?.isNotEmpty ?? false) ? () => _email(email) : null,
+                      ),
+                      const SizedBox(height: 12),
+                      LiveChatButton(
+                        style: AppTextStyles.bodyMedium,
                       ),
                     ],
                   );

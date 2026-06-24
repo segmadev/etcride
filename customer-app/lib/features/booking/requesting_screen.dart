@@ -14,6 +14,8 @@ import '../../core/utils/formatters.dart';
 import '../../data/models/booking_model.dart';
 import '../../shared/providers/providers.dart';
 import '../../shared/widgets/trip_quick_nav.dart';
+import '../../shared/widgets/app_bottom_drawer.dart';
+import 'search_destination_screen.dart';
 
 class RequestingScreen extends ConsumerStatefulWidget {
   const RequestingScreen({super.key, required this.bookingId});
@@ -31,6 +33,7 @@ class _RequestingScreenState extends ConsumerState<RequestingScreen> {
 
   BookingModel? _booking;
   bool _cancelling      = false;
+  bool _editingLocation = false;
   bool _showFindAnother = false;   // becomes true after 1 min in 'assigned' state
   bool _findingAnother  = false;
   bool _showRetry       = false;   // becomes true after 3 min with no driver found
@@ -195,33 +198,12 @@ class _RequestingScreenState extends ConsumerState<RequestingScreen> {
     setState(() { _retrying = true; _showRetry = false; });
     try {
       _stop();
-      // Cancel the stuck booking silently
-      try {
-        await ref.read(bookingRepositoryProvider)
-            .cancelBooking(widget.bookingId, reason: 'Customer retried');
-      } catch (_) {}
-
-      // Re-create from draft
-      final draft = ref.read(bookingDraftProvider);
-      final isDelivery = draft.bookingType == 'delivery';
-      final booking = await ref.read(bookingRepositoryProvider).createBooking(
-        vehicleTypeId:      draft.vehicleTypeId,
-        bookingType:        isDelivery ? 'delivery' : 'ride',
-        pickupAddress:      draft.pickupAddress,
-        pickupLat:          draft.pickupLat,
-        pickupLng:          draft.pickupLng,
-        destinationAddress: draft.destinationAddress,
-        destinationLat:     draft.destinationLat,
-        destinationLng:     draft.destinationLng,
-        distanceKm:         draft.distanceKm > 0 ? draft.distanceKm : null,
-        senderPhone:        isDelivery ? draft.senderPhone : null,
-        recipientPhone:     isDelivery ? draft.recipientPhone : null,
-        packageDescription: isDelivery ? draft.packageDescription : null,
-      );
+      // Re-trigger driver search on the same booking (avoids 422 from empty draft)
+      await ref.read(bookingRepositoryProvider).findAnotherDriver(widget.bookingId);
       if (!mounted) return;
-      ref.invalidate(activeBookingProvider('ride'));
-      ref.invalidate(activeBookingProvider('delivery'));
-      context.go(AppRoutes.requesting, extra: booking.id);
+      setState(() => _retrying = false);
+      _pollTimer = Timer.periodic(const Duration(seconds: 8), (_) => _poll());
+      _startRetryTimer();
     } catch (e) {
       if (mounted) {
         setState(() => _retrying = false);
@@ -415,6 +397,103 @@ class _RequestingScreenState extends ConsumerState<RequestingScreen> {
     }
   }
 
+  // ── Edit location ────────────────────────────────────────────────────────────
+
+  Future<void> _editLocation(bool isPickup) async {
+    if (_editingLocation) return;
+    final b = _booking;
+    if (b == null) return;
+
+    // Temporarily seed draft with booking's current locations so the search
+    // screen shows the right existing addresses.
+    final oldDraft = ref.read(bookingDraftProvider);
+    ref.read(bookingDraftProvider.notifier).state = oldDraft.copyWith(
+      pickupAddress:      b.pickupAddress,
+      pickupLat:          b.pickupLat,
+      pickupLng:          b.pickupLng,
+      destinationAddress: b.destinationAddress,
+      destinationLat:     b.destinationLat,
+      destinationLng:     b.destinationLng,
+    );
+
+    final result = await showAppBottomDrawer<SearchDestinationResult>(
+      context: context,
+      child: SearchDestinationScreen(
+        asSheet:              true,
+        focusPickupInitially: isPickup,
+        pickupOnly:           isPickup,
+      ),
+    );
+
+    if (!mounted) return;
+    final newDraft = ref.read(bookingDraftProvider);
+    // Always restore — edit state lives in the booking, not the draft.
+    ref.read(bookingDraftProvider.notifier).state = oldDraft;
+
+    if (result == null) return;
+
+    final newLat  = isPickup ? newDraft.pickupLat        : newDraft.destinationLat;
+    final newLng  = isPickup ? newDraft.pickupLng        : newDraft.destinationLng;
+    final newAddr = isPickup ? newDraft.pickupAddress    : newDraft.destinationAddress;
+    if (newLat == 0) return;
+
+    final label = isPickup ? 'pickup' : 'destination';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text('Change $label?', style: AppTextStyles.h4.copyWith(fontSize: 17)),
+        content: Text(
+          'New $label:\n$newAddr\n\nYour fare will be recalculated automatically.',
+          style: AppTextStyles.bodySmall,
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: AppColors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Confirm'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _editingLocation = true);
+    try {
+      final result = await ref.read(bookingRepositoryProvider).updateBookingLocation(
+        b.id,
+        pickupLat:          isPickup ? newLat  : null,
+        pickupLng:          isPickup ? newLng  : null,
+        pickupAddress:      isPickup ? newAddr : null,
+        destinationLat:     isPickup ? null    : newLat,
+        destinationLng:     isPickup ? null    : newLng,
+        destinationAddress: isPickup ? null    : newAddr,
+      );
+      if (!mounted) return;
+      final newFare = (result['estimated_fare'] as num?)?.toDouble() ?? 0.0;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Location updated. New fare: ${AppFormatters.naira(newFare)}'),
+        backgroundColor: AppColors.success,
+      ));
+      // Force a fresh poll to reflect the updated booking.
+      _loadBooking();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(e.toString()),
+          backgroundColor: AppColors.error,
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _editingLocation = false);
+    }
+  }
+
   void _stop() {
     _pollTimer?.cancel();
     _assignedTimer?.cancel();
@@ -519,6 +598,7 @@ class _RequestingScreenState extends ConsumerState<RequestingScreen> {
               onCancel:           _cancel,
               onFindAnother:      _findAnotherDriver,
               onRetry:            _retry,
+              onEditLocation:     _editingLocation ? null : _editLocation,
             ),
           ),
         ],
@@ -597,17 +677,24 @@ class _StableMapViewState extends State<_StableMapView> {
     return _buildMap();
   }
 
-  Widget _buildMap() => GoogleMap(
-        initialCameraPosition:
-            CameraPosition(target: widget.initialPos, zoom: 14),
-        markers:                 _markers,
-        polylines:               _polylines,
-        myLocationEnabled:       false,
-        myLocationButtonEnabled: false,
-        zoomControlsEnabled:     false,
-        mapToolbarEnabled:       false,
-        onMapCreated:            widget.onMapCreated,
-      );
+  Widget _buildMap() {
+    // Shift camera north so pickup appears near the bottom of the viewport
+    final target = LatLng(
+      widget.initialPos.latitude + 0.003,
+      widget.initialPos.longitude,
+    );
+    return GoogleMap(
+      initialCameraPosition: CameraPosition(target: target, zoom: 14),
+      markers:                 _markers,
+      polylines:               _polylines,
+      myLocationEnabled:       false,
+      myLocationButtonEnabled: false,
+      zoomControlsEnabled:     false,
+      mapToolbarEnabled:       false,
+      rotateGesturesEnabled:   true,
+      onMapCreated:            widget.onMapCreated,
+    );
+  }
 }
 
 class _MapPlaceholder extends StatelessWidget {
@@ -646,6 +733,7 @@ class _InfoSheet extends StatelessWidget {
     required this.alternativeTypes,
     this.status,
     this.lastEvent,
+    this.onEditLocation,
   });
 
   final String         pickupAddress;
@@ -667,14 +755,8 @@ class _InfoSheet extends StatelessWidget {
   final VoidCallback   onCancel;
   final VoidCallback   onFindAnother;
   final VoidCallback   onRetry;
+  final void Function(bool isPickup)? onEditLocation;
 
-  String get _scheduledTime {
-    final now = TimeOfDay.now();
-    final h   = now.hourOfPeriod == 0 ? 12 : now.hourOfPeriod;
-    final m   = now.minute.toString().padLeft(2, '0');
-    final p   = now.period == DayPeriod.am ? 'AM' : 'PM';
-    return '$h:$m$p';
-  }
 
   String _short(String addr) {
     if (addr.isEmpty) return '';
@@ -683,6 +765,55 @@ class _InfoSheet extends StatelessWidget {
 
   bool get _isAssigned => status == BookingStatus.assigned;
   bool get _isDeclined => lastEvent == 'driver_declined' && status == BookingStatus.pending;
+  bool get _canEdit =>
+      onEditLocation != null &&
+      (status == BookingStatus.pending || status == BookingStatus.assigned);
+
+  void _showEditSheet(BuildContext context) {
+    final bottom = MediaQuery.of(context).padding.bottom;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        padding: EdgeInsets.fromLTRB(20, 16, 20, bottom + 20),
+        decoration: const BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Center(
+              child: Container(
+                width: 40, height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: AppColors.divider,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            _EditSheetTile(
+              icon: Icons.my_location_rounded,
+              label: 'Change pickup',
+              onTap: () {
+                Navigator.pop(context);
+                onEditLocation!(true);
+              },
+            ),
+            _EditSheetTile(
+              icon: Icons.location_on_outlined,
+              label: 'Change destination',
+              onTap: () {
+                Navigator.pop(context);
+                onEditLocation!(false);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -810,24 +941,36 @@ class _InfoSheet extends StatelessWidget {
           const SizedBox(height: 16),
           const Divider(height: 1),
           const SizedBox(height: 14),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              'To ${_short(destAddress)}',
-              style: AppTextStyles.bodyLarge.copyWith(fontWeight: FontWeight.w700),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              'at $_scheduledTime from ${_short(pickupAddress)}',
-              style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'To ${_short(destAddress)}',
+                      style: AppTextStyles.bodyLarge.copyWith(fontWeight: FontWeight.w700),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'from ${_short(pickupAddress)}',
+                      style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              if (_canEdit)
+                IconButton(
+                  icon: const Icon(Icons.edit_location_alt_outlined,
+                      size: 22, color: AppColors.primary),
+                  tooltip: 'Edit trip details',
+                  onPressed: () => _showEditSheet(context),
+                ),
+            ],
           ),
           const SizedBox(height: 14),
           const Divider(height: 1),
@@ -930,6 +1073,30 @@ class _InfoSheet extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ── Tile used inside the location / car-type edit bottom drawer ───────────────
+
+class _EditSheetTile extends StatelessWidget {
+  const _EditSheetTile({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData     icon;
+  final String       label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: Icon(icon, color: AppColors.primary),
+      title: Text(label, style: AppTextStyles.bodyMedium),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+      onTap: onTap,
     );
   }
 }

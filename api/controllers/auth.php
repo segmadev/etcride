@@ -296,20 +296,39 @@ class auth extends BaseController
         }
 
         if ($email !== '') {
-            // Check uniqueness (exclude self)
             $existing = $this->getall('users', 'email = ? AND id != ?', [$email, $me['id']]);
             if (is_array($existing)) {
                 echo utilities::apiMessage('Email address is already in use.', 409);
                 return;
             }
+            // OTP verification gate for email change
+            if ($this->setting('email_verification_enabled', '0') === '1' && $email !== ($me['email'] ?? '')) {
+                $emailToken = trim($this->str('email_token'));
+                if (!$this->consumeContactToken('change_email:' . $email, $emailToken)) {
+                    echo utilities::apiMessage('Please verify your new email address with an OTP first.', 403);
+                    return;
+                }
+            }
             $update['email'] = $email;
         }
 
         if ($phone !== '') {
+            if (!$this->isNigeriaPhone($phone)) {
+                echo utilities::apiMessage('Only Nigerian phone numbers are supported (+234 / 07x / 08x / 09x).', 422);
+                return;
+            }
             $existing = $this->getall('users', 'phone = ? AND id != ?', [$phone, $me['id']]);
             if (is_array($existing)) {
                 echo utilities::apiMessage('Phone number is already in use.', 409);
                 return;
+            }
+            // OTP verification gate for phone change
+            if ($this->setting('phone_verification_enabled', '0') === '1' && $phone !== ($me['phone'] ?? '')) {
+                $phoneToken = trim($this->str('phone_token'));
+                if (!$this->consumeContactToken('change_phone:' . $phone, $phoneToken)) {
+                    echo utilities::apiMessage('Please verify your new phone number with an OTP first.', 403);
+                    return;
+                }
             }
             $update['phone'] = $phone;
         }
@@ -340,6 +359,139 @@ class auth extends BaseController
         $this->logActivity('customer', $me['id'], 'profile_updated');
 
         echo utilities::apiMessage('Profile updated successfully.', 200, $user);
+    }
+
+    // ── POST /auth/send-contact-otp ───────────────────────────────────────────
+    // Authenticated — sends OTP to a NEW phone/email the user wants to set.
+    public function sendContactOtp(): void
+    {
+        $err = $this->requireFields(['contact', 'type']);
+        if ($err) { echo $err; return; }
+
+        $contact = trim($this->str('contact'));
+        $type    = trim($this->str('type')); // 'phone' or 'email'
+
+        if (!in_array($type, ['phone', 'email'], true)) {
+            echo utilities::apiMessage('type must be phone or email.', 422);
+            return;
+        }
+
+        if ($type === 'phone' && !$this->isNigeriaPhone($contact)) {
+            echo utilities::apiMessage('Only Nigerian phone numbers are supported (+234 / 07x / 08x / 09x).', 422);
+            return;
+        }
+        if ($type === 'email' && !filter_var($contact, FILTER_VALIDATE_EMAIL)) {
+            echo utilities::apiMessage('Enter a valid email address.', 422);
+            return;
+        }
+
+        // Prefix distinguishes contact-change OTPs from login OTPs
+        $contactKey = ($type === 'phone' ? 'change_phone:' : 'change_email:') . $contact;
+
+        $otp     = str_pad((string) mt_rand(0, 999999), 6, '0', STR_PAD_LEFT);
+        $hash    = password_hash($otp, PASSWORD_DEFAULT);
+        $expires = date('Y-m-d H:i:s', time() + 600); // 10 minutes
+
+        $this->delete('otp_requests', 'contact = ? AND used = 0', [$contactKey]);
+        $this->quick_insert('otp_requests', [
+            'id'           => utilities::genID('OTP_', 10),
+            'contact'      => $contactKey,
+            'contact_type' => $type,
+            'otp_hash'     => $hash,
+            'expires_at'   => $expires,
+            'used'         => 0,
+        ]);
+
+        $appName = $this->setting('app_name', 'ETCRide');
+        if ($type === 'email') {
+            $this->mailer->sendOtpEmail($contact, $otp, $appName);
+        } else {
+            require_once ROOT . 'functions/sms.php';
+            Sms::send($contact, "Your $appName code: $otp. Valid 10 mins.");
+        }
+
+        $devMode = defined('APP_ENV') ? (APP_ENV !== 'production') : (strtolower((string) ($_ENV['APP_ENV'] ?? 'development')) !== 'production');
+        $extra   = $devMode ? ['_dev_otp' => $otp] : [];
+
+        echo utilities::apiMessage('OTP sent successfully.', 200, array_merge(['contact' => $contact, 'type' => $type], $extra));
+    }
+
+    // ── POST /auth/verify-contact-otp ─────────────────────────────────────────
+    // Authenticated — verifies OTP for contact change; returns a verification_token.
+    public function verifyContactOtp(): void
+    {
+        $err = $this->requireFields(['contact', 'type', 'otp']);
+        if ($err) { echo $err; return; }
+
+        $contact = trim($this->str('contact'));
+        $type    = trim($this->str('type'));
+        $otp     = trim($this->str('otp'));
+
+        $devMode    = defined('APP_ENV') ? (APP_ENV !== 'production') : (strtolower((string) ($_ENV['APP_ENV'] ?? 'development')) !== 'production');
+        $contactKey = ($type === 'phone' ? 'change_phone:' : 'change_email:') . $contact;
+        $bypass     = $devMode && $otp === '123456';
+
+        if (!$bypass) {
+            $stmt = $this->db->prepare(
+                "SELECT * FROM otp_requests
+                 WHERE contact = ? AND used = 0 AND expires_at > NOW()
+                 ORDER BY created_at DESC LIMIT 1"
+            );
+            $stmt->execute([$contactKey]);
+            $otpRow = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$otpRow || !password_verify($otp, $otpRow['otp_hash'])) {
+                echo utilities::apiMessage('Invalid or expired code.', 400);
+                return;
+            }
+
+            // Mark used and store verification token
+            $token = bin2hex(random_bytes(32));
+            $this->update('otp_requests', ['used' => 1, 'verification_token' => $token], "id = '{$otpRow['id']}'");
+        } else {
+            $token = 'dev_bypass_' . bin2hex(random_bytes(8));
+            // Store a dev-mode row so the profile update check passes
+            $this->delete('otp_requests', 'contact = ?', [$contactKey]);
+            $this->quick_insert('otp_requests', [
+                'id'                 => utilities::genID('OTP_', 10),
+                'contact'            => $contactKey,
+                'contact_type'       => $type,
+                'otp_hash'           => password_hash('used', PASSWORD_DEFAULT),
+                'expires_at'         => date('Y-m-d H:i:s', time() + 600),
+                'used'               => 1,
+                'verification_token' => $token,
+            ]);
+        }
+
+        echo utilities::apiMessage('Contact verified.', 200, ['verification_token' => $token]);
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /** Validates Nigerian phone numbers: +234xxxxxxxxxx, 07x, 08x, 09x */
+    private function isNigeriaPhone(string $phone): bool
+    {
+        return (bool) preg_match('/^(\+?234|0)[789]\d{9}$/', preg_replace('/[\s\-()]/', '', $phone));
+    }
+
+    /**
+     * Checks that a verification_token exists in otp_requests for the given contactKey,
+     * and deletes it (one-time use).
+     */
+    private function consumeContactToken(string $contactKey, string $token): bool
+    {
+        if ($token === '') return false;
+        $stmt = $this->db->prepare(
+            "SELECT id FROM otp_requests
+             WHERE contact = ? AND verification_token = ? AND used = 1 AND expires_at > NOW()
+             LIMIT 1"
+        );
+        $stmt->execute([$contactKey, $token]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row) return false;
+        // Consume: delete so the token can't be reused
+        $this->delete('otp_requests', 'id = ?', [$row['id']]);
+        return true;
     }
 
     // ── POST /auth/send-otp ───────────────────────────────────────────────────
@@ -395,11 +547,7 @@ class auth extends BaseController
         $sent    = false;
 
         if ($isEmail) {
-            $sent = $this->mailer->smtpmailer(
-                $contact,
-                "Your $appName verification code",
-                "Hi,\n\nYour one-time code is: $otp\n\nThis code expires in 10 minutes.\n\n— $appName Team"
-            );
+            $sent = $this->mailer->sendOtpEmail($contact, $otp, $appName);
         } else {
             require_once ROOT . 'functions/sms.php';
             $sent = Sms::send($contact, "Your $appName code is: $otp. Valid for 10 mins.");
@@ -474,6 +622,7 @@ class auth extends BaseController
 
         $this->logActivity('customer', $user['id'], 'otp_login');
 
+        $user['hasPassword'] = !empty($user['password']);
         unset($user['password'], $user['reset_code']);
         $user['token']      = $token;
         $user['expires_at'] = $expiresAt;

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "631926393793",
+    "project_id": "etcride",
+    "storage_bucket": "etcride.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:631926393793:android:a12c95f1ed576a4dddfd40",
+        "android_client_info": {
+          "package_name": "com.etclogistics.etc_ride_customer"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyANjwm7q6nLnMr2Y0JXt_hyKozrTMTxOg0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

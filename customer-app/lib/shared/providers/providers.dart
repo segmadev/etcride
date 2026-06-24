@@ -7,6 +7,7 @@ import '../../data/models/user_model.dart';
 import '../../data/repositories/auth_repository.dart';
 import '../../data/repositories/booking_repository.dart';
 import '../../data/repositories/content_repository.dart';
+import '../../data/repositories/trip_reports_repository.dart';
 
 // ── Infrastructure ────────────────────────────────────────────────────────────
 
@@ -29,6 +30,10 @@ final contentRepositoryProvider = Provider<ContentRepository>((ref) => ContentRe
       ref.read(apiClientProvider),
     ));
 
+final tripReportsRepositoryProvider = Provider<TripReportsRepository>((ref) => TripReportsRepository(
+      ref.read(apiClientProvider),
+    ));
+
 // ── Auth state ────────────────────────────────────────────────────────────────
 
 /// Currently authenticated user. Null = not logged in.
@@ -42,6 +47,18 @@ final authInitProvider = FutureProvider<UserModel?>((ref) async {
     ref.read(currentUserProvider.notifier).state = user;
   }
   return user;
+});
+
+/// Validates the current auth token. Returns true if valid, false otherwise.
+final authValidationProvider = FutureProvider<bool>((ref) async {
+  final repo = ref.read(authRepositoryProvider);
+  final isValid = await repo.validateAuth();
+  if (!isValid) {
+    // Token is invalid — clear user and force re-login
+    ref.read(currentUserProvider.notifier).state = null;
+    await ref.read(secureStorageProvider).clearAll();
+  }
+  return isValid;
 });
 
 // ── Booking draft (shared across booking flow screens) ───────────────────────

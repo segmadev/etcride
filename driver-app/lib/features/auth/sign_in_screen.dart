@@ -9,6 +9,7 @@ import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../core/errors/app_exception.dart';
+import '../../core/services/biometric_service.dart';
 import '../../shared/providers/providers.dart';
 import '../../shared/widgets/app_button.dart';
 
@@ -29,9 +30,10 @@ class _DriverSignInScreenState extends ConsumerState<DriverSignInScreen> {
   final _emailCtrl    = TextEditingController();
   final _passwordCtrl = TextEditingController();
 
-  bool    _loading       = false;
-  bool    _showPassword  = false;
+  bool    _loading            = false;
+  bool    _showPassword       = false;
   String? _error;
+  bool    _biometricAvailable = false;
 
   String get _contact => _tab == _ContactTab.phone
       ? _phoneCtrl.text.trim()
@@ -47,6 +49,41 @@ class _DriverSignInScreenState extends ConsumerState<DriverSignInScreen> {
   String get _contactInstruction => _isPhone
       ? 'Enter your phone number to continue'
       : 'Enter your email address to continue';
+
+  @override
+  void initState() {
+    super.initState();
+    _checkBiometrics();
+  }
+
+  Future<void> _checkBiometrics() async {
+    final available = await BiometricService.instance.isAvailable;
+    final enabled   = await BiometricService.instance.isEnabled;
+    // Only show biometric option if there's a cached session
+    final hasCachedSession = await ref.read(driverAuthRepositoryProvider).getCachedDriver() != null;
+    if (mounted) setState(() => _biometricAvailable = available && enabled && hasCachedSession);
+  }
+
+  Future<void> _biometricLogin() async {
+    setState(() { _loading = true; _error = null; });
+    try {
+      final ok = await BiometricService.instance.authenticate();
+      if (!ok) {
+        if (mounted) setState(() => _error = 'Biometric authentication failed.');
+        return;
+      }
+      final driver = await ref.read(driverAuthRepositoryProvider).getCachedDriver();
+      if (driver == null) {
+        if (mounted) setState(() => _error = 'No cached session. Please sign in with your password.');
+        return;
+      }
+      ref.read(currentDriverProvider.notifier).state = driver;
+      if (!mounted) return;
+      _navigateAfterAuth(driver.kycStatus);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
 
   @override
   void dispose() {
@@ -92,6 +129,7 @@ class _DriverSignInScreenState extends ConsumerState<DriverSignInScreen> {
         password: password,
       );
       ref.read(currentDriverProvider.notifier).state = driver;
+      await ref.read(secureStorageProvider).setHasLoggedInBefore();
       if (!mounted) return;
       _navigateAfterAuth(driver.kycStatus);
     } on ApiException catch (e) {
@@ -268,6 +306,23 @@ class _DriverSignInScreenState extends ConsumerState<DriverSignInScreen> {
                       loading: _loading,
                       onPressed: _isContactStep ? _onContinue : _onLogin,
                     ),
+                    if (_biometricAvailable && !_isContactStep) ...[
+                      const SizedBox(height: 14),
+                      OutlinedButton.icon(
+                        onPressed: _loading ? null : _biometricLogin,
+                        icon: const Icon(Icons.fingerprint_rounded, size: 22),
+                        label: const Text('Sign in with Biometrics'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.primary,
+                          side: const BorderSide(color: AppColors.primary),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          minimumSize: const Size.fromHeight(52),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                      ),
+                    ],
                     if (_isContactStep) ...[
                       const SizedBox(height: 28),
                       Center(

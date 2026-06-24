@@ -41,6 +41,18 @@ final driverAuthInitProvider = FutureProvider<DriverModel?>((ref) async {
   return driver;
 });
 
+/// Validates the current auth token. Returns true if valid, false otherwise.
+final driverAuthValidationProvider = FutureProvider<bool>((ref) async {
+  final repo = ref.read(driverAuthRepositoryProvider);
+  final isValid = await repo.validateAuth();
+  if (!isValid) {
+    // Token is invalid — clear driver and force re-login
+    ref.read(currentDriverProvider.notifier).state = null;
+    await ref.read(secureStorageProvider).clearAll();
+  }
+  return isValid;
+});
+
 final mapSettingsProvider = FutureProvider<Map<String, dynamic>>((ref) async {
   final repo = ref.read(contentRepositoryProvider);
   return await repo.getMapSettings();

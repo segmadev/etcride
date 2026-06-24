@@ -287,23 +287,10 @@ class _TripDetailsScreenState extends ConsumerState<TripDetailsScreen> {
                   ),
                   const SizedBox(height: 28),
 
-                  // Bottom buttons
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _GrayPillButton(
-                          label: 'REMOVE TRIP',
-                          onTap: () => _confirmRemove(context),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _BlackPillButton(
-                          label: 'REPORT ISSUE',
-                          onTap: () => _reportIssue(context),
-                        ),
-                      ),
-                    ],
+                  // Bottom button
+                  _BlackPillButton(
+                    label: 'REPORT ISSUE',
+                    onTap: () => _reportIssue(context),
                   ),
                 ],
               ),
@@ -314,42 +301,414 @@ class _TripDetailsScreenState extends ConsumerState<TripDetailsScreen> {
     );
   }
 
-  void _confirmRemove(BuildContext context) {
-    showDialog<void>(
+  void _reportIssue(BuildContext context) {
+    if (_booking == null) return;
+    showModalBottomSheet(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Remove Trip'),
-        content: const Text('This will remove the trip from your history.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              if (context.canPop()) context.pop();
-            },
-            child: Text('Remove', style: TextStyle(color: AppColors.error)),
-          ),
-        ],
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _ReportTripSheet(bookingId: _booking!.id),
+    );
+  }
+}
+
+// ── Report Trip Sheet (reusable for both active and past trips) ────────────────
+
+class _ReportTripSheet extends ConsumerStatefulWidget {
+  const _ReportTripSheet({required this.bookingId});
+  final String bookingId;
+
+  @override
+  ConsumerState<_ReportTripSheet> createState() => _ReportTripSheetState();
+}
+
+class _ReportTripSheetState extends ConsumerState<_ReportTripSheet> {
+  late final TextEditingController _reasonCtrl = TextEditingController();
+  late final TextEditingController _descCtrl = TextEditingController();
+  bool _isSubmitting = false;
+  BookingModel? _booking;
+  bool _loadingBooking = true;
+  Map<String, dynamic>? _existingReport;
+  bool _checkingExisting = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBooking();
+    _checkExistingReport();
+  }
+
+  Future<void> _loadBooking() async {
+    try {
+      final booking = await ref.read(bookingRepositoryProvider).getBooking(widget.bookingId);
+      setState(() {
+        _booking = booking;
+        _loadingBooking = false;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _loadingBooking = false);
+        _showError('Failed to load trip details');
+      }
+    }
+  }
+
+  Future<void> _checkExistingReport() async {
+    try {
+      final report = await ref.read(tripReportsRepositoryProvider).getReportStatus(widget.bookingId);
+      if (report.containsKey('report') && report['report'] != null) {
+        setState(() {
+          _existingReport = report['report'] as Map<String, dynamic>;
+          _checkingExisting = false;
+        });
+      } else {
+        setState(() => _checkingExisting = false);
+      }
+    } catch (e) {
+      // No existing report, that's fine
+      setState(() => _checkingExisting = false);
+    }
+  }
+
+  List<String> _getReportReasons() {
+    if (_booking == null) return [];
+
+    final status = _booking!.status;
+
+    // Reasons for completed trips
+    if (status == BookingStatus.completed || status == BookingStatus.paid) {
+      return [
+        'Driver was rude',
+        'Driver didn\'t follow route',
+        'Charged incorrectly',
+        'Driver behavior',
+        'Vehicle condition',
+        'Safety concern',
+        'Long wait time',
+        'Uncomfortable ride',
+        'Other',
+      ];
+    }
+
+    // Reasons for cancelled trips
+    if (status == BookingStatus.cancelled || status == BookingStatus.rejected) {
+      return [
+        'Cancelled without reason',
+        'Driver cancelled',
+        'Long wait',
+        'Driver not found',
+        'Suspicious cancellation',
+        'Charged cancellation fee',
+        'Other',
+      ];
+    }
+
+    // Reasons for active trips
+    return [
+      'Driver behavior',
+      'Wrong route',
+      'Vehicle condition',
+      'Safety concern',
+      'Long wait',
+      'Other',
+    ];
+  }
+
+
+  @override
+  void dispose() {
+    _reasonCtrl.dispose();
+    _descCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submitReport() async {
+    if (_reasonCtrl.text.isEmpty) {
+      _showError('Please select a reason');
+      return;
+    }
+    if (_descCtrl.text.isEmpty) {
+      _showError('Please add a description');
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+    try {
+      await ref.read(tripReportsRepositoryProvider).reportTrip(
+        bookingId: widget.bookingId,
+        reason: _reasonCtrl.text,
+        description: _descCtrl.text,
+      );
+
+      if (mounted) {
+        // Dismiss modal and show success message
+        Navigator.pop(context);
+        await Future.delayed(const Duration(milliseconds: 300));
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('✓ Trip reported successfully'),
+              backgroundColor: Colors.green.shade700,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        _showError('Failed to report trip: ${e.toString()}');
+      }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red.shade700,
+        duration: const Duration(seconds: 3),
       ),
     );
   }
 
-  void _reportIssue(BuildContext context) {
-    showDialog<void>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Report Issue'),
-        content: const Text('Our support team will review your report and respond shortly.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
+  void _showSuccess(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.green.shade700,
+        duration: const Duration(seconds: 2),
       ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final reasons = _getReportReasons();
+
+    // Show existing report if available
+    if (_existingReport != null && !_checkingExisting) {
+      return _buildExistingReportView();
+    }
+
+    // Show loading state
+    if (_loadingBooking || _checkingExisting) {
+      return Container(
+        color: AppColors.white,
+        padding: const EdgeInsets.all(20),
+        child: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    // Show report form
+    return Container(
+      color: AppColors.white,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(context).viewInsets.bottom + 20),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Report This Trip',
+                style: AppTextStyles.h3,
+              ),
+              const SizedBox(height: 16),
+              const Text('What happened?', style: AppTextStyles.labelMedium),
+              const SizedBox(height: 8),
+              Container(
+                decoration: BoxDecoration(
+                  border: Border.all(color: AppColors.divider),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: DropdownButton<String>(
+                  value: _reasonCtrl.text.isEmpty ? null : _reasonCtrl.text,
+                  isExpanded: true,
+                  underline: const SizedBox(),
+                  hint: const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: Text('Select a reason'),
+                  ),
+                  items: reasons.map((reason) {
+                    return DropdownMenuItem(
+                      value: reason,
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Text(reason),
+                      ),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    if (value != null) {
+                      setState(() {
+                        _reasonCtrl.text = value;
+                      });
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text('Description', style: AppTextStyles.labelMedium),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _descCtrl,
+                decoration: InputDecoration(
+                  hintText: 'Tell us more details...',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                maxLines: 3,
+                minLines: 3,
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: _isSubmitting ? null : _submitReport,
+                child: _isSubmitting
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Submit Report'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildExistingReportView() {
+    final status = _existingReport?['report_status'] as String? ?? 'pending';
+    final reason = _existingReport?['report_reason'] as String? ?? '';
+    final description = _existingReport?['description'] as String? ?? '';
+    final createdAt = _existingReport?['created_at'] as String? ?? '';
+    final adminNotes = _existingReport?['admin_notes'] as String?;
+
+    return Container(
+      color: AppColors.white,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(context).viewInsets.bottom + 20),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Report Details', style: AppTextStyles.h3),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: _getStatusColor(status),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      status.capitalize(),
+                      style: AppTextStyles.labelSmall.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              _DetailRow(label: 'Reason', value: reason),
+              const SizedBox(height: 16),
+              _DetailRow(label: 'Reported', value: _formatDate(createdAt)),
+              const SizedBox(height: 16),
+              Text('Description', style: AppTextStyles.labelMedium),
+              const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(description, style: AppTextStyles.bodySmall),
+              ),
+              if (adminNotes != null && adminNotes.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Divider(color: AppColors.divider),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.05),
+                    border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Admin Response', style: AppTextStyles.labelMedium),
+                      const SizedBox(height: 8),
+                      Text(adminNotes, style: AppTextStyles.bodySmall),
+                    ],
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Close'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Color _getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'pending':
+        return Colors.orange;
+      case 'reviewed':
+        return Colors.blue;
+      case 'resolved':
+        return AppColors.success;
+      default:
+        return AppColors.textSecondary;
+    }
+  }
+
+  String _formatDate(String dateStr) {
+    try {
+      final date = DateTime.parse(dateStr);
+      return '${date.day}/${date.month}/${date.year}';
+    } catch (e) {
+      return dateStr;
+    }
+  }
+}
+
+// ── Detail Row Widget ─────────────────────────────────────────────────────────
+
+class _DetailRow extends StatelessWidget {
+  const _DetailRow({required this.label, required this.value});
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Text(label, style: AppTextStyles.labelMedium),
+        const Spacer(),
+        Text(value, style: AppTextStyles.bodySmall),
+      ],
     );
   }
 }

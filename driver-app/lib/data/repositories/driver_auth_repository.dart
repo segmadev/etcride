@@ -75,18 +75,40 @@ class DriverAuthRepository {
   Future<DriverModel> updateProfile({
     required String name,
     String? email,
+    String? emailToken,
   }) async {
+    final body = <String, dynamic>{
+      'name': name.trim(),
+      'email': email?.trim() ?? '',
+    };
+    if (emailToken != null && emailToken.isNotEmpty) body['email_token'] = emailToken;
     final data = await _client.put<Map<String, dynamic>>(
       ApiEndpoints.driverUpdateProfile,
-      body: {
-        'name': name.trim(),
-        'email': email?.trim() ?? '',
-      },
+      body: body,
     );
     if (data == null) throw const FormatException('Empty response.');
     final driver = DriverModel.fromJson(data);
     await _storage.saveUser(jsonEncode(driver.toJson()));
     return driver;
+  }
+
+  Future<void> sendContactOtp({required String contact, required String type}) async {
+    await _client.post<Map<String, dynamic>>(
+      ApiEndpoints.driverSendContactOtp,
+      body: {'contact': contact, 'type': type},
+    );
+  }
+
+  Future<String> verifyContactOtp({
+    required String contact,
+    required String type,
+    required String otp,
+  }) async {
+    final data = await _client.post<Map<String, dynamic>>(
+      ApiEndpoints.driverVerifyContactOtp,
+      body: {'contact': contact, 'type': type, 'otp': otp},
+    );
+    return data?['verification_token']?.toString() ?? '';
   }
 
   Future<DriverModel> login({
@@ -111,6 +133,29 @@ class DriverAuthRepository {
     await _storage.saveToken(token);
     await _storage.saveUser(jsonEncode(driver.toJson()));
     return driver;
+  }
+
+  /// Validates if the current auth token is still valid.
+  /// Throws an exception if the token is invalid or expired.
+  Future<bool> validateAuth() async {
+    try {
+      final token = await _storage.getToken();
+      if (token == null || token.isEmpty) return false;
+      // Call a simple endpoint that requires auth to verify token is valid
+      await _client.get<Map<String, dynamic>>(ApiEndpoints.driverGetProfile);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<void> updateFcmToken(String token) async {
+    try {
+      await _client.put<void>(
+        ApiEndpoints.driverUpdateProfile,
+        body: {'fcm_token': token},
+      );
+    } catch (_) {}
   }
 
   Future<void> logout() async {

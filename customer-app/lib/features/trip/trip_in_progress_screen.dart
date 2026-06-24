@@ -18,9 +18,10 @@ import '../../../core/maps/google_maps_js_loader.dart';
 import '../../../core/maps/maps_service.dart';
 import '../../../data/models/booking_model.dart';
 import '../../../shared/providers/providers.dart';
-import '../../../shared/widgets/app_bottom_drawer.dart';
 import '../../../shared/widgets/driver_card.dart';
 import '../../../shared/widgets/trip_quick_nav.dart';
+import '../../../shared/widgets/app_bottom_drawer.dart';
+import '../home/widgets/home_drawer.dart';
 
 class TripInProgressScreen extends ConsumerStatefulWidget {
   const TripInProgressScreen({super.key, required this.bookingId});
@@ -32,9 +33,16 @@ class TripInProgressScreen extends ConsumerStatefulWidget {
 }
 
 class _TripInProgressScreenState
-    extends ConsumerState<TripInProgressScreen> {
+    extends ConsumerState<TripInProgressScreen> with TickerProviderStateMixin {
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
+
   BookingModel? _booking;
   Timer?        _pollTimer;
+  bool _isRefreshing = false;
+  late final AnimationController _refreshCtrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 800),
+  );
 
   // Raw driver GPS from each poll — passed to the map widget which handles
   // animation internally (avoids 25fps parent rebuilds that cause blink).
@@ -94,7 +102,36 @@ class _TripInProgressScreenState
   @override
   void dispose() {
     _pollTimer?.cancel();
+    _refreshCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _refreshMap() async {
+    if (_isRefreshing) return;
+
+    setState(() => _isRefreshing = true);
+    _refreshCtrl.repeat();
+
+    try {
+      await _load();
+    } finally {
+      _refreshCtrl.stop();
+      if (mounted) setState(() => _isRefreshing = false);
+    }
+  }
+
+  void _showReportSheet(BuildContext context) {
+    if (_booking == null) {
+      print('DEBUG: Booking is null, cannot show report sheet');
+      return;
+    }
+    print('DEBUG: Showing report sheet for booking: ${_booking!.id}');
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _ReportTripSheet(bookingId: _booking!.id),
+    );
   }
 
   @override
@@ -103,6 +140,8 @@ class _TripInProgressScreenState
     final mapKey = ref.watch(mapApiKeyProvider);
 
     return Scaffold(
+      key: _scaffoldKey,
+      drawer: const HomeDrawer(),
       body: Stack(
         children: [
           // ── Map — self-contained (owns route + animation + JS loader) ─────
@@ -126,34 +165,50 @@ class _TripInProgressScreenState
                       height: 18,
                       colorFilter: const ColorFilter.mode(AppColors.textPrimary, BlendMode.srcIn),
                     ),
-                    onTap: () => _showTripMenu(context),
+                    onTap: () => _scaffoldKey.currentState?.openDrawer(),
                   ),
                   const SizedBox(width: 8),
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: AppColors.black,
-                        borderRadius: BorderRadius.circular(12),
+                  RotationTransition(
+                    turns: _refreshCtrl,
+                    child: MapOverlayButton(
+                      icon: Icons.refresh_rounded,
+                      onTap: _isRefreshing ? () {} : _refreshMap,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  MapOverlayButton(
+                    icon: Icons.flag_rounded,
+                    onTap: () => _showReportSheet(context),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0x1A000000), // 10% black transparent
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: const Color(0x33000000), // 20% black border
+                        width: 1,
                       ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.navigation_rounded,
-                              color: AppColors.primary, size: 18),
-                          const SizedBox(width: 8),
-                          Text(AppStrings.headingToDestination,
-                              style: AppTextStyles.labelMedium
-                                  .copyWith(color: AppColors.white)),
-                          const Spacer(),
-                          Container(
-                            width: 8, height: 8,
-                            decoration: const BoxDecoration(
-                                color: AppColors.success,
-                                shape: BoxShape.circle),
-                          ),
-                        ],
-                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.navigation_rounded,
+                            color: AppColors.primary, size: 16),
+                        const SizedBox(width: 6),
+                        Text(AppStrings.headingToDestination,
+                            style: AppTextStyles.labelMedium
+                                .copyWith(color: AppColors.textPrimary)),
+                        const SizedBox(width: 8),
+                        Container(
+                          width: 6, height: 6,
+                          decoration: const BoxDecoration(
+                              color: AppColors.success,
+                              shape: BoxShape.circle),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -197,79 +252,6 @@ class _TripInProgressScreenState
   }
 }
 
-void _showTripMenu(BuildContext context) {
-  showDraggableBottomSheet(
-    context: context,
-    initialChildSize: 0.38,
-    minChildSize: 0.16,
-    maxChildSize: 0.6,
-    builder: (_) => _TripInProgressMenu(parentContext: context),
-  );
-}
-
-class _TripInProgressMenu extends StatelessWidget {
-  const _TripInProgressMenu({required this.parentContext});
-  final BuildContext parentContext;
-
-  @override
-  Widget build(BuildContext context) {
-    void nav(String route) {
-      Navigator.pop(context);
-      parentContext.go(route);
-    }
-
-    return Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-            child: Row(
-              children: [
-                Container(
-                  width: 40, height: 40,
-                  decoration: BoxDecoration(
-                      color: AppColors.primaryLight,
-                      shape: BoxShape.circle),
-                  child: Center(
-                    child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: _EmbeddedPngFromSvgAsset(
-                        assetPath: AppAssets.carIcon,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Text('Trip in Progress',
-                    style: AppTextStyles.h4),
-              ],
-            ),
-          ),
-          const Divider(height: 1),
-          ListTile(
-            leading: const Icon(Icons.history_rounded,
-                size: 22, color: AppColors.textPrimary),
-            title: Text('My Trip History',
-                style: AppTextStyles.bodyLarge),
-            onTap: () => nav(AppRoutes.tripHistory),
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
-          ),
-          ListTile(
-            leading: const Icon(Icons.help_outline_rounded,
-                size: 22, color: AppColors.textPrimary),
-            title: Text('Help & Support', style: AppTextStyles.bodyLarge),
-            onTap: () => nav(AppRoutes.help),
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
-          ),
-          const SizedBox(height: 4),
-        ],
-      );
-  }
-}
 
 class _EmbeddedPngFromSvgAsset extends StatelessWidget {
   const _EmbeddedPngFromSvgAsset({
@@ -651,4 +633,327 @@ class _RoutedTripMapState extends State<_RoutedTripMap> {
           _fitCamera();
         },
       );
+}
+
+// ── Report Trip Sheet ──────────────────────────────────────────────────────────
+
+class _ReportTripSheet extends ConsumerStatefulWidget {
+  const _ReportTripSheet({required this.bookingId});
+  final String bookingId;
+
+  @override
+  ConsumerState<_ReportTripSheet> createState() => _ReportTripSheetState();
+}
+
+class _ReportTripSheetState extends ConsumerState<_ReportTripSheet> {
+  late final TextEditingController _reasonCtrl = TextEditingController();
+  late final TextEditingController _descCtrl = TextEditingController();
+  bool _isSubmitting = false;
+  bool _reported = false;
+  String? _cancellationReason;
+  late final TextEditingController _cancellationDescCtrl = TextEditingController();
+  bool _isRequestingCancellation = false;
+
+  final List<String> _reportReasons = [
+    'Driver behavior',
+    'Wrong route',
+    'Vehicle condition',
+    'Safety concern',
+    'Other',
+  ];
+
+  final List<String> _cancellationReasons = [
+    'Driver issue',
+    'Wrong address',
+    'Changed plans',
+    'Too expensive',
+    'Emergency',
+    'Other',
+  ];
+
+  @override
+  void dispose() {
+    _reasonCtrl.dispose();
+    _descCtrl.dispose();
+    _cancellationDescCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submitReport() async {
+    print('DEBUG: _submitReport called');
+    print('DEBUG: Reason: ${_reasonCtrl.text}, Desc: ${_descCtrl.text}');
+
+    if (_reasonCtrl.text.isEmpty) {
+      print('DEBUG: Reason is empty');
+      _showError('Please select a reason');
+      return;
+    }
+    if (_descCtrl.text.isEmpty) {
+      print('DEBUG: Description is empty');
+      _showError('Please add a description');
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+    try {
+      print('DEBUG: Calling reportTrip API');
+      final repo = ref.read(tripReportsRepositoryProvider);
+      print('DEBUG: Repository obtained: $repo');
+
+      final response = await repo.reportTrip(
+        bookingId: widget.bookingId,
+        reason: _reasonCtrl.text,
+        description: _descCtrl.text,
+      );
+
+      print('DEBUG: API response: $response');
+
+      if (mounted) {
+        _showSuccess('Trip reported successfully');
+        await Future.delayed(const Duration(milliseconds: 500));
+        if (mounted) {
+          setState(() => _reported = true);
+        }
+      }
+    } catch (e, stack) {
+      print('DEBUG: Error in _submitReport: $e');
+      print('DEBUG: Stack trace: $stack');
+      if (mounted) {
+        _showError('Failed to report trip: ${e.toString()}');
+      }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red.shade700,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  void _showSuccess(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.green.shade700,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> _requestCancellation() async {
+    if (_cancellationReason == null) {
+      _showError('Please select a cancellation reason');
+      return;
+    }
+    if (_cancellationDescCtrl.text.isEmpty) {
+      _showError('Please add description');
+      return;
+    }
+
+    setState(() => _isRequestingCancellation = true);
+    try {
+      await ref.read(tripReportsRepositoryProvider).requestCancellation(
+        bookingId: widget.bookingId,
+        reason: _cancellationReason!,
+        description: _cancellationDescCtrl.text,
+      );
+
+      if (mounted) {
+        _showSuccess('Cancellation request submitted for admin review');
+        await Future.delayed(const Duration(milliseconds: 800));
+        if (mounted) {
+          Navigator.pop(context);
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        _showError('Failed to request cancellation: ${e.toString()}');
+      }
+    } finally {
+      if (mounted) setState(() => _isRequestingCancellation = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: AppColors.white,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(context).viewInsets.bottom + 20),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                _reported ? 'Request Cancellation' : 'Report This Trip',
+                style: AppTextStyles.h3,
+              ),
+              const SizedBox(height: 16),
+              if (!_reported) ...[
+                const Text('What happened?', style: AppTextStyles.labelMedium),
+                const SizedBox(height: 8),
+                Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: AppColors.divider),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: DropdownButton<String>(
+                    value: _reasonCtrl.text.isEmpty ? null : _reasonCtrl.text,
+                    isExpanded: true,
+                    underline: const SizedBox(),
+                    hint: const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: Text('Select a reason'),
+                    ),
+                    items: _reportReasons.map((reason) {
+                      return DropdownMenuItem(
+                        value: reason,
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Text(reason),
+                        ),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() {
+                          _reasonCtrl.text = value;
+                        });
+                      }
+                    },
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text('Description', style: AppTextStyles.labelMedium),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _descCtrl,
+                  decoration: InputDecoration(
+                    hintText: 'Describe what happened...',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  maxLines: 3,
+                  minLines: 3,
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: _isSubmitting ? null : _submitReport,
+                  child: _isSubmitting
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Report Trip'),
+                ),
+              ] else ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.success.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppColors.success),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.check_circle, color: AppColors.success),
+                      SizedBox(width: 12),
+                      Text(
+                        'Trip reported successfully',
+                        style: AppTextStyles.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                const Text('Request Cancellation?', style: AppTextStyles.labelMedium),
+                const SizedBox(height: 8),
+                const Text(
+                  'You can request cancellation. This will be reviewed by our team.',
+                  style: AppTextStyles.bodySmall,
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: AppColors.divider),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: DropdownButton<String>(
+                    value: _cancellationReason,
+                    isExpanded: true,
+                    underline: const SizedBox(),
+                    hint: const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: Text('Select cancellation reason'),
+                    ),
+                    items: _cancellationReasons.map((reason) {
+                      return DropdownMenuItem(
+                        value: reason,
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Text(reason),
+                        ),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() => _cancellationReason = value);
+                      }
+                    },
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _cancellationDescCtrl,
+                  decoration: InputDecoration(
+                    hintText: 'Additional details...',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  maxLines: 2,
+                  minLines: 2,
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Skip'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: _isRequestingCancellation ? null : _requestCancellation,
+                        child: _isRequestingCancellation
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Text('Request Cancellation'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

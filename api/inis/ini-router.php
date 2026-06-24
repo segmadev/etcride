@@ -16,6 +16,7 @@ $router->get('/content/place-details', 'FrontContent@placeDetails');
 $router->get('/content/geocode',       'FrontContent@geocode');
 $router->get('/content/driver-auth-config', 'FrontContent@driverAuthConfig');
 $router->get('/content/driver-locations',   'FrontContent@driverLocations');
+$router->get('/live-chat/settings',         'LiveChat@getSettings');
 // Serves uploaded files (vehicle/driver photos, KYC images) through PHP so CORS
 // headers are always applied — direct /uploads/* static serving bypasses PHP
 // entirely on some servers (e.g. `php -S`), so .htaccess-based CORS never runs.
@@ -38,8 +39,10 @@ $router->post('/auth/verify-otp',           'auth@verifyOtp');
 
 // ── Customer auth (protected) ─────────────────────────────────────────────────
 $router->group('/auth', function ($r) {
-    $r->post('/logout',   'auth@logout');
-    $r->put('/profile',   'auth@updateProfile');
+    $r->post('/logout',              'auth@logout');
+    $r->put('/profile',              'auth@updateProfile');
+    $r->post('/send-contact-otp',    'auth@sendContactOtp');
+    $r->post('/verify-contact-otp',  'auth@verifyContactOtp');
 }, ['auth' => true, 'authType' => 'customer']);
 
 // ── Fare estimation (public) ──────────────────────────────────────────────────
@@ -57,9 +60,18 @@ $router->group('/bookings', function ($r) {
     $r->post('/:id/pay',                   'Payments@initiate');
     $r->get('/:id/payment-status',         'Payments@status');
     $r->put('/:id/payment-method',         'Bookings@updatePaymentMethod');
+    $r->put('/:id/location',               'Bookings@updateLocation');
     $r->post('/:id/rate',                  'Bookings@rateDriver');
     $r->get('/:id/messages',                'Bookings@getMessages');
     $r->post('/:id/messages',               'Bookings@sendMessage');
+    $r->post('/:id/report',                 'TripReports@reportTrip');
+    $r->get('/:id/report-status',           'TripReports@getReportStatus');
+    $r->post('/:id/request-cancellation',   'TripReports@requestCancellation');
+}, ['auth' => true, 'authType' => 'customer']);
+
+// ── Customer Reports ──────────────────────────────────────────────────────────
+$router->group('/reports', function ($r) {
+    $r->get('/', 'TripReports@index');
 }, ['auth' => true, 'authType' => 'customer']);
 
 $router->get('/chats', 'Bookings@chatThreads', true);
@@ -88,9 +100,11 @@ $router->post('/driver/auth/verify-otp', 'driver/Auth@verifyOtp');
 $router->group('/driver', function ($r) {
 
     // Auth
-    $r->post('/auth/logout',           'driver/Auth@logout');
-    $r->get('/auth/profile',           'driver/Auth@getProfile');
-    $r->put('/auth/profile',           'driver/Auth@updateProfile');
+    $r->post('/auth/logout',             'driver/Auth@logout');
+    $r->get('/auth/profile',             'driver/Auth@getProfile');
+    $r->put('/auth/profile',             'driver/Auth@updateProfile');
+    $r->post('/auth/send-contact-otp',   'driver/Auth@sendContactOtp');
+    $r->post('/auth/verify-contact-otp', 'driver/Auth@verifyContactOtp');
 
     // Availability
     $r->put('/availability',           'driver/Availability@toggle');

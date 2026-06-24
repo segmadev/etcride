@@ -12,6 +12,7 @@ class UserModel with _$UserModel {
     @Default('') String email,
     @Default('') String profilePhoto,
     @Default(false) bool isVerified,
+    @Default(false) bool hasPassword,
     @Default(0.0) double rating,
     String? createdAt,
   }) = _UserModel;

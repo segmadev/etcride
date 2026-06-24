@@ -33,15 +33,19 @@ class Bookings extends BaseController
         $stmt = $this->db->prepare(
             "SELECT b.id, b.booking_code, b.booking_type, b.status, b.estimated_fare,
                     b.final_fare, b.payment_status, b.pickup_address, b.destination_address,
-                    b.created_at, b.num_stops, b.distance_km,
+                    b.created_at, b.num_stops, b.distance_km, b.driver_id,
                     b.vehicle_type_id,
                     u.name AS customer_name, u.phone AS customer_phone,
                     d.name AS driver_name, d.phone AS driver_phone,
-                    vt.name AS vehicle_type, vt.category AS vehicle_type_category
+                    vt.name AS vehicle_type, vt.category AS vehicle_type_category,
+                    tr.id AS report_id, tr.report_reason, tr.report_status,
+                    tc.id AS cancellation_id, tc.cancellation_status
              FROM bookings b
              LEFT JOIN users u          ON u.id  = b.customer_id
              LEFT JOIN drivers d        ON d.id  = b.driver_id
              LEFT JOIN vehicle_types vt ON vt.id = b.vehicle_type_id
+             LEFT JOIN trip_reports tr  ON tr.booking_id = b.id
+             LEFT JOIN trip_cancellations tc ON tc.trip_report_id = tr.id
              $where
              ORDER BY b.created_at DESC
              LIMIT $perPage OFFSET $offset"
@@ -78,6 +82,21 @@ class Bookings extends BaseController
         if ($booking['driver_id']) {
             $booking['driver'] = $this->getall('drivers', 'id = ?', [$booking['driver_id']],
                 'id, name, phone, last_lat, last_lng, last_seen, vehicle_id');
+        }
+
+        // Get trip report if exists
+        $stmt = $this->db->prepare(
+            "SELECT tr.id, tr.report_reason, tr.report_status, tr.description, tr.created_at,
+                    tc.id as cancellation_id, tc.cancellation_status, tc.admin_notes
+             FROM trip_reports tr
+             LEFT JOIN trip_cancellations tc ON tc.trip_report_id = tr.id
+             WHERE tr.booking_id = ?
+             LIMIT 1"
+        );
+        $stmt->execute([$id]);
+        $report = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($report) {
+            $booking['trip_report'] = $report;
         }
 
         echo utilities::apiMessage('Booking retrieved.', 200, $booking);

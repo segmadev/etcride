@@ -64,6 +64,17 @@ $router->group('/admin', function ($r) {
     $r->get('/settings',                     'admin/Settings@index');
     $r->put('/settings',                     'admin/Settings@edit');
 
+    // ── Live Chat ─────────────────────────────────────────────────────────────
+    $r->put('/live-chat/settings',           'LiveChat@updateSettings');
+
+    // ── SMTP configs ──────────────────────────────────────────────────────────
+    $r->get('/smtp-configs',                 'admin/SmtpConfigs@index');
+    $r->post('/smtp-configs',                'admin/SmtpConfigs@create');
+    $r->put('/smtp-configs/:id',             'admin/SmtpConfigs@updateSmtpConfig');
+    $r->put('/smtp-configs/:id/activate',    'admin/SmtpConfigs@activate');
+    $r->delete('/smtp-configs/:id',          'admin/SmtpConfigs@remove');
+    $r->post('/smtp-configs/test',           'admin/SmtpConfigs@test');
+
     // ── Email templates ───────────────────────────────────────────────────────
     $r->get('/email-templates',              'admin/EmailTemplates@index');
     $r->post('/email-templates/test',        'admin/EmailTemplates@test');
@@ -77,5 +88,11 @@ $router->group('/admin', function ($r) {
     $r->get('/reports/bookings',             'admin/Reports@bookings');
     $r->get('/reports/revenue',              'admin/Reports@revenue');
     $r->get('/reports/drivers',              'admin/Reports@drivers');
+
+    // ── Trip Reports & Cancellations ───────────────────────────────────────────
+    $r->get('/trip-reports',                          'admin/TripReports@index');
+    $r->get('/trip-reports/:id',                      'admin/TripReports@show');
+    $r->put('/trip-reports/:id/approve-cancellation', 'admin/TripReports@approveCancellation');
+    $r->put('/trip-reports/:id/reject-cancellation',  'admin/TripReports@rejectCancellation');
 
 }, ['auth' => true, 'authType' => 'admin']);

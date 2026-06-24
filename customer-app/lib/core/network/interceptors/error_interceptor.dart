@@ -55,18 +55,22 @@ class ErrorInterceptor extends Interceptor {
   String _extractMessage(Response? response) {
     try {
       final data = response?.data;
-      if (data is Map) {
-        return data['message']?.toString().trim().isNotEmpty == true
-            ? data['message']!.toString()
-            : 'Request failed.';
-      }
-      if (data is String) {
-        final decoded = jsonDecode(data);
-        if (decoded is Map) {
-          return decoded['message']?.toString().trim().isNotEmpty == true
-              ? decoded['message']!.toString()
-              : 'Request failed.';
-        }
+      final map  = data is Map
+          ? data
+          : data is String
+              ? (jsonDecode(data) as Map?)
+              : null;
+      if (map == null) return 'Request failed.';
+
+      final message = map['message']?.toString().trim() ?? '';
+      if (message.isNotEmpty) return message;
+
+      // Fall back to first field-level validation error when message is absent.
+      final errors = map['errors'];
+      if (errors is Map && errors.isNotEmpty) {
+        final first = errors.values.first;
+        if (first is List && first.isNotEmpty) return first.first.toString();
+        if (first is String && first.isNotEmpty) return first;
       }
     } catch (_) {}
     return 'Request failed.';

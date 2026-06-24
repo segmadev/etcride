@@ -23,16 +23,21 @@ class PhoneScreen extends ConsumerStatefulWidget {
 
 enum _LoginMethod { phone, email }
 
-class _PhoneScreenState extends ConsumerState<PhoneScreen> with SingleTickerProviderStateMixin {
+class _PhoneScreenState extends ConsumerState<PhoneScreen> with TickerProviderStateMixin {
   final _contactCtrl = TextEditingController();
   bool _loading = false;
   String? _error;
   _LoginMethod _method = _LoginMethod.phone;
   List<String> _emailSuggestions = const [];
+  bool _registrationSuccess = false;
   late final AnimationController _introCtrl = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 2100),
   )..forward();
+  late final AnimationController _driveCtrl = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 1),
+  );
 
   @override
   void initState() {
@@ -60,7 +65,11 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> with SingleTickerProv
       if (!mounted) return;
       context.push(
         AppRoutes.otp,
-        extra: OtpExtra(contact: contact, contactType: contactType),
+        extra: OtpExtra(
+          contact: contact,
+          contactType: contactType,
+          isRegistration: true,
+        ),
       );
     } catch (e) {
       setState(() => _error = e.toString());
@@ -175,7 +184,13 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> with SingleTickerProv
   }
 
   @override
-  void dispose() { _introCtrl.dispose(); _contactCtrl.dispose(); super.dispose(); }
+  @override
+  void dispose() {
+    _introCtrl.dispose();
+    _driveCtrl.dispose();
+    _contactCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -185,6 +200,10 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> with SingleTickerProv
     final carTopOverflow = MediaQuery.paddingOf(context).top + (carBoxHeight * 0.08);
     final contentTopPadding = (carBoxHeight - carTopOverflow + 24).clamp(0.0, screenSize.height).toDouble();
 
+    // Car drive-in animation on app load (intro)
+    final introProgress = _introCtrl.value;
+    final carDriveInOffset = (1 - introProgress) * (-carBoxHeight * 0.8); // Drive in from top
+
     return LoadingOverlay.wrap(
       loading: _loading,
       child: Scaffold(
@@ -192,10 +211,18 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> with SingleTickerProv
         body: SafeArea(
           child: Stack(
             children: [
-              Positioned(
-                top: -carTopOverflow,
-                left: 0,
-                right: 0,
+              AnimatedBuilder(
+                animation: _driveCtrl,
+                builder: (context, child) {
+                  return AnimatedPositioned(
+                    duration: _registrationSuccess ? Duration.zero : const Duration(milliseconds: 300),
+                    curve: Curves.easeOut,
+                    top: -carTopOverflow + carDriveInOffset,
+                    left: 0,
+                    right: 0,
+                    child: child!,
+                  );
+                },
                 child: IgnorePointer(
                   child: SizedBox(
                     height: carBoxHeight,
@@ -212,10 +239,13 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> with SingleTickerProv
                   ),
                 ),
               ),
-              Positioned.fill(
-                child: SingleChildScrollView(
-                  padding: EdgeInsets.fromLTRB(24, contentTopPadding, 24, 0),
-                  child: Column(
+              AnimatedOpacity(
+                opacity: _registrationSuccess ? 0 : 1,
+                duration: const Duration(milliseconds: 500),
+                child: Positioned.fill(
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.fromLTRB(24, contentTopPadding, 24, 0),
+                    child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       _FadeSlide(
@@ -374,6 +404,7 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> with SingleTickerProv
                     ],
                   ),
                 ),
+              ),
               ),
             ],
           ),

@@ -16,10 +16,12 @@ const VehicleTypesPage = lazy(() => import('./pages/vehicleTypes/VehicleTypesPag
 const ZonesPage        = lazy(() => import('./pages/zones/ZonesPage').then(m => ({ default: m.ZonesPage })));
 const SettingsPage     = lazy(() => import('./pages/settings/SettingsPage').then(m => ({ default: m.SettingsPage })));
 const ReportsPage      = lazy(() => import('./pages/reports/ReportsPage').then(m => ({ default: m.ReportsPage })));
+const TripReportsPage  = lazy(() => import('./pages/trip-reports/TripReportsPage'));
 const MapSettingsPage  = lazy(() => import('./pages/map/MapSettingsPage').then(m => ({ default: m.MapSettingsPage })));
 const ProfilePage         = lazy(() => import('./pages/profile/ProfilePage').then(m => ({ default: m.ProfilePage })));
 const EmailTemplatesPage  = lazy(() => import('./pages/emailTemplates/EmailTemplatesPage').then(m => ({ default: m.EmailTemplatesPage })));
 const PaymentsPage        = lazy(() => import('./pages/payments/PaymentsPage'));
+const LiveChatPage        = lazy(() => import('./pages/settings/LiveChatPage').then(m => ({ default: m.default })));
 
 // ── React Query client ────────────────────────────────────────────────────────
 const queryClient = new QueryClient({
@@ -65,10 +67,12 @@ export default function App() {
               <Route path="/zones"         element={<ZonesPage />} />
               <Route path="/settings"      element={<SettingsPage />} />
               <Route path="/reports"       element={<ReportsPage />} />
+              <Route path="/trip-reports"  element={<TripReportsPage />} />
               <Route path="/map"              element={<MapSettingsPage />} />
               <Route path="/email-templates" element={<EmailTemplatesPage />} />
               <Route path="/profile"         element={<ProfilePage />} />
               <Route path="/payments"        element={<PaymentsPage />} />
+              <Route path="/live-chat"       element={<LiveChatPage />} />
             </Route>
 
             {/* Fallback */}

@@ -47,17 +47,30 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
       statusBarIconBrightness: Brightness.dark,
     ));
 
-    // Check if user is already logged in
-    final isLoggedIn = await ref.read(secureStorageProvider).isLoggedIn;
+    final storage    = ref.read(secureStorageProvider);
+    final isLoggedIn = await storage.isLoggedIn;
     if (!mounted) return;
 
     if (isLoggedIn) {
       try {
         await ref.read(authInitProvider.future);
       } catch (_) {}
+      if (!mounted) return;
       context.go(AppRoutes.home);
     } else {
-      context.go(AppRoutes.onboarding);
+      final seenOnboarding = await storage.hasSeenOnboarding;
+      if (!mounted) return;
+      if (!seenOnboarding) {
+        // First ever launch — mark seen and show onboarding once.
+        await storage.setHasSeenOnboarding();
+        if (!mounted) return;
+        context.go(AppRoutes.onboarding);
+      } else {
+        // Device has seen onboarding — go to login or register.
+        final returning = await storage.hasLoggedInBefore;
+        if (!mounted) return;
+        context.go(returning ? AppRoutes.login : AppRoutes.phone);
+      }
     }
   }
 

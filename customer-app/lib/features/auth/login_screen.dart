@@ -8,6 +8,7 @@ import '../../core/constants/app_assets.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/constants/app_text_styles.dart';
+import '../../core/services/biometric_service.dart';
 import '../../shared/providers/providers.dart';
 import '../../shared/widgets/app_bottom_drawer.dart';
 import '../../shared/widgets/app_button.dart';
@@ -23,7 +24,7 @@ class LoginScreen extends ConsumerStatefulWidget {
 
 enum _LoginMethod { phone, email }
 
-class _LoginScreenState extends ConsumerState<LoginScreen> with SingleTickerProviderStateMixin {
+class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderStateMixin {
   final _contactCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   bool _loading = false;
@@ -31,15 +32,52 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with SingleTickerProv
   String? _error;
   _LoginMethod _method = _LoginMethod.phone;
   List<String> _emailSuggestions = const [];
+  bool _biometricAvailable = false;
+  bool _loginSuccess = false;
   late final AnimationController _introCtrl = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 2100),
   )..forward();
+  late final AnimationController _driveCtrl = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 1),
+  );
 
   @override
   void initState() {
     super.initState();
     _contactCtrl.clear();
+    _checkBiometrics();
+  }
+
+  Future<void> _checkBiometrics() async {
+    final available = await BiometricService.instance.isAvailable;
+    final enabled   = await BiometricService.instance.isEnabled;
+    // Only show biometric option if there's a cached session
+    final hasCachedSession = await ref.read(authRepositoryProvider).getCachedUser() != null;
+    if (mounted) setState(() => _biometricAvailable = available && enabled && hasCachedSession);
+  }
+
+  Future<void> _biometricLogin() async {
+    setState(() { _loading = true; _error = null; });
+    try {
+      final ok = await BiometricService.instance.authenticate();
+      if (!ok) {
+        if (mounted) setState(() => _error = 'Biometric authentication failed.');
+        return;
+      }
+      // Use the cached user + token — same path as auto-login on app start.
+      final user = await ref.read(authRepositoryProvider).getCachedUser();
+      if (user == null) {
+        if (mounted) setState(() => _error = 'No cached session. Please log in with your password.');
+        return;
+      }
+      ref.read(currentUserProvider.notifier).state = user;
+      if (!mounted) return;
+      await _triggerDriveAnimation();
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   bool get _canSubmit => _contactCtrl.text.trim().isNotEmpty && _passCtrl.text.isNotEmpty && !_loading;
@@ -58,13 +96,22 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with SingleTickerProv
         password: _passCtrl.text,
       );
       ref.read(currentUserProvider.notifier).state = user;
+      await ref.read(secureStorageProvider).setHasLoggedInBefore();
       if (!mounted) return;
       FocusManager.instance.primaryFocus?.unfocus();
-      context.go(AppRoutes.home);
+      await _triggerDriveAnimation();
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _triggerDriveAnimation() async {
+    setState(() => _loginSuccess = true);
+    await _driveCtrl.forward();
+    if (mounted) {
+      context.go(AppRoutes.home);
     }
   }
 
@@ -184,6 +231,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with SingleTickerProv
   @override
   void dispose() {
     _introCtrl.dispose();
+    _driveCtrl.dispose();
     _contactCtrl.dispose();
     _passCtrl.dispose();
     super.dispose();
@@ -192,11 +240,28 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with SingleTickerProv
   @override
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.sizeOf(context);
+    final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
     final carBoxHeight = screenSize.height * 0.50;
     final carBoxWidth = screenSize.width;
     final carTopOverflow = MediaQuery.paddingOf(context).top + (carBoxHeight * 0.08);
     final contentTopPadding =
         (carBoxHeight - carTopOverflow + 24).clamp(0.0, screenSize.height).toDouble();
+
+    // Car drive-in animation on app load (intro)
+    final introProgress = _introCtrl.value;
+    final carDriveInOffset = (1 - introProgress) * (-carBoxHeight * 0.8); // Drive in from top
+
+    // Animate car based on keyboard visibility
+    final keyboardOffset = keyboardHeight > 0 ? -keyboardHeight * 0.4 : 0.0;
+
+    // Animate car position during login drive animation
+    final driveProgress = _driveCtrl.value;
+    final carDriveAwayOffset = driveProgress * screenSize.height * 1.5; // Drive off-screen
+
+    // Car offset: use drive-away if logging in, else use intro + keyboard adjustments
+    final carOffset = _loginSuccess
+        ? carDriveAwayOffset
+        : carDriveInOffset + keyboardOffset;
 
     return LoadingOverlay.wrap(
       loading: _loading,
@@ -205,10 +270,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with SingleTickerProv
         body: SafeArea(
           child: Stack(
             children: [
-              Positioned(
-                top: -carTopOverflow,
-                left: 0,
-                right: 0,
+              AnimatedBuilder(
+                animation: _driveCtrl,
+                builder: (context, child) {
+                  return AnimatedPositioned(
+                    duration: _loginSuccess ? Duration.zero : const Duration(milliseconds: 300),
+                    curve: Curves.easeOut,
+                    top: -carTopOverflow + carOffset,
+                    left: 0,
+                    right: 0,
+                    child: child!,
+                  );
+                },
                 child: IgnorePointer(
                   child: SizedBox(
                     height: carBoxHeight,
@@ -225,10 +298,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with SingleTickerProv
                   ),
                 ),
               ),
-              Positioned.fill(
-                child: SingleChildScrollView(
-                  padding: EdgeInsets.fromLTRB(24, contentTopPadding, 24, 0),
-                  child: Column(
+              AnimatedOpacity(
+                opacity: _loginSuccess ? 0 : 1,
+                duration: const Duration(milliseconds: 500),
+                child: Positioned.fill(
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.fromLTRB(24, contentTopPadding, 24, 0),
+                    child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       _FadeSlide(
@@ -384,10 +460,72 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with SingleTickerProv
                           enabled: _canSubmit,
                         ),
                       ),
+                      if (_biometricAvailable) ...[
+                        const SizedBox(height: 16),
+                        _FadeSlide(
+                          controller: _introCtrl,
+                          interval: const Interval(0.88, 1.00, curve: Curves.easeOut),
+                          from: const Offset(0, 10),
+                          child: OutlinedButton.icon(
+                            onPressed: _loading ? null : _biometricLogin,
+                            icon: const Icon(Icons.fingerprint_rounded, size: 22),
+                            label: const Text('Sign in with Biometrics'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.primary,
+                              side: const BorderSide(color: AppColors.primary),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 24),
                     ],
                   ),
                 ),
+              ),
+              ),
+              // Next screen sliding up as car drives away
+              AnimatedBuilder(
+                animation: _driveCtrl,
+                builder: (context, child) {
+                  final slideProgress = _driveCtrl.value;
+                  final slideOffset = (1 - slideProgress) * screenSize.height;
+                  return Positioned(
+                    top: slideOffset,
+                    left: 0,
+                    right: 0,
+                    bottom: -slideOffset,
+                    child: Container(
+                      color: AppColors.white,
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const SizedBox(height: 40),
+                            Icon(
+                              Icons.check_circle_rounded,
+                              color: AppColors.primary,
+                              size: 64,
+                            ),
+                            const SizedBox(height: 24),
+                            Text(
+                              'Welcome!',
+                              style: AppTextStyles.h2,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'You are logged in',
+                              style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
               ),
             ],
           ),

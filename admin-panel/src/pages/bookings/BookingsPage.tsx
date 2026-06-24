@@ -340,6 +340,36 @@ function BookingDetailModal({ bookingId, onClose, onAssign, onDeassign, onCancel
               <p className="text-sm text-amber-800">{b.note}</p>
             </div>
           )}
+
+          {b.trip_report && (
+            <div className="rounded-xl border border-red-200 bg-red-50 p-3.5">
+              <p className="text-xs font-semibold uppercase tracking-wide text-red-600 mb-2 flex items-center gap-1">
+                <AlertTriangle size={12} /> Trip Report
+              </p>
+              <div className="space-y-2 text-sm">
+                <div>
+                  <p className="text-[10px] text-red-600 font-semibold uppercase tracking-wide">Reason</p>
+                  <p className="text-red-900">{b.trip_report.report_reason}</p>
+                </div>
+                {b.trip_report.description && (
+                  <div>
+                    <p className="text-[10px] text-red-600 font-semibold uppercase tracking-wide">Description</p>
+                    <p className="text-red-800 text-xs">{b.trip_report.description}</p>
+                  </div>
+                )}
+                <div className="flex items-center gap-2 pt-2 border-t border-red-200">
+                  <Badge status={b.trip_report.report_status}>{b.trip_report.report_status}</Badge>
+                  <span className="text-[10px] text-red-600 ml-auto">{formatDateTime(b.trip_report.created_at)}</span>
+                </div>
+                {b.trip_report.admin_notes && (
+                  <div className="pt-2 mt-2 border-t border-red-200">
+                    <p className="text-[10px] text-red-600 font-semibold uppercase tracking-wide mb-1">Admin Notes</p>
+                    <p className="text-red-800 text-xs">{b.trip_report.admin_notes}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </Modal>
@@ -521,7 +551,15 @@ export function BookingsPage() {
       header: 'Status',
       render: (b: Booking) => (
         <div>
-          <Badge status={b.status} dot />
+          <div className="flex items-center gap-2">
+            <Badge status={b.status} dot />
+            {b.report_id && (
+              <div className="flex items-center gap-1 px-2 py-1 bg-red-100 text-red-700 rounded text-[10px] font-semibold">
+                <AlertTriangle size={10} />
+                Report
+              </div>
+            )}
+          </div>
           <p className="text-xs font-semibold text-slate-800 mt-1">{formatCurrency(b.final_fare ?? b.estimated_fare)}</p>
           {b.distance_km ? <p className="text-[10px] text-slate-400">{b.distance_km} km</p> : null}
         </div>

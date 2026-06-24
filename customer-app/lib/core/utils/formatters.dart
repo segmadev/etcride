@@ -60,3 +60,9 @@ abstract final class AppFormatters {
   static String duration(int minutes) =>
       minutes == 1 ? '1 min' : '$minutes mins';
 }
+
+/// String extensions for common operations
+extension StringExtensions on String {
+  /// Capitalize first letter: "pending" → "Pending"
+  String capitalize() => isNotEmpty ? '${this[0].toUpperCase()}${substring(1)}' : '';
+}
