@@ -320,15 +320,16 @@ class _AccountDeletionScreenState extends ConsumerState<AccountDeletionScreen> {
         if (request.isPending)
           AppButton(
             onPressed: () => _cancelRequest(request.id),
-            variant: 'secondary',
+            variant: AppButtonVariant.secondary,
             label: 'Cancel Request',
           ),
         if (request.isApproved)
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: AppColors.info.withValues(alpha: 0.1),
+              color: AppColors.warning.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.warning.withValues(alpha: 0.2)),
             ),
             child: Text(
               'Your account will be deleted shortly. '
@@ -400,7 +401,7 @@ class _AccountDeletionScreenState extends ConsumerState<AccountDeletionScreen> {
         const SizedBox(height: 20),
         AppButton(
           onPressed: _confirmChecked ? _requestDeletion : null,
-          variant: 'danger',
+          variant: AppButtonVariant.primary,
           label: 'Request Account Deletion',
         ),
       ],

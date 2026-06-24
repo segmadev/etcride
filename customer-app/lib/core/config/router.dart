@@ -30,12 +30,14 @@ import '../../features/courier/courier_select_vehicle_screen.dart';
 import '../../features/courier/delivery_rules_screen.dart';
 import '../../features/profile/profile_screen.dart';
 import '../../features/settings/settings_screen.dart';
+import '../../features/settings/account_deletion_screen.dart';
 import '../../features/notifications/notifications_screen.dart';
 import '../../features/reports/reports_history_screen.dart';
 import '../../features/help/help_screen.dart';
 import '../../features/help/contact_support_screen.dart';
 import '../../features/help/report_issue_screen.dart';
 import '../../features/help/legal_documents_screen.dart';
+import '../../features/help/terms_and_policy_screen.dart';
 import '../../features/help/common_topics_screen.dart';
 import '../../features/help/common_topic_detail_screen.dart';
 
@@ -101,6 +103,7 @@ abstract final class AppRoutes {
   // ── Profile & settings ────────────────────────────────────────────────────
   static const String profile            = '/profile';
   static const String settings           = '/settings';
+  static const String accountDeletion    = '/account-deletion';
   static const String notifications      = '/notifications';
   static const String reportsHistory      = '/reports-history';
 
@@ -109,6 +112,7 @@ abstract final class AppRoutes {
   static const String contactSupport     = '/contact-support';
   static const String reportIssue        = '/report-issue';
   static const String legalDocuments     = '/legal-documents';
+  static const String termsAndPolicy     = '/terms-and-policy';   // extra: tab ('terms' or 'policy')
   static const String commonTopics       = '/common-topics';       // extra: category (String)
   static const String commonTopicDetail  = '/common-topic-detail'; // extra: {category, topic}
 }
@@ -274,6 +278,10 @@ final appRouter = GoRouter(
       pageBuilder: (_, state) => _appPage(state, const SettingsScreen()),
     ),
     GoRoute(
+      path: AppRoutes.accountDeletion,
+      pageBuilder: (_, state) => _appPage(state, const AccountDeletionScreen()),
+    ),
+    GoRoute(
       path: AppRoutes.notifications,
       pageBuilder: (_, state) => _appPage(state, const NotificationsScreen()),
     ),
@@ -298,6 +306,13 @@ final appRouter = GoRouter(
     GoRoute(
       path: AppRoutes.legalDocuments,
       pageBuilder: (_, state) => _appPage(state, const LegalDocumentsScreen()),
+    ),
+    GoRoute(
+      path: AppRoutes.termsAndPolicy,
+      pageBuilder: (_, state) => _appPage(
+        state,
+        TermsAndPolicyScreen(tab: state.extra as String? ?? 'terms'),
+      ),
     ),
     GoRoute(
       path: AppRoutes.commonTopics,

@@ -180,7 +180,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 labelColor: AppColors.error,
                 iconColor: AppColors.error,
                 chevronColor: AppColors.error,
-                onTap: () => _showDeleteDialog(context, ref),
+                onTap: () {
+                  if (context.mounted) {
+                    context.push(AppRoutes.accountDeletion);
+                  }
+                },
               ),
             ),
           ],
@@ -192,36 +196,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   void _comingSoon(BuildContext context) {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text(AppStrings.comingSoon)),
-    );
-  }
-
-  void _showDeleteDialog(BuildContext context, WidgetRef ref) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Delete Account?', style: AppTextStyles.h4),
-        content: Text(
-          'This action is permanent and cannot be undone. All your data will be lost.',
-          style: AppTextStyles.bodyMedium,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text('Cancel', style: AppTextStyles.labelMedium),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(ctx);
-              await ref.read(authRepositoryProvider).logout();
-              ref.read(currentUserProvider.notifier).state = null;
-              if (context.mounted) context.go(AppRoutes.phone);
-            },
-            child: Text('Delete',
-                style: AppTextStyles.labelMedium
-                    .copyWith(color: AppColors.error)),
-          ),
-        ],
-      ),
     );
   }
 }
