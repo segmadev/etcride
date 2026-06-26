@@ -20,7 +20,7 @@ class Bookings extends BaseController
 
         $stmt = $this->db->prepare("
             SELECT b.id AS booking_id, b.status,
-                   d.name  AS other_name,
+                   COALESCE(d.name, b.driver_name, 'Driver') AS other_name,
                    d.photo AS other_photo,
                    m.body  AS last_message,
                    m.sender_role AS last_sender_role,
@@ -188,6 +188,7 @@ class Bookings extends BaseController
             'id'                  => $id,
             'booking_code'        => $code,
             'customer_id'         => $me['id'],
+            'customer_name'       => $me['name'] ?? 'Customer',
             'vehicle_type_id'     => $vtId,
             'booking_type'        => $bookingType,
             'status'              => 'pending',
@@ -579,7 +580,7 @@ class Bookings extends BaseController
         // If a driver is currently assigned, unassign them first
         $currentDriverId = $booking['driver_id'] ?? null;
         if ($currentDriverId) {
-            $this->update('bookings', ['status' => 'pending', 'driver_id' => null], "id = '$id'");
+            $this->update('bookings', ['status' => 'pending', 'driver_id' => null, 'driver_name' => null], "id = '$id'");
             $this->recordStatusChange($id, $booking['status'], 'pending', 'customer', $me['id'], 'Customer requested a new driver');
         }
 
@@ -926,8 +927,10 @@ class Bookings extends BaseController
         $booking = $this->getall('bookings', 'id = ? AND customer_id = ?', [$id, $me['id']]);
         if (!$booking) { echo utilities::apiMessage('Booking not found.', 404); return; }
 
-        if (!in_array($booking['status'], ['pending', 'assigned'])) {
-            echo utilities::apiMessage('Location can only be changed before a driver starts the trip.', 409);
+        // Allow location changes before trip starts OR during active trip (reroute)
+        $isReroute = $booking['status'] === 'in_progress';
+        if (!in_array($booking['status'], ['pending', 'assigned', 'in_progress'])) {
+            echo utilities::apiMessage('Location can only be changed before a driver starts the trip or during an active trip.', 409);
             return;
         }
 
@@ -938,21 +941,54 @@ class Bookings extends BaseController
         $destLng     = isset($_POST['destination_lng'])     ? (float)  $_POST['destination_lng']     : null;
         $destAddr    = isset($_POST['destination_address']) ? trim((string) $_POST['destination_address']) : null;
 
-        $newPickupLat  = $pickupLat  ?? (float) $booking['pickup_lat'];
-        $newPickupLng  = $pickupLng  ?? (float) $booking['pickup_lng'];
-        $newPickupAddr = $pickupAddr ?? (string) $booking['pickup_address'];
+        // For reroute, use driver's current location as starting point; for pre-trip changes, use pickup
+        if ($isReroute) {
+            // Get driver's current location
+            $driver = $this->getall('drivers', 'id = ?', [$booking['driver_id']]);
+            $routeStartLat = (float) ($driver['last_lat'] ?? $booking['pickup_lat']);
+            $routeStartLng = (float) ($driver['last_lng'] ?? $booking['pickup_lng']);
+        } else {
+            // Pre-trip change: allow modifying pickup location
+            $routeStartLat = $pickupLat ?? (float) $booking['pickup_lat'];
+            $routeStartLng = $pickupLng ?? (float) $booking['pickup_lng'];
+        }
+
+        $newPickupLat  = !$isReroute && $pickupLat ? $pickupLat : (float) $booking['pickup_lat'];
+        $newPickupLng  = !$isReroute && $pickupLng ? $pickupLng : (float) $booking['pickup_lng'];
+        $newPickupAddr = !$isReroute && $pickupAddr ? $pickupAddr : (string) $booking['pickup_address'];
         $newDestLat    = $destLat    ?? (float) $booking['destination_lat'];
         $newDestLng    = $destLng    ?? (float) $booking['destination_lng'];
         $newDestAddr   = $destAddr   ?? (string) $booking['destination_address'];
 
-        // Recompute distance
-        $distanceKm = round($this->haversine($newPickupLat, $newPickupLng, $newDestLat, $newDestLng), 2);
+        // Recompute distance from route start to new destination
+        $distanceKm = round($this->haversine($routeStartLat, $routeStartLng, $newDestLat, $newDestLng), 2);
+
+        // For reroute, add cost of distance already covered
+        if ($isReroute) {
+            $coveredDistanceKm = round($this->haversine(
+                (float) $booking['pickup_lat'],
+                (float) $booking['pickup_lng'],
+                $routeStartLat,
+                $routeStartLng
+            ), 2);
+            // Total distance is covered + remaining
+            $totalDistanceKm = $coveredDistanceKm + $distanceKm;
+        } else {
+            $totalDistanceKm = $distanceKm;
+        }
 
         // Recompute fare
         $vtId   = (string) $booking['vehicle_type_id'];
         $zoneId = $this->getDefaultZoneId();
         $bookingType = (string) ($booking['booking_type'] ?? 'ride');
-        $newFare = $this->calculateFare($vtId, $zoneId, $distanceKm, 0, null, $bookingType);
+
+        if ($isReroute) {
+            // For reroute, charge for total distance (covered + remaining)
+            $newFare = $this->calculateFare($vtId, $zoneId, $totalDistanceKm, 0, null, $bookingType);
+        } else {
+            // For pre-trip changes, charge for new total distance
+            $newFare = $this->calculateFare($vtId, $zoneId, $distanceKm, 0, null, $bookingType);
+        }
 
         $update = [
             'pickup_lat'          => $newPickupLat,
@@ -961,24 +997,29 @@ class Bookings extends BaseController
             'destination_lat'     => $newDestLat,
             'destination_lng'     => $newDestLng,
             'destination_address' => $newDestAddr,
-            'distance_km'         => $distanceKm,
+            'distance_km'         => $isReroute ? $totalDistanceKm : $distanceKm,
             'estimated_fare'      => $newFare,
         ];
 
         // Recompute route polyline in background if route columns exist
         if ($this->tableHasColumn('bookings', 'route_polyline')) {
-            $snap = $this->computeRouteSnapshot($newPickupLat, $newPickupLng, $newDestLat, $newDestLng, []);
+            $snap = $this->computeRouteSnapshot($routeStartLat, $routeStartLng, $newDestLat, $newDestLng, []);
             if (is_array($snap)) {
                 $update['route_polyline'] = $snap['polyline'] ?? null;
                 if ($this->tableHasColumn('bookings', 'route_distance_meters'))
                     $update['route_distance_meters'] = $snap['distance_meters'] ?? null;
                 if ($this->tableHasColumn('bookings', 'route_duration_seconds'))
                     $update['route_duration_seconds'] = $snap['duration_seconds'] ?? null;
-                if (!empty($snap['distance_meters']))
-                    $distanceKm = round(((float) $snap['distance_meters']) / 1000, 2);
-                // Recompute fare with road distance
-                $newFare = $this->calculateFare($vtId, $zoneId, $distanceKm, 0, null, $bookingType);
-                $update['distance_km']    = $distanceKm;
+                if (!empty($snap['distance_meters'])) {
+                    $newRouteDistanceKm = round(((float) $snap['distance_meters']) / 1000, 2);
+                    if ($isReroute) {
+                        $totalDistanceKm = $coveredDistanceKm + $newRouteDistanceKm;
+                        $newFare = $this->calculateFare($vtId, $zoneId, $totalDistanceKm, 0, null, $bookingType);
+                    } else {
+                        $newFare = $this->calculateFare($vtId, $zoneId, $newRouteDistanceKm, 0, null, $bookingType);
+                    }
+                }
+                $update['distance_km']    = $isReroute ? $totalDistanceKm : $newRouteDistanceKm;
                 $update['estimated_fare'] = $newFare;
             }
         }
@@ -986,10 +1027,10 @@ class Bookings extends BaseController
         $this->update('bookings', $update, "id = '$id'");
 
         echo utilities::apiMessage('Location updated.', 200, [
-            'estimated_fare'      => $newFare,
-            'distance_km'         => $distanceKm,
-            'pickup_address'      => $newPickupAddr,
-            'destination_address' => $newDestAddr,
+            'estimated_fare'      => $update['estimated_fare'] ?? $newFare,
+            'distance_km'         => $update['distance_km'],
+            'pickup_address'      => $update['pickup_address'],
+            'destination_address' => $update['destination_address'],
         ]);
     }
 

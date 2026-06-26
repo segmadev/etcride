@@ -544,7 +544,12 @@ class BaseController extends helper
     protected function assignDriver(string $bookingId, string $driverId, array $booking): void
     {
         $prev = $booking['status'] ?? 'pending';
-        $this->update('bookings', ['status' => 'assigned', 'driver_id' => $driverId], "id = '$bookingId'");
+        $driver = $this->getall('drivers', 'id = ?', [$driverId], 'id');
+        $updateData = ['status' => 'assigned', 'driver_id' => $driverId];
+        if (is_array($driver) && !empty($driver['name'])) {
+            $updateData['driver_name'] = $driver['name'];
+        }
+        $this->update('bookings', $updateData, "id = '$bookingId'");
         $this->recordStatusChange($bookingId, $prev, 'assigned', 'system', null, 'Auto-assigned');
         $this->notify(
             'driver', $driverId,
@@ -842,6 +847,11 @@ class BaseController extends helper
     protected function generateToken(): string
     {
         return bin2hex(random_bytes(32));
+    }
+
+    protected function generateId(): string
+    {
+        return utilities::genID('', 16);
     }
 
     // ── Default zone lookup ───────────────────────────────────────────────────

@@ -276,11 +276,11 @@ class _DriverChatScreenState
 
           // ── Input bar ─────────────────────────────────────────────────────
           Container(
-            padding: EdgeInsets.fromLTRB(12, 10, 12, bottom + 10),
             decoration: BoxDecoration(
               color: AppColors.white,
               border: Border(
-                  top: BorderSide(color: AppColors.divider)),
+                top: BorderSide(color: AppColors.divider, width: 1),
+              ),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.05),
@@ -289,6 +289,7 @@ class _DriverChatScreenState
                 ),
               ],
             ),
+            padding: EdgeInsets.fromLTRB(12, 12, 12, bottom + 12),
             child: Row(
               children: [
                 Expanded(
@@ -301,19 +302,28 @@ class _DriverChatScreenState
                       controller: _controller,
                       textInputAction: TextInputAction.send,
                       onSubmitted: (_) => _sendMessage(),
-                      style: AppTextStyles.bodyMedium,
+                      maxLines: null,
+                      minLines: 1,
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        color: AppColors.textPrimary,
+                        height: 1.3,
+                      ),
                       decoration: InputDecoration(
-                        hintText: 'Type a message…',
+                        hintText: 'Type a message...',
                         hintStyle: AppTextStyles.bodyMedium.copyWith(
-                            color: AppColors.textHint),
+                          color: AppColors.textHint,
+                        ),
                         border: InputBorder.none,
                         contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 18, vertical: 12),
+                          horizontal: 18,
+                          vertical: 12,
+                        ),
+                        isCollapsed: false,
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 12),
                 GestureDetector(
                   onTap: _sending ? null : _sendMessage,
                   child: AnimatedContainer(
@@ -330,13 +340,17 @@ class _DriverChatScreenState
                               width: 18,
                               height: 18,
                               child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white),
+                                strokeWidth: 2.5,
+                                color: Colors.white,
+                              ),
                             ),
                           )
                         : const Center(
-                            child: Icon(Icons.send_rounded,
-                                color: Colors.white, size: 20),
+                            child: Icon(
+                              Icons.send_rounded,
+                              color: Colors.white,
+                              size: 20,
+                            ),
                           ),
                   ),
                 ),
@@ -409,7 +423,7 @@ class _MessageBubble extends StatelessWidget {
     final isDriver = message.isMine;
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 10),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         mainAxisAlignment: isDriver
@@ -417,7 +431,6 @@ class _MessageBubble extends StatelessWidget {
             : MainAxisAlignment.start,
         children: [
           if (!isDriver) ...[
-            // Passenger avatar
             CircleAvatar(
               radius: 14,
               backgroundColor: AppColors.primaryLight,
@@ -427,34 +440,37 @@ class _MessageBubble extends StatelessWidget {
             const SizedBox(width: 8),
           ],
 
-          // Bubble
           Flexible(
-            child: Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 14, vertical: 10),
-              constraints: BoxConstraints(
-                maxWidth: MediaQuery.of(context).size.width * 0.68,
-              ),
-              decoration: BoxDecoration(
-                color: isDriver ? _kAmber : AppColors.surface,
-                borderRadius: BorderRadius.only(
-                  topLeft:     const Radius.circular(16),
-                  topRight:    const Radius.circular(16),
-                  bottomLeft:  Radius.circular(isDriver ? 16 : 4),
-                  bottomRight: Radius.circular(isDriver ? 4 : 16),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.06),
-                    blurRadius: 4,
-                    offset: const Offset(0, 2),
+            child: Column(
+              crossAxisAlignment: isDriver
+                  ? CrossAxisAlignment.end
+                  : CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
                   ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
+                  constraints: BoxConstraints(
+                    maxWidth: MediaQuery.of(context).size.width * 0.68,
+                  ),
+                  decoration: BoxDecoration(
+                    color: isDriver ? _kAmber : const Color(0xFFF0F0F0),
+                    borderRadius: BorderRadius.only(
+                      topLeft: const Radius.circular(18),
+                      topRight: const Radius.circular(18),
+                      bottomLeft: Radius.circular(isDriver ? 18 : 4),
+                      bottomRight: Radius.circular(isDriver ? 4 : 18),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.04),
+                        blurRadius: 2,
+                        offset: const Offset(0, 1),
+                      ),
+                    ],
+                  ),
+                  child: Text(
                     message.body,
                     style: AppTextStyles.bodyMedium.copyWith(
                       color: isDriver
@@ -463,19 +479,17 @@ class _MessageBubble extends StatelessWidget {
                       height: 1.4,
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    _fmtTime(message.createdAt),
-                    style: TextStyle(
-                      fontFamily: 'Inter',
-                      fontSize: 10,
-                      color: isDriver
-                          ? Colors.white.withValues(alpha: 0.7)
-                          : AppColors.textHint,
-                    ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _fmtTime(message.createdAt),
+                  style: TextStyle(
+                    fontFamily: 'Inter',
+                    fontSize: 11,
+                    color: AppColors.textHint,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
 

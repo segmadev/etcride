@@ -63,7 +63,7 @@ class _ReportIssueScreenState extends ConsumerState<ReportIssueScreen> {
       return _IssueChatView(
         booking: _selected!,
         onBack: () => setState(() => _selected = null),
-        onContactSupport: () => context.push(AppRoutes.contactSupport),
+        onContactSupport: () => context.push(AppRoutes.help),
       );
     }
 

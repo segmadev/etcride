@@ -98,6 +98,7 @@ class _DriverOtpScreenState extends ConsumerState<DriverOtpScreen> {
         otp:     otp,
       );
       ref.read(currentDriverProvider.notifier).state = driver;
+      await ref.read(secureStorageProvider).setHasLoggedInBefore();
       if (!mounted) return;
       switch (driver.kycStatus) {
         case 'verified':

@@ -16,6 +16,7 @@ class DriverCard extends StatelessWidget {
     this.trailing,
     this.showFare = true,
     this.onChat,
+    this.onReroute,
     this.chatUnread = 0,
   });
 
@@ -25,6 +26,7 @@ class DriverCard extends StatelessWidget {
   final Widget? trailing;
   final bool showFare;
   final VoidCallback? onChat;
+  final VoidCallback? onReroute;
   final int chatUnread;
 
   void _call() {
@@ -83,6 +85,21 @@ class DriverCard extends StatelessWidget {
                         color: AppColors.successLight, shape: BoxShape.circle),
                     child: const Icon(Icons.call_rounded,
                         color: AppColors.success, size: 20),
+                  ),
+                ),
+              if (onReroute != null)
+                Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: GestureDetector(
+                    onTap: onReroute,
+                    child: Container(
+                      width: 44,
+                      height: 44,
+                      decoration: const BoxDecoration(
+                          color: AppColors.warningLight, shape: BoxShape.circle),
+                      child: const Icon(Icons.edit_location_rounded,
+                          color: AppColors.warning, size: 20),
+                    ),
                   ),
                 ),
             ],

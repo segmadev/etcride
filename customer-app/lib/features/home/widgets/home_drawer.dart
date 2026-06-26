@@ -10,6 +10,7 @@ import '../../../shared/widgets/live_chat_widget.dart';
 import '../../auth/complete_profile_screen.dart';
 import '../../booking/search_destination_screen.dart';
 import '../../../shared/providers/providers.dart';
+import './home_bottom_sheet.dart';
 
 class HomeDrawer extends ConsumerWidget {
   const HomeDrawer({super.key});
@@ -108,7 +109,7 @@ class HomeDrawer extends ConsumerWidget {
                     AppStrings.sendAPackage,
                     onTap: () {
                       Navigator.pop(context);
-                      context.push(AppRoutes.courier);
+                      _showCourierModal(context);
                     },
                   ),
                   _DrawerItem(AppStrings.myTripHistory, null, () {
@@ -137,10 +138,6 @@ class HomeDrawer extends ConsumerWidget {
                   _DrawerItem(AppStrings.help, null, () {
                     Navigator.pop(context);
                     context.push(AppRoutes.help);
-                  }),
-                  _DrawerItem(AppStrings.support, null, () {
-                    Navigator.pop(context);
-                    context.push(AppRoutes.contactSupport);
                   }),
                   const SizedBox(height: 8),
                   LiveChatButton(
@@ -172,6 +169,15 @@ class HomeDrawer extends ConsumerWidget {
           ],
         ),
       ),
+    );
+  }
+
+  void _showCourierModal(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const HomeBottomSheet(initialCourierMode: true),
     );
   }
 }

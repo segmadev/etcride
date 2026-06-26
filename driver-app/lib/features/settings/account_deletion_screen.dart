@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
+import '../../core/config/router.dart';
 import '../../data/repositories/account_deletion_repository.dart';
 import '../../shared/providers/providers.dart';
 import '../../shared/widgets/app_back_button.dart';
@@ -75,19 +77,12 @@ class _AccountDeletionScreenState extends ConsumerState<AccountDeletionScreen> {
       if (!mounted) return;
       Navigator.pop(context); // Close loading
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-              'Deletion request submitted. Admin will review within 24-48 hours.'),
-          backgroundColor: AppColors.success,
-        ),
-      );
-
       _reasonCtrl.clear();
-      setState(() {
-        _statusFuture =
-            ref.read(accountDeletionRepositoryProvider).getRequestStatus();
-      });
+
+      // Navigate to status screen to show deletion request details
+      if (mounted) {
+        context.push(AppRoutes.accountDeletionStatus);
+      }
     } catch (e) {
       if (!mounted) return;
       Navigator.pop(context); // Close loading

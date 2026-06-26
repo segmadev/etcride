@@ -22,6 +22,7 @@ import '../../../shared/widgets/driver_card.dart';
 import '../../../shared/widgets/trip_quick_nav.dart';
 import '../../../shared/widgets/app_bottom_drawer.dart';
 import '../home/widgets/home_drawer.dart';
+import '../booking/search_destination_screen.dart';
 
 class TripInProgressScreen extends ConsumerStatefulWidget {
   const TripInProgressScreen({super.key, required this.bookingId});
@@ -134,6 +135,50 @@ class _TripInProgressScreenState
     );
   }
 
+  Future<void> _showRerouteSheet(BuildContext context) async {
+    if (_booking == null || _booking!.bookingType != BookingType.ride) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Reroute is only available for rides'), backgroundColor: AppColors.error),
+      );
+      return;
+    }
+
+    final result = await showAppBottomDrawer<SearchDestinationResult>(
+      context: context,
+      child: SearchDestinationScreen(
+        asSheet: true,
+        destinationOnly: true,
+        initialDestination: _booking!.destinationAddress,
+      ),
+    );
+
+    if (result == SearchDestinationResult.openSelectRide && mounted) {
+      final draft = ref.read(bookingDraftProvider);
+      if (draft.hasDestination) {
+        try {
+          await ref.read(bookingRepositoryProvider).updateBookingDestination(
+            _booking!.id,
+            draft.destinationAddress,
+            draft.destinationLat,
+            draft.destinationLng,
+          );
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Destination updated successfully'), backgroundColor: AppColors.success),
+            );
+            await _load();
+          }
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Failed to update destination: $e'), backgroundColor: AppColors.error),
+            );
+          }
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final b      = _booking;
@@ -243,6 +288,9 @@ class _TripInProgressScreenState
                         AppRoutes.driverChat,
                         extra: b.id,
                       ),
+                      onReroute: b.bookingType == BookingType.ride
+                          ? () => _showRerouteSheet(context)
+                          : null,
                     ),
                   ),
           ),

@@ -120,9 +120,10 @@ class CustomerAccountDelete extends BaseController
             return;
         }
 
-        $user = $this->getall('users', 'id = ? AND status = 1', [$session['user_id']]);
+        // Allow deactivated users to check their deletion status
+        $user = $this->getall('users', 'id = ?', [$session['user_id']]);
         if (!is_array($user)) {
-            echo utilities::apiMessage('User not found or inactive.', 401);
+            echo utilities::apiMessage('User not found.', 404);
             return;
         }
 

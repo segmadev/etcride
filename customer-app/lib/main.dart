@@ -6,10 +6,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/config/router.dart';
 import 'core/network/session_expired_notifier.dart';
+import 'core/network/account_deactivation_notifier.dart';
 import 'core/services/chat_notification_service.dart';
 import 'core/services/notification_service.dart';
 import 'core/storage/secure_storage.dart';
 import 'core/theme/app_theme.dart';
+import 'data/repositories/account_deletion_repository.dart';
 import 'firebase_options.dart';
 import 'shared/providers/providers.dart';
 
@@ -52,6 +54,10 @@ class _ETCRideAppState extends ConsumerState<ETCRideApp> with WidgetsBindingObse
     _sessionSub = SessionExpiredNotifier.instance.stream.listen((_) {
       _handleSessionExpired();
     });
+    // Listen for account deactivation (e.g., pending deletion)
+    AccountDeactivationNotifier.instance.stream.listen((_) {
+      _handleAccountDeactivated();
+    });
     // Periodic auth check every 5 minutes (skip on web due to storage issues)
     if (!kIsWeb) {
       _authCheckTimer = Timer.periodic(const Duration(minutes: 5), (_) async {
@@ -65,6 +71,8 @@ class _ETCRideAppState extends ConsumerState<ETCRideApp> with WidgetsBindingObse
     if (state == AppLifecycleState.resumed && !kIsWeb) {
       // Check auth when app comes to foreground (skip on web)
       _validateAuth();
+      // Check if user has pending account deletion
+      _checkAccountDeletionStatus();
     }
   }
 
@@ -109,6 +117,30 @@ class _ETCRideAppState extends ConsumerState<ETCRideApp> with WidgetsBindingObse
         }
       });
     }, fireImmediately: true);
+  }
+
+  Future<void> _checkAccountDeletionStatus() async {
+    if (!mounted || kIsWeb) return;
+    try {
+      final status = await ref.read(accountDeletionRepositoryProvider).getRequestStatus();
+      if (status != null && mounted) {
+        // User has a deletion request, restrict to status screen only
+        appRouter.go(AppRoutes.accountDeletionStatus);
+      }
+    } catch (e) {
+      // Ignore errors - don't trigger logout for deletion status checks
+      // 404 means no deletion request (normal)
+      // 401 might be temporary token issue
+      debugPrint('[AccountDeletion] Status check failed silently: $e');
+    }
+  }
+
+  Future<void> _handleAccountDeactivated() async {
+    // Account has been deactivated due to deletion request
+    // Redirect to status screen and prevent navigation
+    if (mounted) {
+      appRouter.go(AppRoutes.accountDeletionStatus);
+    }
   }
 
   Future<void> _handleSessionExpired() async {

@@ -15,7 +15,7 @@ class Jobs extends BaseController
 
         $stmt = $this->db->prepare("
             SELECT b.id AS booking_id, b.status,
-                   u.name  AS other_name,
+                   COALESCE(u.name, b.customer_name, 'Customer') AS other_name,
                    m.body  AS last_message,
                    m.sender_role AS last_sender_role,
                    m.created_at  AS last_message_at,
@@ -228,7 +228,7 @@ class Jobs extends BaseController
         }
 
         // Step 1: unassign — return booking to pending, record the rejection
-        $this->update('bookings', ['status' => 'pending', 'driver_id' => null], "id = '$id'");
+        $this->update('bookings', ['status' => 'pending', 'driver_id' => null, 'driver_name' => null], "id = '$id'");
         $this->recordStatusChange($id, 'assigned', 'rejected', 'driver', $me['id'], $reason);
         $this->logActivity('driver', $me['id'], 'job_rejected', ['booking_id' => $id, 'reason' => $reason]);
 

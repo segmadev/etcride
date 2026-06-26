@@ -305,6 +305,20 @@ class BookingRepository {
     return data ?? {};
   }
 
+  Future<void> updateBookingDestination(
+    String id,
+    String destinationAddress,
+    double destinationLat,
+    double destinationLng,
+  ) async {
+    await updateBookingLocation(
+      id,
+      destinationAddress: destinationAddress,
+      destinationLat: destinationLat,
+      destinationLng: destinationLng,
+    );
+  }
+
   /// Fetch active vehicle types for the booking flow.
   Future<List<dynamic>> getVehicleTypes({String? bookingType}) async {
     final data = await _client.get<List<dynamic>>(

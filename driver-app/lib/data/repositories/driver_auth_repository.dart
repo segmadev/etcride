@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'package:dio/dio.dart' show FormData, MultipartFile;
+import 'package:dio/dio.dart' show DioException, FormData, MultipartFile;
 import 'package:image_picker/image_picker.dart';
 import '../../core/network/api_client.dart';
 import '../../core/network/api_endpoints.dart';
@@ -145,8 +145,17 @@ class DriverAuthRepository {
       // Call a simple endpoint that requires auth to verify token is valid
       await _client.get<Map<String, dynamic>>(ApiEndpoints.driverGetProfile);
       return true;
+    } on DioException catch (e) {
+      // Only consider 401 Unauthorized as invalid auth
+      // Network errors, timeouts, etc. should not cause logout
+      if (e.response?.statusCode == 401) {
+        return false;
+      }
+      // For other errors, rethrow to be handled gracefully
+      rethrow;
     } catch (e) {
-      return false;
+      // Network or other errors - rethrow to avoid unexpected logout
+      rethrow;
     }
   }
 

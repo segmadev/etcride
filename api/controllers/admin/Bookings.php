@@ -128,7 +128,11 @@ class Bookings extends BaseController
             return;
         }
 
-        $this->update('bookings', ['status' => 'assigned', 'driver_id' => $driverId], "id = '$id'");
+        $this->update('bookings', [
+            'status' => 'assigned',
+            'driver_id' => $driverId,
+            'driver_name' => $driver['name'] ?? 'Driver'
+        ], "id = '$id'");
         $this->recordStatusChange($id, $booking['status'], 'assigned', 'admin', $me['id']);
 
         $this->notify('driver', $driverId, 'New Job Assigned',
@@ -171,7 +175,12 @@ class Bookings extends BaseController
 
         $prevDriverId = $booking['driver_id'];
 
-        $this->update('bookings', ['status' => 'assigned', 'driver_id' => $newDriverId], "id = '$id'");
+        $newDriver = $this->getall('drivers', 'id = ?', [$newDriverId]);
+        $updateData = ['status' => 'assigned', 'driver_id' => $newDriverId];
+        if (is_array($newDriver) && !empty($newDriver['name'])) {
+            $updateData['driver_name'] = $newDriver['name'];
+        }
+        $this->update('bookings', $updateData, "id = '$id'");
         $this->recordStatusChange($id, $booking['status'], 'assigned', 'admin', $me['id'], "Reassigned: $reason");
 
         // Notify previous driver
@@ -252,7 +261,7 @@ class Bookings extends BaseController
 
         $prevDriverId = $booking['driver_id'];
 
-        $this->update('bookings', ['status' => 'pending', 'driver_id' => null], "id = '$id'");
+        $this->update('bookings', ['status' => 'pending', 'driver_id' => null, 'driver_name' => null], "id = '$id'");
         $this->recordStatusChange($id, 'assigned', 'pending', 'admin', $me['id'], 'Driver deassigned by admin');
 
         if ($prevDriverId) {

@@ -5,6 +5,7 @@ import { PageWrapper } from '../../components/layout/PageWrapper';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Input, Select, Textarea } from '../../components/ui/Input';
+import { RichTextEditor } from '../../components/ui/RichTextEditor';
 import { InfoTooltip } from '../../components/ui/InfoTooltip';
 import { useToast } from '../../components/ui/Toast';
 import { settingsApi, getApiErrorMessage, smtpConfigsApi } from '../../api';
@@ -153,6 +154,7 @@ const SELECT_FIELDS: Record<string, { value: string; label: string }[]> = {
 };
 
 const TEXTAREA_FIELDS = new Set(['about_text', 'terms_and_conditions', 'privacy_policy', 'driver_locations_json']);
+const RICHTEXT_FIELDS = new Set(['terms_and_conditions', 'privacy_policy']);
 const PASSWORD_FIELDS = new Set(['flutterwave_secret_key', 'flutterwave_secret_hash', 'sms_api_key']);
 
 // ── Help text ──────────────────────────────────────────────────────────────────
@@ -647,6 +649,19 @@ const hasDirty = Object.keys(dirty).length > 0;
           value={current}
           onChange={e => set(key, e.target.value)}
           options={options}
+          helper={desc}
+        />
+      );
+    }
+
+    if (RICHTEXT_FIELDS.has(key)) {
+      return (
+        <RichTextEditor
+          key={key}
+          label={labelNode}
+          value={current}
+          onChange={v => set(key, v)}
+          placeholder={`Enter ${label.toLowerCase()}…`}
           helper={desc}
         />
       );

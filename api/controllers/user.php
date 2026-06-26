@@ -38,7 +38,11 @@ class user extends BaseController
             die(utilities::apiMessage('Account not found.', 401));
         }
 
-        if ((int) $customer['status'] !== 1) {
+        // Allow deactivated users to access account deletion endpoints only
+        $path = $_SERVER['REQUEST_URI'] ?? '';
+        $isAccountDeletionEndpoint = strpos($path, '/account/delete-request') !== false;
+
+        if ((int) $customer['status'] !== 1 && !$isAccountDeletionEndpoint) {
             die(utilities::apiMessage('Your account is not active. Please verify your email or contact support.', 403));
         }
 

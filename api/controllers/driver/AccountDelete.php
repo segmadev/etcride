@@ -19,7 +19,7 @@ class AccountDelete extends BaseController
             return;
         }
 
-        $driver = $this->getall('drivers', 'id = ? AND status = 1', [$session['driver_id']]);
+        $driver = $this->getall('drivers', 'id = ? AND is_active = 1', [$session['driver_id']]);
         if (!is_array($driver)) {
             echo utilities::apiMessage('Driver not found or inactive.', 401);
             return;
@@ -95,7 +95,7 @@ class AccountDelete extends BaseController
 
             // Soft delete the account immediately (no pending transactions)
             $stmt = $this->db->prepare(
-                'UPDATE drivers SET status = 0, deleted_at = NOW(), name = NULL, email = NULL, phone = NULL WHERE id = ?'
+                'UPDATE drivers SET is_active = 0, deleted_at = NOW(), name = NULL, email = NULL, phone = NULL WHERE id = ?'
             );
             $stmt->execute([$driver['id']]);
 
@@ -135,9 +135,10 @@ class AccountDelete extends BaseController
             return;
         }
 
-        $driver = $this->getall('drivers', 'id = ? AND status = 1', [$session['driver_id']]);
+        // Allow deactivated drivers to check their deletion status
+        $driver = $this->getall('drivers', 'id = ?', [$session['driver_id']]);
         if (!is_array($driver)) {
-            echo utilities::apiMessage('Driver not found or inactive.', 401);
+            echo utilities::apiMessage('Driver not found.', 404);
             return;
         }
 
@@ -184,7 +185,7 @@ class AccountDelete extends BaseController
             return;
         }
 
-        $driver = $this->getall('drivers', 'id = ? AND status = 1', [$session['driver_id']]);
+        $driver = $this->getall('drivers', 'id = ? AND is_active = 1', [$session['driver_id']]);
         if (!is_array($driver)) {
             echo utilities::apiMessage('Driver not found or inactive.', 401);
             return;

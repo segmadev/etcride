@@ -46,10 +46,9 @@ class DriverChatHistoryScreen extends ConsumerWidget {
           }
           return RefreshIndicator(
             onRefresh: () => ref.refresh(_driverChatThreadsProvider.future),
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(vertical: 8),
+            child: ListView.builder(
+              padding: const EdgeInsets.only(top: 8, bottom: 8),
               itemCount: threads.length,
-              separatorBuilder: (_, __) => const Divider(height: 1, indent: 72),
               itemBuilder: (context, i) => _ThreadTile(thread: threads[i]),
             ),
           );
@@ -85,26 +84,98 @@ class _ThreadTile extends ConsumerWidget {
       orElse: () => JobModel.stub(bookingId),
     );
 
-    return ListTile(
-      onTap: () => context.push(AppRoutes.chat, extra: job),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      leading: CircleAvatar(
-        radius: 24,
-        backgroundColor: AppColors.primary.withValues(alpha: 0.12),
-        child: Text(
-          otherName.isNotEmpty ? otherName[0].toUpperCase() : 'C',
-          style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700),
+    final unreadCount = _parseUnreadCount(thread['unread_count']);
+
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: AppColors.divider, width: 1)),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => context.push(AppRoutes.chat, extra: job),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 26,
+                  backgroundColor: AppColors.primary.withValues(alpha: 0.15),
+                  child: Text(
+                    otherName.isNotEmpty ? otherName[0].toUpperCase() : 'C',
+                    style: AppTextStyles.h4.copyWith(color: AppColors.primary),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        otherName,
+                        style: AppTextStyles.bodyLarge.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        preview,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.textSecondary,
+                          height: 1.3,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      timeLabel,
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.textHint,
+                        fontSize: 11,
+                      ),
+                    ),
+                    if (unreadCount > 0) ...[
+                      const SizedBox(height: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: AppColors.error,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          unreadCount > 99 ? '99+' : '$unreadCount',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            height: 1,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ),
         ),
       ),
-      title: Text(otherName, style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.w600)),
-      subtitle: Text(
-        preview,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: AppTextStyles.bodySmall.copyWith(color: Colors.grey.shade600),
-      ),
-      trailing: _TrailingCell(timeLabel: timeLabel, unread: (thread['unread_count'] as num?)?.toInt() ?? 0),
     );
+  }
+
+  int _parseUnreadCount(dynamic value) {
+    if (value == null) return 0;
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value) ?? 0;
+    return 0;
   }
 
   String _formatTime(DateTime t) {
@@ -118,38 +189,4 @@ class _ThreadTile extends ConsumerWidget {
     if (diff.inDays == 1) return 'Yesterday';
     return '${t.day}/${t.month}';
   }
-}
-
-class _TrailingCell extends StatelessWidget {
-  const _TrailingCell({required this.timeLabel, required this.unread});
-  final String timeLabel;
-  final int unread;
-
-  @override
-  Widget build(BuildContext context) => Column(
-    mainAxisAlignment: MainAxisAlignment.center,
-    crossAxisAlignment: CrossAxisAlignment.end,
-    children: [
-      Text(timeLabel, style: AppTextStyles.bodySmall.copyWith(color: Colors.grey)),
-      if (unread > 0) ...[
-        const SizedBox(height: 4),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          decoration: BoxDecoration(
-            color: AppColors.error,
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Text(
-            unread > 99 ? '99+' : '$unread',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              height: 1.2,
-            ),
-          ),
-        ),
-      ],
-    ],
-  );
 }

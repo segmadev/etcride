@@ -17,14 +17,22 @@ import '../../auth/complete_profile_screen.dart';
 import '../../../shared/providers/providers.dart';
 
 class HomeBottomSheet extends ConsumerStatefulWidget {
-  const HomeBottomSheet({super.key});
+  const HomeBottomSheet({super.key, this.initialCourierMode = false});
+
+  final bool initialCourierMode;
 
   @override
   ConsumerState<HomeBottomSheet> createState() => _HomeBottomSheetState();
 }
 
 class _HomeBottomSheetState extends ConsumerState<HomeBottomSheet> {
-  bool _isRide = true; // toggle: Ride vs Couriers
+  late bool _isRide;
+
+  @override
+  void initState() {
+    super.initState();
+    _isRide = !widget.initialCourierMode;
+  }
 
   void _resumeBooking(BookingModel b) {
     switch (b.status) {

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -6,6 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shimmer/shimmer.dart';
 import '../../core/constants/app_assets.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
@@ -28,11 +31,15 @@ class SearchDestinationScreen extends ConsumerStatefulWidget {
     this.asSheet = false,
     this.focusPickupInitially = false,
     this.pickupOnly = false,
+    this.destinationOnly = false,
+    this.initialDestination,
   });
 
   final bool asSheet;
   final bool focusPickupInitially;
   final bool pickupOnly;
+  final bool destinationOnly;
+  final String? initialDestination;
   @override
   ConsumerState<SearchDestinationScreen> createState() => _SearchDestinationScreenState();
 }
@@ -48,6 +55,7 @@ class _SearchDestinationScreenState extends ConsumerState<SearchDestinationScree
   String? _error;
 
   List<PlaceSuggestion> _suggestions = const [];
+  List<PlaceSuggestion> _recentSearches = const [];
   bool _searching = false;
   Timer? _debounce;
   bool _requestInFlight = false;
@@ -81,6 +89,11 @@ class _SearchDestinationScreenState extends ConsumerState<SearchDestinationScree
     if (draft.hasPickup) _setPickupText(draft.pickupAddress);
     if (draft.hasDestination) _setDestText(draft.destinationAddress);
 
+    // For reroute (destination-only mode), set initial destination if provided
+    if (widget.destinationOnly && widget.initialDestination != null) {
+      _setDestText(widget.initialDestination!);
+    }
+
     _pickupCtrl.addListener(() => _onFieldChanged(_ActiveField.pickup));
     _destCtrl.addListener(()   => _onFieldChanged(_ActiveField.destination));
 
@@ -94,10 +107,79 @@ class _SearchDestinationScreenState extends ConsumerState<SearchDestinationScree
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (widget.focusPickupInitially || widget.pickupOnly) {
         _pickupFocus.requestFocus();
+      } else if (!widget.destinationOnly) {
+        _destFocus.requestFocus();
       } else {
+        // For reroute, focus on destination field
         _destFocus.requestFocus();
       }
     });
+
+    _loadRecentSearches();
+  }
+
+  Future<void> _loadRecentSearches() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final json = prefs.getStringList('recent_searches') ?? [];
+      if (mounted) {
+        setState(() {
+          _recentSearches = json
+              .map((item) {
+                try {
+                  final data = jsonDecode(item) as Map<String, dynamic>;
+                  return PlaceSuggestion(
+                    placeId: data['placeId'] as String? ?? '',
+                    mainText: data['mainText'] as String? ?? '',
+                    secondaryText: data['secondaryText'] as String? ?? '',
+                    fullText: data['fullText'] as String? ?? '',
+                  );
+                } catch (_) {
+                  return null;
+                }
+              })
+              .whereType<PlaceSuggestion>()
+              .toList();
+        });
+      }
+    } catch (_) {
+      // Silently fail
+    }
+  }
+
+  Future<void> _addRecentSearch(PlaceSuggestion place) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final json = prefs.getStringList('recent_searches') ?? [];
+
+      // Remove if already exists
+      json.removeWhere((item) {
+        try {
+          final data = jsonDecode(item) as Map<String, dynamic>;
+          return data['placeId'] == place.placeId;
+        } catch (_) {
+          return false;
+        }
+      });
+
+      // Add to front
+      json.insert(0, jsonEncode({
+        'placeId': place.placeId,
+        'mainText': place.mainText,
+        'secondaryText': place.secondaryText,
+        'fullText': place.fullText,
+      }));
+
+      // Keep only last 6
+      if (json.length > 6) {
+        json.removeRange(6, json.length);
+      }
+
+      await prefs.setStringList('recent_searches', json);
+      await _loadRecentSearches();
+    } catch (_) {
+      // Silently fail
+    }
   }
 
   // Set controller text without triggering autocomplete search
@@ -227,6 +309,7 @@ class _SearchDestinationScreenState extends ConsumerState<SearchDestinationScree
     _debounce?.cancel();
     _queuedQuery = null;
     _searchEpoch++;
+    _addRecentSearch(place);
     setState(() { _loading = true; _searching = false; _error = null; _suggestions = const []; });
     try {
       final loc = await MapsService.placeDetails(place.placeId, sessionToken: _sessionToken);
@@ -265,6 +348,17 @@ class _SearchDestinationScreenState extends ConsumerState<SearchDestinationScree
           destinationLng:     loc.lng,
         ));
         if (!mounted) return;
+
+        // For destination-only mode (reroute), return immediately
+        if (widget.destinationOnly) {
+          if (widget.asSheet) {
+            Navigator.of(context).pop(SearchDestinationResult.openSelectRide);
+          } else {
+            context.pop();
+          }
+          return;
+        }
+
         final draft = ref.read(bookingDraftProvider);
         if (draft.hasPickup) {
           if (widget.asSheet) {
@@ -451,6 +545,7 @@ class _SearchDestinationScreenState extends ConsumerState<SearchDestinationScree
             pickupFocus: _pickupFocus,
             destFocus: _destFocus,
             activeField: _active,
+            destinationOnly: widget.destinationOnly,
           ),
         ),
         if (_error != null) ...[
@@ -549,6 +644,60 @@ class _SearchDestinationScreenState extends ConsumerState<SearchDestinationScree
       );
     }
 
+    if (_searching) {
+      return ListView(
+        padding: const EdgeInsets.fromLTRB(22, 8, 22, 12),
+        children: List.generate(5, (i) {
+          return Shimmer.fromColors(
+            baseColor: AppColors.surface,
+            highlightColor: Colors.grey.shade200,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(width: 2),
+                  Container(
+                    width: 22,
+                    height: 22,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          height: 14,
+                          width: double.infinity,
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade300,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Container(
+                          height: 12,
+                          width: 200,
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade300,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }),
+      );
+    }
+
     if (query.isEmpty) {
       return ListView(
         padding: const EdgeInsets.fromLTRB(22, 6, 22, 12),
@@ -574,6 +723,47 @@ class _SearchDestinationScreenState extends ConsumerState<SearchDestinationScree
             ),
           ),
           const Divider(height: 1),
+          if (_recentSearches.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(0, 12, 0, 8),
+              child: Text('Recent Searches',
+                  style: AppTextStyles.labelSmall.copyWith(
+                    color: AppColors.textSecondary,
+                    fontWeight: FontWeight.w600,
+                  )),
+            ),
+            ..._recentSearches.map((s) => GestureDetector(
+              onTap: () => _selectSuggestion(s),
+              behavior: HitTestBehavior.opaque,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Row(
+                  children: [
+                    const Icon(Icons.history_rounded, size: 18, color: AppColors.textSecondary),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(s.mainText, style: AppTextStyles.bodyMedium),
+                          if (s.secondaryText.isNotEmpty) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              s.secondaryText,
+                              style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )).toList(),
+            const Divider(height: 1),
+          ],
           if (draft.hasPickup) ...[
             _RecentRow(
               title: draft.pickupAddress,
@@ -603,26 +793,22 @@ class _SearchDestinationScreenState extends ConsumerState<SearchDestinationScree
       );
     }
 
-    if (!_searching) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.location_off_rounded, size: 48, color: AppColors.textHint),
-              const SizedBox(height: 12),
-              Text('No results found.\nTry a different search.',
-                  style: AppTextStyles.bodyMedium
-                      .copyWith(color: AppColors.textSecondary),
-                  textAlign: TextAlign.center),
-            ],
-          ),
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.location_off_rounded, size: 48, color: AppColors.textHint),
+            const SizedBox(height: 12),
+            Text('No results found.\nTry a different search.',
+                style: AppTextStyles.bodyMedium
+                    .copyWith(color: AppColors.textSecondary),
+                textAlign: TextAlign.center),
+          ],
         ),
-      );
-    }
-
-    return const SizedBox.shrink();
+      ),
+    );
   }
 }
 
@@ -633,6 +819,7 @@ class _RouteInputs extends StatelessWidget {
     required this.pickupFocus,
     required this.destFocus,
     required this.activeField,
+    this.destinationOnly = false,
   });
 
   final TextEditingController pickupCtrl;
@@ -640,6 +827,7 @@ class _RouteInputs extends StatelessWidget {
   final FocusNode pickupFocus;
   final FocusNode destFocus;
   final _ActiveField activeField;
+  final bool destinationOnly;
 
   @override
   Widget build(BuildContext context) {
@@ -650,10 +838,12 @@ class _RouteInputs extends StatelessWidget {
           width: 30,
           child: Column(
             children: [
-              _markerDot(width: 20, height: 20),
-              const SizedBox(height: 6),
-              const _AnimatedDashedVLine(),
-              const SizedBox(height: 6),
+              if (!destinationOnly) ...[
+                _markerDot(width: 20, height: 20),
+                const SizedBox(height: 6),
+                const _AnimatedDashedVLine(),
+                const SizedBox(height: 6),
+              ],
               _markerDot(),
             ],
           ),
@@ -662,13 +852,15 @@ class _RouteInputs extends StatelessWidget {
         Expanded(
           child: Column(
             children: [
-              _BoxField(
-                controller: pickupCtrl,
-                focusNode: pickupFocus,
-                hint: 'Pickup location',
-                trailing: const SizedBox(width: 10),
-              ),
-              const SizedBox(height: 10),
+              if (!destinationOnly) ...[
+                _BoxField(
+                  controller: pickupCtrl,
+                  focusNode: pickupFocus,
+                  hint: 'Pickup location',
+                  trailing: const SizedBox(width: 10),
+                ),
+                const SizedBox(height: 10),
+              ],
               _BoxField(
                 controller: destCtrl,
                 focusNode: destFocus,

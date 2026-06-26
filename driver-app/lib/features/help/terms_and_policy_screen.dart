@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_html/flutter_html.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../shared/providers/providers.dart';
@@ -94,23 +95,69 @@ class _TermsAndPolicyScreenState extends ConsumerState<TermsAndPolicyScreen>
               // Terms & Conditions
               SingleChildScrollView(
                 padding: const EdgeInsets.all(16),
-                child: Text(
-                  data.termsAndConditions,
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: AppColors.textPrimary,
-                    height: 1.5,
-                  ),
+                child: Html(
+                  data: data.termsAndConditions,
+                  style: {
+                    '*': Style(
+                      color: AppColors.textPrimary,
+                      fontSize: FontSize(14),
+                      lineHeight: LineHeight.number(1.5),
+                    ),
+                    'h2': Style(
+                      fontSize: FontSize(20),
+                      fontWeight: FontWeight.bold,
+                      margin: Margins.symmetric(vertical: 12),
+                    ),
+                    'h3': Style(
+                      fontSize: FontSize(18),
+                      fontWeight: FontWeight.bold,
+                      margin: Margins.symmetric(vertical: 8),
+                    ),
+                    'p': Style(
+                      margin: Margins.symmetric(vertical: 8),
+                    ),
+                    'li': Style(
+                      margin: Margins.symmetric(vertical: 4),
+                    ),
+                    'a': Style(
+                      color: AppColors.primary,
+                      textDecoration: TextDecoration.underline,
+                    ),
+                  },
                 ),
               ),
               // Privacy Policy
               SingleChildScrollView(
                 padding: const EdgeInsets.all(16),
-                child: Text(
-                  data.privacyPolicy,
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: AppColors.textPrimary,
-                    height: 1.5,
-                  ),
+                child: Html(
+                  data: data.privacyPolicy,
+                  style: {
+                    '*': Style(
+                      color: AppColors.textPrimary,
+                      fontSize: FontSize(14),
+                      lineHeight: LineHeight.number(1.5),
+                    ),
+                    'h2': Style(
+                      fontSize: FontSize(20),
+                      fontWeight: FontWeight.bold,
+                      margin: Margins.symmetric(vertical: 12),
+                    ),
+                    'h3': Style(
+                      fontSize: FontSize(18),
+                      fontWeight: FontWeight.bold,
+                      margin: Margins.symmetric(vertical: 8),
+                    ),
+                    'p': Style(
+                      margin: Margins.symmetric(vertical: 8),
+                    ),
+                    'li': Style(
+                      margin: Margins.symmetric(vertical: 4),
+                    ),
+                    'a': Style(
+                      color: AppColors.primary,
+                      textDecoration: TextDecoration.underline,
+                    ),
+                  },
                 ),
               ),
             ],

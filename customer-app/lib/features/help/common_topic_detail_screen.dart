@@ -49,7 +49,7 @@ class CommonTopicDetailScreen extends StatelessWidget {
             SizedBox(
               height: 54,
               child: ElevatedButton(
-                onPressed: () => context.push(AppRoutes.contactSupport),
+                onPressed: () => context.push(AppRoutes.help),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.black,
                   foregroundColor: AppColors.white,

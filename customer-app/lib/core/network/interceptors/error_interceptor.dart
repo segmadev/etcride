@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'dart:convert';
 import '../../errors/app_exception.dart';
 import '../session_expired_notifier.dart';
+import '../account_deactivation_notifier.dart';
 
 /// Converts Dio errors and non-2xx API responses into typed [AppException]s.
 class ErrorInterceptor extends Interceptor {
@@ -35,6 +36,17 @@ class ErrorInterceptor extends Interceptor {
                   : UnauthorizedException(msg),
             ),
           );
+          return;
+        }
+
+        if (status == 403) {
+          // Account has been deactivated due to deletion request
+          if (msg.toLowerCase().contains('deactivated')) {
+            AccountDeactivationNotifier.instance.signal();
+          }
+          handler.next(err.copyWith(
+            error: ApiException(msg, statusCode: status),
+          ));
           return;
         }
 

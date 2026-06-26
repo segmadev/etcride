@@ -121,12 +121,6 @@ class _HelpScreenState extends ConsumerState<HelpScreen> {
               onTap: () => context.push(AppRoutes.reportIssue),
             ),
             const SizedBox(height: 8),
-            _RowNav(
-              icon: Icons.headset_mic_outlined,
-              label: AppStrings.contactSupport,
-              onTap: () => context.push(AppRoutes.contactSupport),
-            ),
-            const SizedBox(height: 8),
             LiveChatButton(
               style: AppTextStyles.bodyMedium,
             ),

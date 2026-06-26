@@ -38,7 +38,11 @@ class driver extends BaseController
             die(utilities::apiMessage('Driver account not found.', 401));
         }
 
-        if ((int) $driverRow['is_active'] !== 1) {
+        // Allow deactivated drivers to access account deletion endpoints only
+        $path = $_SERVER['REQUEST_URI'] ?? '';
+        $isAccountDeletionEndpoint = strpos($path, '/account/delete-request') !== false;
+
+        if ((int) $driverRow['is_active'] !== 1 && !$isAccountDeletionEndpoint) {
             die(utilities::apiMessage('Your account has been deactivated. Please contact admin.', 403));
         }
 

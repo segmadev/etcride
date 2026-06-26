@@ -191,6 +191,15 @@ class Auth extends BaseController
             return;
         }
 
+        // Initialize wallet for the driver
+        $this->quick_insert('driver_wallets', [
+            'id'              => utilities::genID('DWL_', 10),
+            'driver_id'       => $id,
+            'balance'         => 0.00,
+            'total_earnings'  => 0.00,
+            'total_withdrawn' => 0.00,
+        ]);
+
         $this->logActivity('driver', $id, 'register');
         echo utilities::apiMessage('Driver registered successfully.', 201, $this->driverPayload([
             'id'         => $id,

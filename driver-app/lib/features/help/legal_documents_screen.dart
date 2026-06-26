@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_html/flutter_html.dart';
-import '../../../core/constants/app_colors.dart';
-import '../../../core/constants/app_text_styles.dart';
-import '../../../core/constants/app_strings.dart';
-import '../../../shared/providers/providers.dart';
+import '../../core/constants/app_colors.dart';
+import '../../core/constants/app_text_styles.dart';
+import '../../shared/providers/providers.dart';
 
 class LegalDocumentsScreen extends ConsumerStatefulWidget {
   const LegalDocumentsScreen({super.key});
@@ -68,7 +67,7 @@ class _LegalDocumentsScreenState extends ConsumerState<LegalDocumentsScreen>
         backgroundColor: AppColors.white,
         elevation: 0,
         leading: const BackButton(color: AppColors.textPrimary),
-        title: Text(AppStrings.legalDocuments, style: AppTextStyles.h4),
+        title: Text('Legal Documents', style: AppTextStyles.h4),
         bottom: TabBar(
           controller: _tabController,
           labelColor: AppColors.primary,
@@ -161,28 +160,28 @@ class _ErrorView extends StatelessWidget {
   final VoidCallback onRetry;
 
   @override
-  Widget build(BuildContext context) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.error_outline_rounded,
-                  size: 48, color: AppColors.textHint),
-              const SizedBox(height: 16),
-              Text(message,
-                  style: AppTextStyles.bodyMedium
-                      .copyWith(color: AppColors.textSecondary),
-                  textAlign: TextAlign.center),
-              const SizedBox(height: 20),
-              TextButton(
-                onPressed: onRetry,
-                child: Text('Retry',
-                    style: AppTextStyles.labelMedium
-                        .copyWith(color: AppColors.primary)),
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.error_outline, size: 48, color: AppColors.warning),
+            const SizedBox(height: 16),
+            Text(message, textAlign: TextAlign.center, style: AppTextStyles.bodyMedium),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: onRetry,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
-            ],
-          ),
+              child: const Text('Retry', style: TextStyle(color: Colors.white)),
+            ),
+          ],
         ),
-      );
+      ),
+    );
+  }
 }

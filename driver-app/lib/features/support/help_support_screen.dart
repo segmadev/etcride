@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
+import '../../core/config/router.dart';
 import '../../shared/providers/providers.dart';
 import '../../shared/widgets/app_back_button.dart';
 import '../../shared/widgets/live_chat_widget.dart';
@@ -65,6 +67,13 @@ class HelpSupportScreen extends ConsumerWidget {
                       const SizedBox(height: 12),
                       LiveChatButton(
                         style: AppTextStyles.bodyMedium,
+                      ),
+                      const SizedBox(height: 24),
+                      _SupportRow(
+                        icon: Icons.description_outlined,
+                        label: 'Legal Documents',
+                        value: 'Terms & Conditions and Privacy Policy',
+                        onTap: () => context.push(AppRoutes.legalDocuments),
                       ),
                     ],
                   );

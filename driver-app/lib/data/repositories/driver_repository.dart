@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import '../models/job_model.dart';
 import '../models/trip_message_model.dart';
 import '../../core/network/api_client.dart';
@@ -21,10 +22,16 @@ class DriverRepository {
   // ── Location ping ─────────────────────────────────────────────────────────────
 
   Future<void> pingLocation(double lat, double lng) async {
-    await _client.post<Map<String, dynamic>>(
-      ApiEndpoints.driverLocationPing,
-      body: {'lat': lat, 'lng': lng},
-    );
+    try {
+      await _client.post<Map<String, dynamic>>(
+        ApiEndpoints.driverLocationPing,
+        body: {'lat': lat, 'lng': lng},
+      );
+    } catch (e) {
+      // Silently fail on location ping errors - don't trigger logout
+      // This handles cases where token is temporarily unavailable or expired
+      debugPrint('[DriverRepository] Location ping failed: $e');
+    }
   }
 
   // ── Active jobs ───────────────────────────────────────────────────────────────
