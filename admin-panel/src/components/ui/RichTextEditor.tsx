@@ -16,7 +16,6 @@ export function RichTextEditor({
   label,
   value,
   onChange,
-  placeholder = 'Enter text…',
   helper,
 }: RichTextEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);

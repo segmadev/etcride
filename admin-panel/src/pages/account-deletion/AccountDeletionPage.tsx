@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, Clock, XCircle, MessageCircle } from 'lucide-react';
 import { PageWrapper } from '../../components/layout/PageWrapper';
@@ -52,11 +52,11 @@ export function AccountDeletionPage() {
         headers: { Authorization: `Bearer ${localStorage.getItem('adminToken')}` },
       });
       if (!res.ok) throw new Error(await res.text());
-      return res.json() as { data: ListResponse };
+      return (await res.json()) as ListResponse;
     },
   });
 
-  const requests = data?.data?.requests || [];
+  const requests = data?.requests || [];
 
   const approveMutation = useMutation({
     mutationFn: async () => {

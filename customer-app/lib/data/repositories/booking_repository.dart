@@ -1,6 +1,7 @@
 import '../../core/network/api_client.dart';
 import '../../core/network/api_endpoints.dart';
 import '../models/booking_model.dart';
+import '../models/payment_gateway_model.dart';
 import '../models/trip_message_model.dart';
 
 class BookingRepository {
@@ -206,10 +207,27 @@ class BookingRepository {
     );
   }
 
-  Future<Map<String, dynamic>> initiatePayment(String bookingId) async {
+  /// Get available payment gateways enabled for customers
+  Future<List<PaymentGatewayModel>> getPaymentGateways() async {
+    final list = await _client.get<List<dynamic>>(
+      '/customer/payment-gateways',
+    );
+    return (list ?? const [])
+        .cast<Map<String, dynamic>>()
+        .map(PaymentGatewayModel.fromJson)
+        .toList();
+  }
+
+  /// Initiate payment with optional provider selection
+  Future<Map<String, dynamic>> initiatePayment(
+    String bookingId, {
+    String? provider,
+  }) async {
     final data = await _client.post<Map<String, dynamic>>(
       ApiEndpoints.initiatePayment(bookingId),
-      body: {},
+      body: {
+        if (provider != null) 'provider': provider,
+      },
     );
     return data ?? {};
   }

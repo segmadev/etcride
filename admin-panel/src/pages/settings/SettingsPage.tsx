@@ -286,10 +286,14 @@ function SmtpConfigManager() {
   };
 
   const saveMutation = useMutation({
-    mutationFn: () =>
-      modal === 'create'
-        ? smtpConfigsApi.create(form)
-        : smtpConfigsApi.update(modal as number, form),
+    mutationFn: async () => {
+      if (modal === 'create') {
+        return await smtpConfigsApi.create(form);
+      } else {
+        await smtpConfigsApi.update(modal as number, form);
+        return { id: modal as number };
+      }
+    },
     onSuccess: () => {
       toast(modal === 'create' ? 'SMTP profile created.' : 'SMTP profile updated.', 'success');
       qc.invalidateQueries({ queryKey: ['smtp-configs'] });

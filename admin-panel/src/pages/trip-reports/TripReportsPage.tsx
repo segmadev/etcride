@@ -13,7 +13,6 @@ import {
   MessageSquare,
   X,
   Filter,
-  ChevronDown,
 } from 'lucide-react';
 import { PageWrapper } from '../../components/layout/PageWrapper';
 import { Card } from '../../components/ui/Card';

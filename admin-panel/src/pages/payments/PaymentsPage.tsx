@@ -22,7 +22,7 @@ const STATUS_OPTIONS = [
 
 export default function PaymentsPage() {
   const qc = useQueryClient();
-  const { showToast } = useToast();
+  const { toast } = useToast();
 
   const [page, setPage]     = useState(1);
   const [status, setStatus] = useState('');
@@ -38,16 +38,15 @@ export default function PaymentsPage() {
   const refundMutation = useMutation({
     mutationFn: (id: string) => paymentsApi.refund(id),
     onSuccess: () => {
-      showToast('Payment marked as refunded.', 'success');
+      toast('Payment marked as refunded.', 'success');
       setRefundTarget(null);
       qc.invalidateQueries({ queryKey: ['admin-payments'] });
     },
-    onError: (e) => showToast(getApiErrorMessage(e), 'error'),
+    onError: (e) => toast(getApiErrorMessage(e), 'error'),
   });
 
   const payments = data?.data ?? [];
   const total    = data?.total ?? 0;
-  const lastPage = data?.last_page ?? 1;
 
   return (
     <PageWrapper title="Payments" subtitle="Transaction history and payment management">
@@ -147,9 +146,9 @@ export default function PaymentsPage() {
           </div>
         )}
 
-        {!isLoading && lastPage > 1 && (
+        {!isLoading && total > 0 && (
           <div className="px-4 py-3 border-t border-slate-100">
-            <Pagination currentPage={page} lastPage={lastPage} total={total} onPageChange={setPage} />
+            <Pagination page={page} total={total} perPage={data?.per_page ?? 25} onChange={setPage} />
           </div>
         )}
       </Card>

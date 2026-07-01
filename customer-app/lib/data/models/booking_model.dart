@@ -52,12 +52,13 @@ enum BookingType {
 }
 
 enum PaymentMethod {
-  cash, bankTransfer, flutterwave;
+  cash, bankTransfer, flutterwave, korapay;
 
   static PaymentMethod fromString(String s) => switch (s) {
     'cash'          => PaymentMethod.cash,
     'bank_transfer' => PaymentMethod.bankTransfer,
     'flutterwave'   => PaymentMethod.flutterwave,
+    'korapay'       => PaymentMethod.korapay,
     _               => PaymentMethod.cash,
   };
 
@@ -65,12 +66,14 @@ enum PaymentMethod {
     PaymentMethod.cash          => 'cash',
     PaymentMethod.bankTransfer  => 'bank_transfer',
     PaymentMethod.flutterwave   => 'flutterwave',
+    PaymentMethod.korapay       => 'korapay',
   };
 
   String get displayName => switch (this) {
     PaymentMethod.cash          => 'Cash',
     PaymentMethod.bankTransfer  => 'Bank Transfer',
     PaymentMethod.flutterwave   => 'Flutterwave',
+    PaymentMethod.korapay       => 'Korapay',
   };
 }
 

@@ -1,0 +1,1 @@
+import{W as e,p as t,q as n}from"./authStore-CZxYzKDF.js";var r=n(e(),1),i=t(),a=(0,r.createContext)({mobileOpen:!1,setMobileOpen:()=>{}});function o({children:e}){let[t,n]=(0,r.useState)(!1);return(0,i.jsx)(a.Provider,{value:{mobileOpen:t,setMobileOpen:n},children:e})}var s=()=>(0,r.useContext)(a);export{s as n,o as t};

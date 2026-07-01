@@ -41,6 +41,48 @@ class Webhook extends BaseController
         echo utilities::apiMessage('Webhook processed.', 200);
     }
 
+    // ── POST /payments/webhook/korapay ────────────────────────────────────────
+    public function korapay(): void
+    {
+        // Verify Korapay signature
+        $webhookSecret = $_ENV['KORAPAY_WEBHOOK_SECRET'] ?? $this->setting('korapay_webhook_secret', '');
+        $signature = $_SERVER['HTTP_X_KORAPAY_SIGNATURE'] ?? '';
+
+        $body = file_get_contents('php://input');
+        if (!$body) {
+            echo utilities::apiMessage('Invalid payload.', 400);
+            return;
+        }
+
+        // Verify signature if configured
+        if (!empty($webhookSecret)) {
+            $hash = hash_hmac('sha256', $body, $webhookSecret);
+            if ($hash !== $signature) {
+                echo utilities::apiMessage('Invalid signature.', 401);
+                return;
+            }
+        }
+
+        $bodyData = json_decode($body, true);
+        if (!$bodyData) {
+            echo utilities::apiMessage('Invalid JSON payload.', 400);
+            return;
+        }
+
+        $data       = $bodyData['data'] ?? [];
+        $ref        = $data['reference'] ?? '';
+        $status     = strtolower($data['status'] ?? '');
+        $provRef    = $data['id'] ?? '';
+
+        if ($ref === '') {
+            echo utilities::apiMessage('Event ignored.', 200);
+            return;
+        }
+
+        $this->processPayment($ref, $status === 'success', (string)$provRef, $bodyData, 'korapay');
+        echo utilities::apiMessage('Webhook processed.', 200);
+    }
+
     // ── POST /payments/webhook/monnify ────────────────────────────────────────
     public function monnify(): void
     {

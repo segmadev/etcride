@@ -39,8 +39,25 @@ class Payments extends BaseController
         }
 
         $amount   = (float) ($booking['final_fare'] ?? $booking['estimated_fare']);
-        $provider = $this->setting('payment_provider', 'flutterwave');
+        // Allow customer to specify provider, otherwise use default
+        $provider = $this->str('provider') ?: $this->setting('payment_provider', 'flutterwave');
         $ref      = 'ETCRIDE_' . strtoupper(utilities::genID('', 10)) . '_' . time();
+
+        // Validate provider is enabled
+        $gatewayConfig = $this->getall('payment_gateways', 'name = ? AND is_enabled = 1', [$provider]);
+        if (!is_array($gatewayConfig)) {
+            echo utilities::apiMessage('Selected payment gateway is not available.', 422);
+            return;
+        }
+
+        // Validate amount is within gateway limits
+        if ($amount < $gatewayConfig['min_amount'] || $amount > $gatewayConfig['max_amount']) {
+            echo utilities::apiMessage(
+                "Amount must be between {$gatewayConfig['min_amount']} and {$gatewayConfig['max_amount']} for this gateway.",
+                422
+            );
+            return;
+        }
 
         // Save pending payment record
         $payId = utilities::genID('PAY_', 10);
@@ -64,6 +81,13 @@ class Payments extends BaseController
 
         if ($provider === 'flutterwave') {
             $result = $this->callFlutterwaveApi($payload);
+            if ($result['ok']) {
+                $paymentLink = $result['link'];
+            } else {
+                $linkError = $result['error'];
+            }
+        } elseif ($provider === 'korapay') {
+            $result = $this->callKorapayApi($payload);
             if ($result['ok']) {
                 $paymentLink = $result['link'];
             } else {
@@ -127,6 +151,44 @@ class Payments extends BaseController
         return ['ok' => false, 'error' => $msg];
     }
 
+    // ── Call Korapay API to generate a hosted payment link ─────────────────────
+    private function callKorapayApi(array $payload): array
+    {
+        $secretKey = $_ENV['KORAPAY_SECRET_KEY'] ?? $this->setting('korapay_secret_key', '');
+
+        if (empty($secretKey)) {
+            return ['ok' => false, 'error' => 'Korapay secret key not configured.'];
+        }
+
+        $ch = curl_init('https://api.korapay.com/merchant/api/v1/charges/initialize');
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => json_encode($payload),
+            CURLOPT_HTTPHEADER     => [
+                'Authorization: Bearer ' . $secretKey,
+                'Content-Type: application/json',
+            ],
+            CURLOPT_TIMEOUT        => 15,
+        ]);
+
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if (!$response) {
+            return ['ok' => false, 'error' => 'Network error reaching Korapay.'];
+        }
+
+        $data = json_decode($response, true);
+        if ($httpCode === 200 && ($data['status'] ?? false) === true && !empty($data['data']['checkout_url'])) {
+            return ['ok' => true, 'link' => $data['data']['checkout_url']];
+        }
+
+        $msg = $data['message'] ?? ($data['data']['message'] ?? 'Korapay error (HTTP ' . $httpCode . ')');
+        return ['ok' => false, 'error' => $msg];
+    }
+
     // ── GET /bookings/:id/payment-status ──────────────────────────────────────
     public function status(string $bookingId): void
     {
@@ -183,6 +245,26 @@ class Payments extends BaseController
             ];
         }
 
+        if ($provider === 'korapay') {
+            return [
+                'reference'       => $ref,
+                'amount'          => (int)($amount * 100), // Korapay expects amount in kobo
+                'currency'        => $this->setting('currency', 'NGN'),
+                'description'     => 'EtcRide Trip ' . ($booking['booking_code'] ?? $booking['id']),
+                'notification_url' => $webhookUrl,
+                'redirect_url'    => $redirectUrl,
+                'customer'        => [
+                    'email' => $me['email'] ?? ($me['phone'] . '@etcride.app'),
+                    'name'  => $me['name'] ?? 'Customer',
+                    'phone' => $me['phone'],
+                ],
+                'metadata'        => [
+                    'booking_id'  => $booking['id'],
+                    'customer_id' => $me['id'],
+                ],
+            ];
+        }
+
         if ($provider === 'monnify') {
             return [
                 'amount'              => $amount,
@@ -192,7 +274,7 @@ class Payments extends BaseController
                 'paymentDescription'  => 'EtcRide Booking ' . $booking['booking_code'],
                 'currencyCode'        => $this->setting('currency', 'NGN'),
                 'contractCode'        => $_ENV['MONNIFY_CONTRACT_CODE'] ?? '',
-                'redirectUrl'         => $callbackUrl,
+                'redirectUrl'         => $redirectUrl,
                 'paymentMethods'      => ['CARD', 'ACCOUNT_TRANSFER'],
             ];
         }
