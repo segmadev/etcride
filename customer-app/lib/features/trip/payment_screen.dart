@@ -156,8 +156,9 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
         return;
       }
 
-      // Start polling for payment confirmation
-      if (mounted) setState(() => _waitingGateway = true);
+      // Browser is open — remove the full-screen spinner so Cancel is accessible,
+      // and show the "Waiting for confirmation" banner instead.
+      if (mounted) setState(() { _paying = false; _waitingGateway = true; });
       _startPolling();
     } catch (e) {
       if (mounted) {

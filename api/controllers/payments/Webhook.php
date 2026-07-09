@@ -138,14 +138,41 @@ class Webhook extends BaseController
                 CURLOPT_TIMEOUT        => 15,
                 CURLOPT_SSL_VERIFYPEER => true,
             ]);
-            $resp = curl_exec($ch);
+            $resp    = curl_exec($ch);
+            $curlErr = curl_error($ch);
             curl_close($ch);
-            $data = $resp ? json_decode($resp, true) : [];
-            $statusParam = (($data['data']['status'] ?? '') === 'success') ? 'successful' : 'failed';
-            // Trigger payment processing if successful and not yet processed
-            if ($statusParam === 'successful' && is_array($payment) && $payment['status'] !== 'paid') {
-                $provRef = $data['data']['reference'] ?? $ref;
-                $this->processPayment($ref, true, $provRef, $data['data'] ?? [], 'korapay');
+
+            if ($resp) {
+                $data        = json_decode($resp, true);
+                $koraStatus  = $data['data']['status'] ?? '';
+                if ($koraStatus === 'success') {
+                    $statusParam = 'successful';
+                    // Process if webhook hasn't already done so
+                    if (is_array($payment) && $payment['status'] !== 'paid') {
+                        $provRef = $data['data']['reference'] ?? $ref;
+                        $this->processPayment($ref, true, $provRef, $data['data'] ?? [], 'korapay');
+                    }
+                } else {
+                    // Korapay says not-success yet — check DB in case webhook already updated it
+                    $freshPayment = $this->getall('payments', 'reference = ?', [$ref]);
+                    $statusParam  = (is_array($freshPayment) && $freshPayment['status'] === 'paid')
+                        ? 'successful'
+                        : 'failed';
+                    error_log("Korapay verify status='$koraStatus' for ref=$ref. DB status=" . ($freshPayment['status'] ?? 'unknown'));
+                }
+            } else {
+                // Korapay API call failed — fall back to our own DB record.
+                // The webhook may have already processed the payment before the redirect arrived.
+                error_log("Korapay verify cURL failed for ref=$ref: $curlErr");
+                if (is_array($payment) && $payment['status'] === 'paid') {
+                    $statusParam = 'successful';
+                } else {
+                    // Re-read fresh from DB in case webhook processed it milliseconds ago
+                    $freshPayment = $this->getall('payments', 'reference = ?', [$ref]);
+                    $statusParam  = (is_array($freshPayment) && $freshPayment['status'] === 'paid')
+                        ? 'successful'
+                        : 'failed';
+                }
             }
         }
 
