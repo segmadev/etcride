@@ -17,6 +17,10 @@ class SecureStorage {
   // which can return null intermittently on Android causing spurious 401s.
   String? _cachedToken;
 
+  /// True only when a token is confirmed in memory.
+  /// Use this to guard auth-validation calls before the cache is warm.
+  bool get hasToken => _cachedToken != null;
+
   // ── Token ────────────────────────────────────────────────────────────────
   Future<void> saveToken(String token) async {
     _cachedToken = token;

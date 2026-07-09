@@ -140,21 +140,22 @@ class DriverAuthRepository {
   /// Throws an exception if the token is invalid or expired.
   Future<bool> validateAuth() async {
     try {
-      final token = await _storage.getToken();
-      if (token == null || token.isEmpty) return false;
-      // Call a simple endpoint that requires auth to verify token is valid
+      // Check in-memory cache first — avoids Android EncryptedSharedPreferences
+      // returning null intermittently on the first async read after cold start.
+      if (!_storage.hasToken) {
+        // Cache is cold — do one slow read. If still null after this the driver
+        // is genuinely not logged in.
+        final token = await _storage.getToken();
+        if (token == null || token.isEmpty) return false;
+      }
+      // Call a lightweight auth-protected endpoint to confirm the token is valid
+      // on the server side (handles token revocation).
       await _client.get<Map<String, dynamic>>(ApiEndpoints.driverGetProfile);
       return true;
     } on DioException catch (e) {
-      // Only consider 401 Unauthorized as invalid auth
-      // Network errors, timeouts, etc. should not cause logout
-      if (e.response?.statusCode == 401) {
-        return false;
-      }
-      // For other errors, rethrow to be handled gracefully
-      rethrow;
-    } catch (e) {
-      // Network or other errors - rethrow to avoid unexpected logout
+      // Only treat a confirmed 401 (with an Authorization header present) as
+      // invalid auth. Network errors / timeouts must NOT cause logout.
+      if (e.response?.statusCode == 401) return false;
       rethrow;
     }
   }

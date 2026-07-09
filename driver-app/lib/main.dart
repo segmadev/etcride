@@ -95,25 +95,32 @@ class _ETCrideDriverAppState extends ConsumerState<ETCrideDriverApp> with Widget
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      // Check auth when app comes to foreground
-      _validateAuth();
-      // Deletion status is checked on the account-deletion screen itself;
-      // calling it here races against SecureStorage loading and causes spurious
-      // 401s that trigger logout before the token is available.
-    }
+    // Intentionally NOT calling _validateAuth() on resume:
+    // it races with SecureStorage loading (_cachedToken may not be warm yet),
+    // producing spurious null-token → false → logout cycles.
+    // The ErrorInterceptor + SessionExpiredNotifier handles real 401s on every
+    // request; the periodic timer below catches revoked tokens while idle.
   }
 
   Future<void> _validateAuth() async {
     if (!mounted) return;
+    // If the in-memory token cache is cold, skip — the driver either hasn't
+    // logged in yet (auth init handles that) or storage hasn't been read yet.
+    // Calling validateAuth() with a cold cache hits Android EncryptedSharedPreferences
+    // which can return null intermittently and causes false-positive logouts.
+    if (!SecureStorage.instance.hasToken) {
+      debugPrint('[Auth] Skipping validation — token cache not warm yet.');
+      return;
+    }
     try {
       final isValid = await ref.read(driverAuthValidationProvider.future);
       if (!isValid && mounted) {
+        debugPrint('[Auth] Token invalid — session expired.');
         await _handleSessionExpired();
       }
     } catch (e) {
-      // Silently fail — network errors shouldn't force logout
-      debugPrint('[Auth] Validation check failed: $e');
+      // Network errors, timeouts, server errors must NOT force logout.
+      debugPrint('[Auth] Validation check failed (ignored): $e');
     }
   }
 

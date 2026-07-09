@@ -226,7 +226,7 @@ class BookingRepository {
     return (list ?? const [])
         .cast<Map<String, dynamic>>()
         .map((raw) => PaymentGatewayModel.fromJson({
-              'id':                    raw['id'],
+              'id':                    _toInt(raw['id']),
               'name':                  raw['name'],
               'displayName':           raw['display_name'] ?? raw['displayName'] ?? '',
               'logoUrl':               raw['logo_url'] ?? raw['logoUrl'],

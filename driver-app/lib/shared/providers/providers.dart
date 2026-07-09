@@ -51,16 +51,13 @@ final driverAuthInitProvider = FutureProvider<DriverModel?>((ref) async {
   return driver;
 });
 
-/// Validates the current auth token. Returns true if valid, false otherwise.
-final driverAuthValidationProvider = FutureProvider<bool>((ref) async {
+/// Validates the current auth token against the server.
+/// autoDispose ensures each call gets a fresh network check (no stale cache).
+/// clearAll() is intentionally NOT called here — _handleSessionExpired() in
+/// main.dart is the single place responsible for clearing state + redirecting.
+final driverAuthValidationProvider = FutureProvider.autoDispose<bool>((ref) async {
   final repo = ref.read(driverAuthRepositoryProvider);
-  final isValid = await repo.validateAuth();
-  if (!isValid) {
-    // Token is invalid — clear driver and force re-login
-    ref.read(currentDriverProvider.notifier).state = null;
-    await ref.read(secureStorageProvider).clearAll();
-  }
-  return isValid;
+  return repo.validateAuth();
 });
 
 final mapSettingsProvider = FutureProvider<Map<String, dynamic>>((ref) async {
