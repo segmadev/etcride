@@ -8,6 +8,14 @@ require_once ROOT . 'functions/BaseController.php';
  */
 class Webhook extends BaseController
 {
+    private function gatewaySecretKey(string $name): string
+    {
+        $row = $this->getall('payment_gateways', 'name = ? AND is_enabled = 1', [$name], 'secret_key');
+        if (is_array($row) && !empty($row['secret_key'])) return $row['secret_key'];
+        $envKey = strtoupper($name) . '_SECRET_KEY';
+        return $_ENV[$envKey] ?? $this->setting(strtolower($name) . '_secret_key', '');
+    }
+
     // ── POST /payments/webhook/flutterwave ────────────────────────────────────
     public function flutterwave(): void
     {
@@ -110,14 +118,42 @@ class Webhook extends BaseController
     // Flutterwave sends: ?status=successful|cancelled|failed&tx_ref=...&transaction_id=...
     public function callback(): void
     {
-        $status        = $_GET['status']         ?? 'unknown';
         $txRef         = htmlspecialchars($_GET['tx_ref']         ?? '', ENT_QUOTES, 'UTF-8');
         $transactionId = htmlspecialchars($_GET['transaction_id'] ?? '', ENT_QUOTES, 'UTF-8');
         $bookingId     = htmlspecialchars($_GET['booking_id']     ?? '', ENT_QUOTES, 'UTF-8');
+        $statusParam   = $_GET['status'] ?? '';
 
-        $success = $status === 'successful';
+        // Determine provider from stored payment record
+        $ref     = $txRef ?: htmlspecialchars($_GET['reference'] ?? '', ENT_QUOTES, 'UTF-8');
+        $payment = $ref ? $this->getall('payments', 'reference = ?', [$ref]) : null;
+        $provider = is_array($payment) ? ($payment['provider'] ?? '') : '';
+
+        // Korapay doesn't send status in redirect — verify directly with their API
+        if ($provider === 'korapay' && $ref) {
+            $secretKey = $this->gatewaySecretKey('korapay');
+            $ch = curl_init('https://api.korapay.com/merchant/api/v1/charges/' . urlencode($ref));
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_HTTPHEADER     => ['Authorization: Bearer ' . $secretKey],
+                CURLOPT_TIMEOUT        => 15,
+                CURLOPT_CAINFO         => 'C:/dev/xampp/apache/bin/curl-ca-bundle.crt',
+                CURLOPT_SSL_VERIFYPEER => true,
+            ]);
+            $resp = curl_exec($ch);
+            curl_close($ch);
+            $data = $resp ? json_decode($resp, true) : [];
+            $statusParam = (($data['data']['status'] ?? '') === 'success') ? 'successful' : 'failed';
+            // Trigger payment processing if successful and not yet processed
+            if ($statusParam === 'successful' && is_array($payment) && $payment['status'] !== 'paid') {
+                $provRef = $data['data']['reference'] ?? $ref;
+                $this->processPayment($ref, true, $provRef, $data['data'] ?? [], 'korapay');
+            }
+        }
+
+        // Flutterwave sends status=successful in redirect params — no extra verify needed
+        $success = $statusParam === 'successful';
         $icon    = $success ? '✅' : '❌';
-        $heading = $success ? 'Payment Successful' : 'Payment ' . ucfirst($status);
+        $heading = $success ? 'Payment Successful' : ($statusParam === 'failed' ? 'Payment Failed' : 'Payment ' . ucfirst($statusParam));
         $msg     = $success
             ? 'Your payment has been confirmed. Please return to the app.'
             : 'Your payment was not completed. Please return to the app and try again.';
@@ -134,11 +170,15 @@ class Webhook extends BaseController
     body { font-family: -apple-system, sans-serif; display: flex; align-items: center;
            justify-content: center; min-height: 100vh; margin: 0; background: #f5f5f5; }
     .card { background: #fff; border-radius: 20px; padding: 40px 32px; text-align: center;
-            max-width: 380px; box-shadow: 0 4px 24px rgba(0,0,0,.10); }
+            max-width: 380px; box-shadow: 0 4px 24px rgba(0,0,0,.10); position: relative; }
     .icon { font-size: 56px; margin-bottom: 16px; }
     h1   { font-size: 22px; margin: 0 0 8px; color: #1a1a1a; }
     p    { color: #666; font-size: 15px; line-height: 1.5; margin: 0 0 24px; }
     .ref { font-size: 12px; color: #999; margin-top: 16px; }
+    .close-btn { display: inline-block; margin-top: 24px; padding: 12px 32px;
+                 background: #1a1a1a; color: #fff; border: none; border-radius: 999px;
+                 font-size: 15px; font-weight: 600; cursor: pointer; text-decoration: none; }
+    .close-btn:hover { background: #333; }
   </style>
 </head>
 <body>
@@ -147,6 +187,8 @@ class Webhook extends BaseController
     <h1>{$heading}</h1>
     <p>{$msg}</p>
     <div class="ref">Ref: {$txRef}</div>
+    <br>
+    <button class="close-btn" onclick="window.close(); history.back();">Close</button>
   </div>
 </body>
 </html>
@@ -188,18 +230,30 @@ HTML;
 
         if (!is_array($booking)) return;
 
-        // Move booking to 'paid' status
-        $this->update('bookings', [
-            'payment_status' => 'paid',
-            'status'         => 'paid',
-        ], "id = '$bookingId'");
-
-        $this->recordStatusChange($bookingId, $booking['status'], 'paid', 'system', null, "Payment $ref confirmed via $provider");
+        // For delivery bookings: payment is collected before pickup, so keep
+        // the booking status as-is (driver still needs to pick up and deliver).
+        // For rides: move to 'paid' so the trip can complete.
+        $isDelivery = ($booking['booking_type'] ?? '') === 'delivery';
+        if ($isDelivery) {
+            // Only update payment_status; status stays payment_pending so driver
+            // sees customer has paid and can proceed to pick up the package.
+            $this->update('bookings', ['payment_status' => 'paid'], "id = '$bookingId'");
+        } else {
+            // Ride: payment completes the booking
+            $this->update('bookings', [
+                'payment_status' => 'paid',
+                'status'         => 'completed',
+            ], "id = '$bookingId'");
+            $this->recordStatusChange($bookingId, $booking['status'], 'completed', 'system', null, "Payment $ref confirmed via $provider");
+        }
 
         // Notify driver
         if ($booking['driver_id']) {
+            $driverMsg = $isDelivery
+                ? 'Customer has paid. You can now pick up the package.'
+                : 'Customer has paid. You can now start the trip.';
             $this->notify('driver', $booking['driver_id'], 'Payment Received',
-                'Customer has paid. You can now start the trip.', 'payment_confirmed', $bookingId);
+                $driverMsg, 'payment_confirmed', $bookingId);
         }
 
         // Notify customer

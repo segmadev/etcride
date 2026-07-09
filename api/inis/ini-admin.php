@@ -84,6 +84,14 @@ $router->group('/admin', function ($r) {
     $r->get('/payments/:id',                 'admin/Payments@show');
     $r->post('/payments/:id/refund',         'admin/Payments@refund');
 
+    // ── Payment Gateways ──────────────────────────────────────────────────────
+    $r->get('/payment-gateways',             'admin/PaymentGateways@list');
+    $r->get('/payment-gateways/stats',       'admin/PaymentGateways@stats');
+    $r->get('/payment-gateways/:id',         'admin/PaymentGateways@get');
+    $r->put('/payment-gateways/:id',           'admin/PaymentGateways@updateGateway');
+    $r->post('/payment-gateways/:id/logo',     'admin/PaymentGateways@uploadLogo');
+    $r->post('/payment-gateways/:id/toggle',   'admin/PaymentGateways@toggle');
+
     // ── Reports ───────────────────────────────────────────────────────────────
     $r->get('/reports/bookings',             'admin/Reports@bookings');
     $r->get('/reports/revenue',              'admin/Reports@revenue');

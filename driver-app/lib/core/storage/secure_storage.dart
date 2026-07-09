@@ -13,15 +13,27 @@ class SecureStorage {
     iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
   );
 
+  // In-memory cache — eliminates the async storage read on every request,
+  // which can return null intermittently on Android causing spurious 401s.
+  String? _cachedToken;
+
   // ── Token ────────────────────────────────────────────────────────────────
-  Future<void> saveToken(String token) =>
-      _storage.write(key: AppConfig.tokenKey, value: token);
+  Future<void> saveToken(String token) async {
+    _cachedToken = token;
+    await _storage.write(key: AppConfig.tokenKey, value: token);
+  }
 
-  Future<String?> getToken() =>
-      _storage.read(key: AppConfig.tokenKey);
+  Future<String?> getToken() async {
+    if (_cachedToken != null) return _cachedToken;
+    final token = await _storage.read(key: AppConfig.tokenKey);
+    _cachedToken = token;
+    return token;
+  }
 
-  Future<void> deleteToken() =>
-      _storage.delete(key: AppConfig.tokenKey);
+  Future<void> deleteToken() async {
+    _cachedToken = null;
+    await _storage.delete(key: AppConfig.tokenKey);
+  }
 
   // ── User JSON ─────────────────────────────────────────────────────────────
   Future<void> saveUser(String json) =>
@@ -57,6 +69,7 @@ class SecureStorage {
 
   // ── Logout — clears auth data but preserves device flags ─────────────────
   Future<void> clearAll() async {
+    _cachedToken = null;
     await Future.wait([
       _storage.delete(key: AppConfig.tokenKey),
       _storage.delete(key: AppConfig.userKey),

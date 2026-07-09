@@ -17,6 +17,7 @@ class DriverCard extends StatelessWidget {
     this.showFare = true,
     this.onChat,
     this.onReroute,
+    this.onViewDetails,
     this.chatUnread = 0,
   });
 
@@ -27,6 +28,7 @@ class DriverCard extends StatelessWidget {
   final bool showFare;
   final VoidCallback? onChat;
   final VoidCallback? onReroute;
+  final VoidCallback? onViewDetails;
   final int chatUnread;
 
   void _call() {
@@ -143,6 +145,26 @@ class DriverCard extends StatelessWidget {
               label: booking.destinationAddress,
             ),
             const SizedBox(height: 10),
+          ],
+          if (onViewDetails != null) ...[
+            const Divider(height: 1),
+            GestureDetector(
+              onTap: onViewDetails,
+              behavior: HitTestBehavior.opaque,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                child: Row(
+                  children: [
+                    const Icon(Icons.receipt_long_outlined, size: 18, color: AppColors.textPrimary),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text('View trip details & receipt', style: AppTextStyles.bodyMedium),
+                    ),
+                    const Icon(Icons.chevron_right_rounded, size: 20, color: AppColors.textSecondary),
+                  ],
+                ),
+              ),
+            ),
           ],
         ],
       ),

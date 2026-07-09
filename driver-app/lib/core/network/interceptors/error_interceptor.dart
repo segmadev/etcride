@@ -25,8 +25,12 @@ class ErrorInterceptor extends Interceptor {
           final isPublicAuth = path.startsWith('/auth/') &&
               path != '/auth/logout' &&
               path != '/auth/profile';
-          if (!isPublicAuth) {
-            // Notify the app root so it can clear credentials and redirect.
+          // Silent paths — 401 here is not a session expiry.
+          final isSilent401 = path.contains('/account/delete-request');
+          // If the request had NO Authorization header, this is a race condition
+          // (token not yet in memory), not an actual session expiry — don't log out.
+          final hadToken = err.requestOptions.headers.containsKey('Authorization');
+          if (!isPublicAuth && !isSilent401 && hadToken) {
             SessionExpiredNotifier.instance.signal();
           }
           handler.next(

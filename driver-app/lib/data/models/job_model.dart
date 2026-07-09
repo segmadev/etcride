@@ -108,9 +108,9 @@ class JobModel {
   /// True when trip is in progress
   bool get canComplete => status == 'in_progress';
   /// Delivery only: payment already confirmed, driver can collect package
-  bool get canPickup   => status == 'arrived' && bookingType == 'delivery' && paymentStatus == 'paid';
-  /// Delivery only: arrived but waiting for payment before pickup
-  bool get deliveryNeedsPayment => status == 'arrived' && bookingType == 'delivery' && paymentStatus != 'paid';
+  bool get canPickup   => (status == 'arrived' || status == 'payment_pending') && bookingType == 'delivery' && paymentStatus == 'paid';
+  /// Delivery only: arrived/payment_pending but waiting for payment before pickup
+  bool get deliveryNeedsPayment => (status == 'arrived' || status == 'payment_pending') && bookingType == 'delivery' && paymentStatus != 'paid';
   /// Whether payment method is cash
   bool get isCashPayment => (paymentMethod ?? 'cash').toLowerCase() == 'cash';
 

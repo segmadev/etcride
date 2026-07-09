@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -20,6 +20,7 @@ import '../../core/utils/formatters.dart';
 import '../../data/models/booking_model.dart';
 import '../../shared/providers/providers.dart';
 import '../../shared/widgets/app_bottom_drawer.dart';
+import '../../shared/widgets/trip_details_sheet.dart';
 import '../../shared/widgets/trip_quick_nav.dart';
 import 'search_destination_screen.dart';
 
@@ -74,10 +75,10 @@ class _DriverAssignedScreenState extends ConsumerState<DriverAssignedScreen> {
   bool _initiatingPayment = false;
   final _noteCtrl = TextEditingController();
 
-  // Driver position — updated by poll, animation handled inside _RoutedMapView
+  // Driver position â€” updated by poll, animation handled inside _RoutedMapView
   LatLng? _driverTarget;
 
-  // Unread message count (driver → customer messages since last chat open)
+  // Unread message count (driver â†’ customer messages since last chat open)
   int _unreadMsgCount = 0;
   Timer? _msgPollTimer;
   DateTime _lastMsgPollAt = DateTime.now();
@@ -99,6 +100,18 @@ class _DriverAssignedScreenState extends ConsumerState<DriverAssignedScreen> {
 
       switch (b.status) {
         case BookingStatus.arrived:
+          // Non-cash delivery: driver at pickup, customer needs to pay in-app.
+          // Only redirect if payment hasn't been made yet.
+          if (b.bookingType == BookingType.delivery &&
+              b.paymentMethod != null &&
+              b.paymentMethod != PaymentMethod.cash &&
+              b.paymentMethod != PaymentMethod.bankTransfer &&
+              b.paymentStatus != 'paid') {
+            _cancelWaitingTimer();
+            _pollTimer?.cancel();
+            context.go(AppRoutes.payment, extra: widget.bookingId);
+            return;
+          }
           _startWaitingTimer(b);
         case BookingStatus.pickedUp:
           _cancelWaitingTimer();
@@ -107,10 +120,22 @@ class _DriverAssignedScreenState extends ConsumerState<DriverAssignedScreen> {
           _pollTimer?.cancel();
           context.go(AppRoutes.tripInProgress, extra: widget.bookingId);
         case BookingStatus.completed:
-        case BookingStatus.paymentPending:
           _cancelWaitingTimer();
           _pollTimer?.cancel();
-          context.go(AppRoutes.payment, extra: widget.bookingId);
+          context.go(AppRoutes.tripCompleted, extra: widget.bookingId);
+        case BookingStatus.paymentPending:
+          if (b.paymentStatus == 'paid' && b.bookingType == BookingType.delivery) {
+            // Payment done but driver hasn't picked up yet â€” stay on this tracking
+            // screen so the customer can follow the delivery. Keep polling.
+          } else if (b.paymentStatus == 'paid') {
+            _cancelWaitingTimer();
+            _pollTimer?.cancel();
+            context.go(AppRoutes.tripCompleted, extra: widget.bookingId);
+          } else {
+            _cancelWaitingTimer();
+            _pollTimer?.cancel();
+            context.go(AppRoutes.payment, extra: widget.bookingId);
+          }
         case BookingStatus.cancelled:
           _cancelWaitingTimer();
           _pollTimer?.cancel();
@@ -120,7 +145,7 @@ class _DriverAssignedScreenState extends ConsumerState<DriverAssignedScreen> {
             _showCancelledDialog(b);
           }
         case BookingStatus.pending:
-          // Driver was unassigned (e.g. rejected) — go back to requesting screen
+          // Driver was unassigned (e.g. rejected) â€” go back to requesting screen
           _cancelWaitingTimer();
           _pollTimer?.cancel();
           if (mounted) {
@@ -150,7 +175,7 @@ class _DriverAssignedScreenState extends ConsumerState<DriverAssignedScreen> {
         setState(() => _waitingElapsedSecs++);
       });
     } else if (arrivedAt != null) {
-      // Timer already running — drift-correct if server says we're off by >2s
+      // Timer already running â€” drift-correct if server says we're off by >2s
       try {
         final t = DateTime.parse(arrivedAt).toLocal();
         final serverElapsed = DateTime.now().difference(t).inSeconds.clamp(0, 86400);
@@ -262,7 +287,7 @@ class _DriverAssignedScreenState extends ConsumerState<DriverAssignedScreen> {
     } catch (_) {}
   }
 
-  // ── Edit location ────────────────────────────────────────────────────────────
+  // â”€â”€ Edit location â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   Future<void> _editLocation(bool isPickup) async {
     if (_editingLocation) return;
@@ -360,6 +385,10 @@ class _DriverAssignedScreenState extends ConsumerState<DriverAssignedScreen> {
     }
   }
 
+  void _showTripDetails(BuildContext context, BookingModel b) {
+    showTripDetailsSheet(context, b);
+  }
+
   Future<void> _cancel() async {
     final b = _booking;
     final isArrived = b?.status == BookingStatus.arrived;
@@ -455,7 +484,7 @@ class _DriverAssignedScreenState extends ConsumerState<DriverAssignedScreen> {
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
                   ),
                   child: Text(
-                    phone.isEmpty ? '—' : phone,
+                    phone.isEmpty ? 'â€”' : phone,
                     style: AppTextStyles.labelLarge.copyWith(letterSpacing: 0.6),
                   ),
                 ),
@@ -512,7 +541,7 @@ class _DriverAssignedScreenState extends ConsumerState<DriverAssignedScreen> {
           backgroundColor: AppColors.error,
         ));
       }
-      // The 5s poll in _load() will detect paymentStatus → 'paid' and hide the banner.
+      // The 5s poll in _load() will detect paymentStatus â†’ 'paid' and hide the banner.
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -542,14 +571,14 @@ class _DriverAssignedScreenState extends ConsumerState<DriverAssignedScreen> {
     return Scaffold(
       body: Stack(
         children: [
-          // ── Map — owns route, driver animation, approach line ─────────────
+          // â”€â”€ Map â€” owns route, driver animation, approach line â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
           _RoutedMapView(
             booking:      b,
             apiKey:       mapKey,
             driverTarget: _driverTarget,
           ),
 
-          // ── Back button ────────────────────────────────────────────────
+          // â”€â”€ Back button â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
@@ -564,7 +593,7 @@ class _DriverAssignedScreenState extends ConsumerState<DriverAssignedScreen> {
             ),
           ),
 
-          // ── Arrived / waiting-timer banner + graph ───────────────────────
+          // â”€â”€ Arrived / waiting-timer banner + graph â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
           if (isArrived && b != null)
             Positioned(
               top: 0, left: 0, right: 0,
@@ -593,7 +622,7 @@ class _DriverAssignedScreenState extends ConsumerState<DriverAssignedScreen> {
               ),
             ),
 
-          // ── Bottom driver card (collapsible — drag down to see full map) ───
+          // â”€â”€ Bottom driver card (collapsible â€” drag down to see full map) â”€â”€â”€
           Positioned.fill(
             child: b == null
                 ? Align(
@@ -621,6 +650,7 @@ class _DriverAssignedScreenState extends ConsumerState<DriverAssignedScreen> {
                       onNeedHelp:    () => context.push(AppRoutes.help),
                       onEditLocation: _editingLocation ? null : _editLocation,
                       onPayNow:      _initiateFlutterwavePayment,
+                      onViewDetails: () => _showTripDetails(context, b),
                     ),
                   ),
           ),
@@ -643,6 +673,7 @@ class _AssignedSheet extends StatelessWidget {
     required this.onChat,
     required this.onNeedHelp,
     required this.onPayNow,
+    required this.onViewDetails,
     this.onEditLocation,
   });
 
@@ -657,6 +688,7 @@ class _AssignedSheet extends StatelessWidget {
   final VoidCallback onChat;
   final VoidCallback onNeedHelp;
   final VoidCallback onPayNow;
+  final VoidCallback onViewDetails;
   final void Function(bool isPickup)? onEditLocation;
 
   String _short(String addr) => addr.split(',').first.trim();
@@ -729,14 +761,18 @@ class _AssignedSheet extends StatelessWidget {
     final isPickedUp = booking.status == BookingStatus.pickedUp;
 
     // Heading & subtitle based on status
+    final isPaidDelivery = isDelivery && booking.paymentStatus == 'paid' &&
+        booking.status == BookingStatus.paymentPending;
     final (heading, subtitle) = switch (booking.status) {
       BookingStatus.arrived  => isDelivery
           ? ('Driver arrived', 'Driver has arrived to collect your package.')
           : ('Your driver has arrived!', 'Please come out to the pickup spot.'),
       BookingStatus.pickedUp => ('Package picked up', 'Your package has been collected'),
+      BookingStatus.paymentPending when isPaidDelivery =>
+          ('Payment confirmed', 'Driver will pick up your package shortly.'),
       _                      => isDelivery
           ? ('Driver heading to pickup', 'Meet your driver at the pickup spot.')
-          : ('Arriving in $_arrivingMins mins…', 'Meet your driver at the pickup spot.'),
+          : ('Arriving in $_arrivingMins minsâ€¦', 'Meet your driver at the pickup spot.'),
     };
 
     // ETA shown in the right box for delivery bookings
@@ -753,7 +789,7 @@ class _AssignedSheet extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // ── Heading row ───────────────────────────────────────────────────
+          // â”€â”€ Heading row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
           if (isDelivery)
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -791,13 +827,13 @@ class _AssignedSheet extends StatelessWidget {
             ),
           ],
 
-          // ── Delivery progress bar ─────────────────────────────────────────
+          // â”€â”€ Delivery progress bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
           if (isDelivery) ...[
             const SizedBox(height: 14),
             _DeliveryProgressBar(status: booking.status),
           ],
 
-          // ── Flutterwave payment prompt (delivery, non-cash, unpaid) ──────
+          // â”€â”€ Flutterwave payment prompt (delivery, non-cash, unpaid) â”€â”€â”€â”€â”€â”€
           if (isDelivery &&
               booking.paymentMethod == PaymentMethod.flutterwave &&
               booking.paymentStatus != 'paid') ...[
@@ -847,7 +883,7 @@ class _AssignedSheet extends StatelessWidget {
             ),
           ],
 
-          // ── Inline waiting-charge row (arrived only) ─────────────────
+          // â”€â”€ Inline waiting-charge row (arrived only) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
           if (booking.status == BookingStatus.arrived && booking.waitingChargePerMin > 0) ...[
             const SizedBox(height: 10),
             _InlineWaitingCharge(
@@ -1031,6 +1067,21 @@ class _AssignedSheet extends StatelessWidget {
               ),
             ],
           ),
+          const SizedBox(height: 12),
+          const Divider(height: 1),
+          const SizedBox(height: 12),
+          GestureDetector(
+            onTap: onViewDetails,
+            behavior: HitTestBehavior.opaque,
+            child: Row(
+              children: [
+                const Icon(Icons.receipt_long_outlined, size: 18, color: AppColors.textPrimary),
+                const SizedBox(width: 10),
+                Expanded(child: Text('View trip details & receipt', style: AppTextStyles.bodyMedium)),
+                const Icon(Icons.chevron_right_rounded, size: 20, color: AppColors.textSecondary),
+              ],
+            ),
+          ),
           const SizedBox(height: 18),
           Row(
             children: [
@@ -1081,7 +1132,7 @@ class _AssignedSheet extends StatelessWidget {
   }
 }
 
-// ── Waiting timer banner (shown over the map when driver has arrived) ─────────
+// â”€â”€ Waiting timer banner (shown over the map when driver has arrived) â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class _WaitingTimerBanner extends StatelessWidget {
   const _WaitingTimerBanner({
@@ -1109,7 +1160,7 @@ class _WaitingTimerBanner extends StatelessWidget {
     final bgColor   = charging ? const Color(0xFFD84315) : AppColors.success;
     final icon      = charging ? Icons.timer_off_rounded : Icons.timer_rounded;
     final label     = charging
-        ? '₦${extraCharge.toStringAsFixed(2)} extra  •  ${_fmt(extraSecs)} over free time'
+        ? 'â‚¦${extraCharge.toStringAsFixed(2)} extra  â€¢  ${_fmt(extraSecs)} over free time'
         : 'Free waiting: ${_fmt(remaining)} remaining';
 
     return Container(
@@ -1134,10 +1185,10 @@ class _WaitingTimerBanner extends StatelessWidget {
   }
 }
 
-// ── Waiting progress graph ────────────────────────────────────────────────────
+// â”€â”€ Waiting progress graph â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // Horizontal track visualising:
-//   [green ▓▓▓▓ elapsed free] [grey ░░░░ remaining free] [red ██ paid time]
+//   [green â–“â–“â–“â–“ elapsed free] [grey â–‘â–‘â–‘â–‘ remaining free] [red â–ˆâ–ˆ paid time]
 //
 // The green segment fills as time elapses; once free time is used the red
 // segment grows from the right. A small label shows the current extra cost.
@@ -1163,7 +1214,7 @@ class _WaitingProgressGraph extends StatelessWidget {
     final extraCharge = (extraSecs / 60) * chargePerMin;
 
     // Extra bar width: grows by 1 "free bar" width per extra free-period elapsed.
-    // Cap visual overflow at 2× the free-bar width for compact display.
+    // Cap visual overflow at 2Ã— the free-bar width for compact display.
     const barH = 8.0;
 
     return Padding(
@@ -1171,12 +1222,12 @@ class _WaitingProgressGraph extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Track ──────────────────────────────────────────────────────────
+          // â”€â”€ Track â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
           LayoutBuilder(builder: (_, c) {
             final totalW = c.maxWidth;
             // Free section occupies full width; paid section overlaps right edge
             final freeUsedW  = totalW * freeFrac;
-            // Extra section: each additional minute = 1 × (totalW / freeWaitingMins)
+            // Extra section: each additional minute = 1 Ã— (totalW / freeWaitingMins)
             final extraMins  = extraSecs / 60.0;
             final perMinW    = freeWaitingSecs > 0
                 ? (totalW / (freeWaitingSecs / 60.0))
@@ -1187,7 +1238,7 @@ class _WaitingProgressGraph extends StatelessWidget {
               height: barH + 6, // bar + tick margin
               child: Stack(
                 children: [
-                  // Background (free remaining) – grey
+                  // Background (free remaining) â€“ grey
                   Positioned.fill(
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(barH / 2),
@@ -1209,7 +1260,7 @@ class _WaitingProgressGraph extends StatelessWidget {
                         child: Container(color: AppColors.success),
                       ),
                     ),
-                  // Red: paid extra time — grows from the far right edge inward
+                  // Red: paid extra time â€” grows from the far right edge inward
                   if (extraW > 0)
                     Positioned(
                       right: 0, top: 0, bottom: 0,
@@ -1237,7 +1288,7 @@ class _WaitingProgressGraph extends StatelessWidget {
             );
           }),
           const SizedBox(height: 4),
-          // ── Labels ─────────────────────────────────────────────────────────
+          // â”€â”€ Labels â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -1247,7 +1298,7 @@ class _WaitingProgressGraph extends StatelessWidget {
               ),
               if (charging)
                 Text(
-                  '+ ₦${extraCharge.toStringAsFixed(2)}',
+                  '+ â‚¦${extraCharge.toStringAsFixed(2)}',
                   style: AppTextStyles.caption.copyWith(
                     color: const Color(0xFFD84315),
                     fontWeight: FontWeight.w700,
@@ -1255,7 +1306,7 @@ class _WaitingProgressGraph extends StatelessWidget {
                 )
               else
                 Text(
-                  '₦${chargePerMin.toStringAsFixed(0)}/min after',
+                  'â‚¦${chargePerMin.toStringAsFixed(0)}/min after',
                   style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
                 ),
             ],
@@ -1266,7 +1317,7 @@ class _WaitingProgressGraph extends StatelessWidget {
   }
 }
 
-// ── Inline charge row shown inside the bottom sheet ───────────────────────────
+// â”€â”€ Inline charge row shown inside the bottom sheet â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class _InlineWaitingCharge extends StatelessWidget {
   const _InlineWaitingCharge({
@@ -1303,8 +1354,8 @@ class _InlineWaitingCharge extends StatelessWidget {
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    'Waiting charge: ₦${extraCharge.toStringAsFixed(2)}'
-                    '  (₦${chargePerMin.toStringAsFixed(0)}/min after ${freeWaitingSecs ~/ 60} min free)',
+                    'Waiting charge: â‚¦${extraCharge.toStringAsFixed(2)}'
+                    '  (â‚¦${chargePerMin.toStringAsFixed(0)}/min after ${freeWaitingSecs ~/ 60} min free)',
                     style: AppTextStyles.bodySmall.copyWith(
                         color: const Color(0xFFD84315),
                         fontWeight: FontWeight.w600),
@@ -1317,7 +1368,7 @@ class _InlineWaitingCharge extends StatelessWidget {
                 const Icon(Icons.timer_rounded, size: 16, color: AppColors.success),
                 const SizedBox(width: 6),
                 Text(
-                  '${freeWaitingSecs ~/ 60} min free waiting  •  $fmtFree left',
+                  '${freeWaitingSecs ~/ 60} min free waiting  â€¢  $fmtFree left',
                   style: AppTextStyles.bodySmall.copyWith(
                       color: AppColors.success,
                       fontWeight: FontWeight.w600),
@@ -1328,7 +1379,7 @@ class _InlineWaitingCharge extends StatelessWidget {
   }
 }
 
-// ── Delivery progress bar (courier bookings only) ─────────────────────────────
+// â”€â”€ Delivery progress bar (courier bookings only) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class _DeliveryProgressBar extends StatelessWidget {
   const _DeliveryProgressBar({required this.status});
@@ -1365,7 +1416,7 @@ class _DeliveryProgressBar extends StatelessWidget {
   }
 }
 
-// ── ETA box (large number + "mins" shown top-right for delivery) ──────────────
+// â”€â”€ ETA box (large number + "mins" shown top-right for delivery) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class _EtaBox extends StatelessWidget {
   const _EtaBox({required this.minutes});
@@ -1466,12 +1517,12 @@ class _DottedVLinePainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-// ── Map view — owns route computation, driver animation, approach line ────────
+// â”€â”€ Map view â€” owns route computation, driver animation, approach line â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // Fixes the blink:
-//  • _loadFuture is cached in initState — FutureBuilder never gets a new
+//  â€¢ _loadFuture is cached in initState â€” FutureBuilder never gets a new
 //    Future instance, so it never flashes back to ConnectionState.waiting.
-//  • Driver animation runs inside this widget's own timer — the parent only
+//  â€¢ Driver animation runs inside this widget's own timer â€” the parent only
 //    updates driverTarget once per poll (every 5 s), not every 40 ms.
 
 class _RoutedMapView extends StatefulWidget {
@@ -1489,36 +1540,36 @@ class _RoutedMapView extends StatefulWidget {
 }
 
 class _RoutedMapViewState extends State<_RoutedMapView> {
-  // ── Web: cached JS-loader future (never recreated) ──────────────────────────
+  // â”€â”€ Web: cached JS-loader future (never recreated) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   Future<bool>? _loadFuture;
 
-  // ── Map controller ───────────────────────────────────────────────────────────
+  // â”€â”€ Map controller â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   GoogleMapController? _ctrl;
   int _camVersion = 0;
 
-  // ── Route ────────────────────────────────────────────────────────────────────
+  // â”€â”€ Route â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   List<LatLng>  _routePts   = [];
   bool          _routeLoaded = false;
   String?       _polyUsed;
   LatLngBounds? _routeBounds;
 
-  // ── Approach route (driver → pickup via real roads) ───────────────────────────
+  // â”€â”€ Approach route (driver â†’ pickup via real roads) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   List<LatLng> _approachRoute     = [];
   LatLng?      _lastApproachFetch;
   static const double _kRefetchM = 120; // re-fetch approach route every 120 m moved
 
-  // ── Custom car icon for driver marker ────────────────────────────────────────
+  // â”€â”€ Custom car icon for driver marker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   BitmapDescriptor? _carIcon;
   static BitmapDescriptor? _cachedCarIcon; // process-level cache
 
-  // ── Driver animation ─────────────────────────────────────────────────────────
+  // â”€â”€ Driver animation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   LatLng? _driverPos;
   double  _driverRot = 0;
   Timer?  _animTimer;
 
   static const _kDefaultCenter = LatLng(8.4966, 4.5421);
 
-  // ── Lifecycle ────────────────────────────────────────────────────────────────
+  // â”€â”€ Lifecycle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   @override
   void initState() {
@@ -1617,7 +1668,7 @@ class _RoutedMapViewState extends State<_RoutedMapView> {
     super.dispose();
   }
 
-  // ── Route computation ────────────────────────────────────────────────────────
+  // â”€â”€ Route computation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   void _buildRoute(BookingModel? b) {
     if (b == null || b.pickupLat == 0 || b.destinationLat == 0) return;
@@ -1673,7 +1724,7 @@ class _RoutedMapViewState extends State<_RoutedMapView> {
     });
   }
 
-  // ── Approach route (driver → pickup via Directions API) ─────────────────────
+  // â”€â”€ Approach route (driver â†’ pickup via Directions API) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   Future<void> _fetchApproachRoute(LatLng driverPos) async {
     final b = widget.booking;
@@ -1689,7 +1740,7 @@ class _RoutedMapViewState extends State<_RoutedMapView> {
 
     _lastApproachFetch = driverPos;
     final pickup = LatLng(b.pickupLat, b.pickupLng);
-    debugPrint('[Approach] fetching route: $driverPos → $pickup');
+    debugPrint('[Approach] fetching route: $driverPos â†’ $pickup');
     final pts = await MapsService.getDirectionsRoute(driverPos, pickup);
     debugPrint('[Approach] got ${pts.length} points (${pts.length == 2 ? "straight line fallback" : "real route"})');
     if (mounted) setState(() => _approachRoute = pts);
@@ -1705,7 +1756,7 @@ class _RoutedMapViewState extends State<_RoutedMapView> {
     return r * 2 * math.asin(math.sqrt(s1*s1 + math.cos(lat1)*math.cos(lat2)*s2*s2));
   }
 
-  // ── Driver animation (runs inside this widget — doesn't rebuild the parent) ──
+  // â”€â”€ Driver animation (runs inside this widget â€” doesn't rebuild the parent) â”€â”€
 
   void _animateDriverTo(LatLng target) {
     final from = _driverPos ?? target;
@@ -1782,7 +1833,7 @@ class _RoutedMapViewState extends State<_RoutedMapView> {
         : null;
     if (pickup == null) return;
 
-    // If driver pos known, route from driver → pickup; otherwise just open pickup
+    // If driver pos known, route from driver â†’ pickup; otherwise just open pickup
     final uri = dPos != null
         ? Uri.parse(
             'https://www.google.com/maps/dir/?api=1'
@@ -1807,7 +1858,7 @@ class _RoutedMapViewState extends State<_RoutedMapView> {
     return (math.atan2(y, x) * 180 / math.pi + 360) % 360;
   }
 
-  // ── Markers & polylines ──────────────────────────────────────────────────────
+  // â”€â”€ Markers & polylines â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   Set<Marker> get _markers {
     final b = widget.booking;
@@ -1838,7 +1889,7 @@ class _RoutedMapViewState extends State<_RoutedMapView> {
           infoWindow: InfoWindow(
             title: 'Driver location',
             snippet: '${_driverPos!.latitude.toStringAsFixed(5)}, '
-                     '${_driverPos!.longitude.toStringAsFixed(5)}  •  tap snippet to copy',
+                     '${_driverPos!.longitude.toStringAsFixed(5)}  â€¢  tap snippet to copy',
             onTap: _copyDriverLocation,
           ),
         ),
@@ -1849,7 +1900,7 @@ class _RoutedMapViewState extends State<_RoutedMapView> {
     final b = widget.booking;
     final lines = <Polyline>{};
 
-    // ── Trip route (pickup → destination) ────────────────────────────────────
+    // â”€â”€ Trip route (pickup â†’ destination) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (_routePts.length >= 2) {
       final accepted = b?.status == BookingStatus.accepted ||
                        b?.status == BookingStatus.arrived;
@@ -1865,7 +1916,7 @@ class _RoutedMapViewState extends State<_RoutedMapView> {
       ));
     }
 
-    // ── Approach line (driver current position → pickup) ─────────────────────
+    // â”€â”€ Approach line (driver current position â†’ pickup) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // Shows the driver's path to the customer in amber.
     final dPos   = _driverPos;
     final pickup = (b != null && b.pickupLat != 0)
@@ -1897,13 +1948,13 @@ class _RoutedMapViewState extends State<_RoutedMapView> {
     return _kDefaultCenter;
   }
 
-  // ── Build ────────────────────────────────────────────────────────────────────
+  // â”€â”€ Build â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   @override
   Widget build(BuildContext context) {
     if (!kIsWeb) return _map();
     return FutureBuilder<bool>(
-      future: _loadFuture,  // stable instance — never causes a blink
+      future: _loadFuture,  // stable instance â€” never causes a blink
       builder: (_, snap) {
         if (snap.connectionState != ConnectionState.done || snap.data != true) {
           return Container(color: AppColors.surface,
@@ -1934,7 +1985,7 @@ class _RoutedMapViewState extends State<_RoutedMapView> {
           },
         ),
 
-        // ── Map overlay action buttons ────────────────────────────────────
+        // â”€â”€ Map overlay action buttons â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         Positioned(
           top: 12, right: 12,
           child: Column(
@@ -1963,7 +2014,7 @@ class _RoutedMapViewState extends State<_RoutedMapView> {
   }
 }
 
-// ── Compact chip-style overlay button shown on top of the map ─────────────────
+// â”€â”€ Compact chip-style overlay button shown on top of the map â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class _MapOverlayChip extends StatelessWidget {
   const _MapOverlayChip({
@@ -2005,9 +2056,9 @@ class _MapOverlayChip extends StatelessWidget {
       );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //  CANCEL REASON SHEET  (customer-side)
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class _CancelReasonSheet extends StatefulWidget {
   const _CancelReasonSheet({
@@ -2100,7 +2151,7 @@ class _CancelReasonSheetState extends State<_CancelReasonSheet> {
                       maxLength: 200,
                       onChanged: (_) => setState(() {}),
                       decoration: InputDecoration(
-                        hintText: 'Describe the reason…',
+                        hintText: 'Describe the reasonâ€¦',
                         hintStyle: AppTextStyles.bodySmall
                             .copyWith(color: AppColors.textSecondary),
                         filled: true,
@@ -2120,7 +2171,7 @@ class _CancelReasonSheetState extends State<_CancelReasonSheet> {
 
           const SizedBox(height: 16),
 
-          // Confirm cancel — disabled until reason chosen
+          // Confirm cancel â€” disabled until reason chosen
           SizedBox(
             width: double.infinity,
             height: 54,
@@ -2228,3 +2279,4 @@ class _CustomerReasonTile extends StatelessWidget {
         ),
       );
 }
+

@@ -32,7 +32,8 @@ class Bookings extends BaseController
 
         $stmt = $this->db->prepare(
             "SELECT b.id, b.booking_code, b.booking_type, b.status, b.estimated_fare,
-                    b.final_fare, b.payment_status, b.pickup_address, b.destination_address,
+                    b.final_fare, b.payment_status, b.payment_method,
+                    b.pickup_address, b.destination_address,
                     b.created_at, b.num_stops, b.distance_km, b.driver_id,
                     b.vehicle_type_id,
                     u.name AS customer_name, u.phone AS customer_phone,
@@ -76,7 +77,12 @@ class Bookings extends BaseController
 
         $booking['stops']   = $this->getStops($id);
         $booking['history'] = $this->getStatusHistory($id);
-        $booking['payment'] = $this->getall('payments', 'booking_id = ?', [$id]);
+        $stmt = $this->db->prepare(
+            "SELECT * FROM payments WHERE booking_id = ?
+             ORDER BY CASE WHEN status = 'paid' THEN 0 ELSE 1 END, created_at DESC LIMIT 1"
+        );
+        $stmt->execute([$id]);
+        $booking['payment'] = $stmt->fetch(\PDO::FETCH_ASSOC) ?: null;
         $booking['customer'] = $this->getall('users', 'id = ?', [$booking['customer_id']], 'id, name, phone, email');
 
         if ($booking['driver_id']) {

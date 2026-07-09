@@ -395,11 +395,25 @@ class Jobs extends BaseController
             }
         }
 
-        $this->update('bookings', ['status' => 'arrived', 'arrived_at' => date('Y-m-d H:i:s')], "id = '$id'");
-        $this->recordStatusChange($id, 'accepted', 'arrived', 'driver', $me['id']);
+        $isDelivery  = ($job['booking_type'] ?? '') === 'delivery';
+        $cashMethods = ['cash', 'bank_transfer', ''];
+        $isCash      = in_array(strtolower($job['payment_method'] ?? ''), $cashMethods);
 
-        $this->notify('customer', $job['customer_id'], 'Driver Arrived',
-            'Your driver has arrived at the pickup location!', 'driver_arrived', $id);
+        // For non-cash delivery, skip `arrived` and go straight to `payment_pending`
+        // so the customer is immediately prompted to pay in-app.
+        $newStatus = ($isDelivery && !$isCash) ? 'payment_pending' : 'arrived';
+
+        $this->update('bookings', ['status' => $newStatus, 'arrived_at' => date('Y-m-d H:i:s')], "id = '$id'");
+        $this->recordStatusChange($id, 'accepted', $newStatus, 'driver', $me['id']);
+
+        if ($isDelivery && !$isCash) {
+            $this->notify('customer', $job['customer_id'], 'Driver Arrived — Payment Required',
+                'Your driver has arrived. Please complete payment in the app to release the package.',
+                'payment_required', $id);
+        } else {
+            $this->notify('customer', $job['customer_id'], 'Driver Arrived',
+                'Your driver has arrived at the pickup location!', 'driver_arrived', $id);
+        }
 
         echo utilities::apiMessage('Arrival confirmed.', 200);
     }
@@ -417,8 +431,8 @@ class Jobs extends BaseController
             echo utilities::apiMessage('Only available for delivery bookings.', 409);
             return;
         }
-        if ($job['status'] !== 'arrived') {
-            echo utilities::apiMessage("Payment can only be confirmed when status is 'arrived'.", 409);
+        if (!in_array($job['status'], ['arrived', 'payment_pending'])) {
+            echo utilities::apiMessage("Payment can only be confirmed when status is 'arrived' or 'payment_pending'.", 409);
             return;
         }
         if (($job['payment_status'] ?? '') === 'paid') {
@@ -448,8 +462,8 @@ class Jobs extends BaseController
             echo utilities::apiMessage('Pickup confirmation is only available for delivery bookings.', 409);
             return;
         }
-        if ($job['status'] !== 'arrived') {
-            echo utilities::apiMessage("Package pickup requires status 'arrived' (current: '{$job['status']}').", 409);
+        if (!in_array($job['status'], ['arrived', 'payment_pending'])) {
+            echo utilities::apiMessage("Package pickup requires status 'arrived' or 'payment_pending' (current: '{$job['status']}').", 409);
             return;
         }
         if (($job['payment_status'] ?? '') !== 'paid') {
@@ -457,8 +471,9 @@ class Jobs extends BaseController
             return;
         }
 
+        $fromStatus = $job['status'];
         $this->update('bookings', ['status' => 'picked_up'], "id = '$id'");
-        $this->recordStatusChange($id, 'arrived', 'picked_up', 'driver', $me['id']);
+        $this->recordStatusChange($id, $fromStatus, 'picked_up', 'driver', $me['id']);
 
         $this->notify('customer', $job['customer_id'], 'Package Picked Up',
             'The driver has collected your package and is heading to the destination.',
@@ -557,33 +572,17 @@ class Jobs extends BaseController
         $actualDistanceKm  = isset($_POST['distance_km'])    ? (float) $_POST['distance_km']    : null;
         $actualDurationMin = isset($_POST['duration_minutes']) ? (float) $_POST['duration_minutes'] : null;
 
+        // Record actual GPS distance if provided
         if ($actualDistanceKm !== null && $actualDistanceKm > 0) {
-            // Recalculate using the same pricing formula with actual distance (+ time if enabled)
-            $zoneId = $this->getDefaultZoneId();
-            $vtId   = $job['vehicle_type_id'] ?? '';
-            $stopsCount = $this->db->query(
-                "SELECT COUNT(*) FROM booking_stops WHERE booking_id = '$id'"
-            )->fetchColumn();
-            $numStops = (int) $stopsCount;
-
-            $recalcFare = $vtId
-                ? $this->calculateFare($vtId, $zoneId, $actualDistanceKm, $numStops, $actualDurationMin)
-                : 0;
-
-            if ($recalcFare > 0) {
-                $fareUpdate['final_fare']       = $recalcFare;
-                $distanceUpdate['distance_km']  = $actualDistanceKm;
-                if ($actualDurationMin !== null) {
-                    $distanceUpdate['actual_duration_minutes'] = $actualDurationMin;
-                }
-            }
+            $distanceUpdate['distance_km'] = $actualDistanceKm;
+        }
+        if ($actualDurationMin !== null && $actualDurationMin > 0) {
+            $distanceUpdate['route_duration_seconds'] = (int) round($actualDurationMin * 60);
         }
 
-        if (empty($fareUpdate)) {
-            // Fallback: use estimated fare if no GPS distance or recalc failed
-            if (!isset($job['final_fare']) || $job['final_fare'] === null || $job['final_fare'] === '') {
-                $fareUpdate['final_fare'] = $job['estimated_fare'];
-            }
+        // Keep estimated fare as final fare if not already set
+        if (!isset($job['final_fare']) || $job['final_fare'] === null || $job['final_fare'] === '') {
+            $fareUpdate['final_fare'] = $job['estimated_fare'];
         }
 
         // Determine final status and payment handling

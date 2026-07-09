@@ -102,13 +102,6 @@ const ALL_SECTIONS: SectionDef[] = [
     cols: 2,
   },
   {
-    id: 'flutterwave',
-    title: 'Flutterwave',
-    subtitle: 'Payment gateway credentials. Prefer setting secret keys in .env — those take priority over values saved here.',
-    keys: ['flutterwave_public_key', 'flutterwave_secret_key', 'flutterwave_secret_hash'],
-    cols: 1,
-  },
-  {
     id: 'delivery',
     title: 'Delivery Rules',
     subtitle: 'Rules shown to customers before they confirm a delivery booking.',
@@ -155,7 +148,7 @@ const SELECT_FIELDS: Record<string, { value: string; label: string }[]> = {
 
 const TEXTAREA_FIELDS = new Set(['about_text', 'terms_and_conditions', 'privacy_policy', 'driver_locations_json']);
 const RICHTEXT_FIELDS = new Set(['terms_and_conditions', 'privacy_policy']);
-const PASSWORD_FIELDS = new Set(['flutterwave_secret_key', 'flutterwave_secret_hash', 'sms_api_key']);
+const PASSWORD_FIELDS = new Set(['sms_api_key']);
 
 // ── Help text ──────────────────────────────────────────────────────────────────
 
@@ -194,9 +187,6 @@ const HELP: Record<string, string> = {
   smtp_encryption:    'Encryption method. TLS (STARTTLS) on port 587 is recommended.',
   smtp_from_name:     'Display name shown as the sender in outgoing emails.',
   smtp_from_email:    'The "From" address for outgoing emails. Must match the SMTP account or an authorised alias.',
-  flutterwave_public_key:  'Your Flutterwave public key (starts with FLWPUBK). Used by the mobile app.',
-  flutterwave_secret_key:  'Your Flutterwave secret key (starts with FLWSECK). Used server-side. Prefer setting FLUTTERWAVE_SECRET_KEY in .env.',
-  flutterwave_secret_hash: 'The webhook hash/secret set in your Flutterwave dashboard. Used to verify incoming webhook signatures.',
   sms_provider:            'The SMS gateway to use for sending OTP codes. Set to "Termii" to enable real SMS, or leave blank to log messages only (useful for testing).',
   sms_api_key:             'Your Termii API key. Found in your Termii dashboard under API Keys. Keep this secret.',
   sms_sender_id:           'The sender name shown on SMS messages (e.g. "ETCRide"). Maximum 11 characters for Termii. Must be approved in your Termii dashboard.',
@@ -241,9 +231,6 @@ const LABELS: Record<string, string> = {
   smtp_encryption:  'Encryption',
   smtp_from_name:   'From Name',
   smtp_from_email:  'From Email',
-  flutterwave_public_key:    'Public Key',
-  flutterwave_secret_key:    'Secret Key',
-  flutterwave_secret_hash:   'Webhook Secret Hash',
   sms_provider:              'SMS Provider',
   sms_api_key:               'API Key',
   sms_sender_id:             'Sender ID / From Name',
@@ -818,14 +805,6 @@ const hasDirty = Object.keys(dirty).length > 0;
                   </div>
                 )}
 
-                {/* Env note — only on Flutterwave section */}
-                {section.id === 'flutterwave' && (
-                  <p className="mt-4 text-xs text-slate-400 leading-relaxed">
-                    Values in <code className="bg-slate-100 px-1 rounded">.env</code> take priority over what's saved here.
-                    Prefer <code className="bg-slate-100 px-1 rounded">FLUTTERWAVE_SECRET_KEY</code> and{' '}
-                    <code className="bg-slate-100 px-1 rounded">FLUTTERWAVE_SECRET_HASH</code> in .env for production.
-                  </p>
-                )}
               </Card>
             ))}
           </div>

@@ -60,7 +60,15 @@ mixin _$BookingModel {
   String? get arrivedAt => throw _privateConstructorUsedError;
   int get freeWaitingMinutes => throw _privateConstructorUsedError;
   double get waitingChargePerMin => throw _privateConstructorUsedError;
-  double get waitingExtraCharge => throw _privateConstructorUsedError;
+  double get waitingExtraCharge =>
+      throw _privateConstructorUsedError; // ── Delivery-specific fields ──────────────────────────────────────────────
+  String? get recipientName => throw _privateConstructorUsedError;
+  String? get recipientPhone => throw _privateConstructorUsedError;
+  String? get senderPhone => throw _privateConstructorUsedError;
+  String? get packageDescription => throw _privateConstructorUsedError;
+  String? get packageSize =>
+      throw _privateConstructorUsedError; // ── Payment record ────────────────────────────────────────────────────────
+  Map<String, dynamic>? get payment => throw _privateConstructorUsedError;
 
   /// Serializes this BookingModel to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -117,7 +125,13 @@ abstract class $BookingModelCopyWith<$Res> {
       String? arrivedAt,
       int freeWaitingMinutes,
       double waitingChargePerMin,
-      double waitingExtraCharge});
+      double waitingExtraCharge,
+      String? recipientName,
+      String? recipientPhone,
+      String? senderPhone,
+      String? packageDescription,
+      String? packageSize,
+      Map<String, dynamic>? payment});
 }
 
 /// @nodoc
@@ -174,6 +188,12 @@ class _$BookingModelCopyWithImpl<$Res, $Val extends BookingModel>
     Object? freeWaitingMinutes = null,
     Object? waitingChargePerMin = null,
     Object? waitingExtraCharge = null,
+    Object? recipientName = freezed,
+    Object? recipientPhone = freezed,
+    Object? senderPhone = freezed,
+    Object? packageDescription = freezed,
+    Object? packageSize = freezed,
+    Object? payment = freezed,
   }) {
     return _then(_value.copyWith(
       id: null == id
@@ -332,6 +352,30 @@ class _$BookingModelCopyWithImpl<$Res, $Val extends BookingModel>
           ? _value.waitingExtraCharge
           : waitingExtraCharge // ignore: cast_nullable_to_non_nullable
               as double,
+      recipientName: freezed == recipientName
+          ? _value.recipientName
+          : recipientName // ignore: cast_nullable_to_non_nullable
+              as String?,
+      recipientPhone: freezed == recipientPhone
+          ? _value.recipientPhone
+          : recipientPhone // ignore: cast_nullable_to_non_nullable
+              as String?,
+      senderPhone: freezed == senderPhone
+          ? _value.senderPhone
+          : senderPhone // ignore: cast_nullable_to_non_nullable
+              as String?,
+      packageDescription: freezed == packageDescription
+          ? _value.packageDescription
+          : packageDescription // ignore: cast_nullable_to_non_nullable
+              as String?,
+      packageSize: freezed == packageSize
+          ? _value.packageSize
+          : packageSize // ignore: cast_nullable_to_non_nullable
+              as String?,
+      payment: freezed == payment
+          ? _value.payment
+          : payment // ignore: cast_nullable_to_non_nullable
+              as Map<String, dynamic>?,
     ) as $Val);
   }
 }
@@ -383,7 +427,13 @@ abstract class _$$BookingModelImplCopyWith<$Res>
       String? arrivedAt,
       int freeWaitingMinutes,
       double waitingChargePerMin,
-      double waitingExtraCharge});
+      double waitingExtraCharge,
+      String? recipientName,
+      String? recipientPhone,
+      String? senderPhone,
+      String? packageDescription,
+      String? packageSize,
+      Map<String, dynamic>? payment});
 }
 
 /// @nodoc
@@ -438,6 +488,12 @@ class __$$BookingModelImplCopyWithImpl<$Res>
     Object? freeWaitingMinutes = null,
     Object? waitingChargePerMin = null,
     Object? waitingExtraCharge = null,
+    Object? recipientName = freezed,
+    Object? recipientPhone = freezed,
+    Object? senderPhone = freezed,
+    Object? packageDescription = freezed,
+    Object? packageSize = freezed,
+    Object? payment = freezed,
   }) {
     return _then(_$BookingModelImpl(
       id: null == id
@@ -596,6 +652,30 @@ class __$$BookingModelImplCopyWithImpl<$Res>
           ? _value.waitingExtraCharge
           : waitingExtraCharge // ignore: cast_nullable_to_non_nullable
               as double,
+      recipientName: freezed == recipientName
+          ? _value.recipientName
+          : recipientName // ignore: cast_nullable_to_non_nullable
+              as String?,
+      recipientPhone: freezed == recipientPhone
+          ? _value.recipientPhone
+          : recipientPhone // ignore: cast_nullable_to_non_nullable
+              as String?,
+      senderPhone: freezed == senderPhone
+          ? _value.senderPhone
+          : senderPhone // ignore: cast_nullable_to_non_nullable
+              as String?,
+      packageDescription: freezed == packageDescription
+          ? _value.packageDescription
+          : packageDescription // ignore: cast_nullable_to_non_nullable
+              as String?,
+      packageSize: freezed == packageSize
+          ? _value.packageSize
+          : packageSize // ignore: cast_nullable_to_non_nullable
+              as String?,
+      payment: freezed == payment
+          ? _value._payment
+          : payment // ignore: cast_nullable_to_non_nullable
+              as Map<String, dynamic>?,
     ));
   }
 }
@@ -642,8 +722,15 @@ class _$BookingModelImpl implements _BookingModel {
       this.arrivedAt,
       this.freeWaitingMinutes = 3,
       this.waitingChargePerMin = 0.0,
-      this.waitingExtraCharge = 0.0})
-      : _alternativeTypes = alternativeTypes;
+      this.waitingExtraCharge = 0.0,
+      this.recipientName,
+      this.recipientPhone,
+      this.senderPhone,
+      this.packageDescription,
+      this.packageSize,
+      final Map<String, dynamic>? payment})
+      : _alternativeTypes = alternativeTypes,
+        _payment = payment;
 
   factory _$BookingModelImpl.fromJson(Map<String, dynamic> json) =>
       _$$BookingModelImplFromJson(json);
@@ -750,10 +837,32 @@ class _$BookingModelImpl implements _BookingModel {
   @override
   @JsonKey()
   final double waitingExtraCharge;
+// ── Delivery-specific fields ──────────────────────────────────────────────
+  @override
+  final String? recipientName;
+  @override
+  final String? recipientPhone;
+  @override
+  final String? senderPhone;
+  @override
+  final String? packageDescription;
+  @override
+  final String? packageSize;
+// ── Payment record ────────────────────────────────────────────────────────
+  final Map<String, dynamic>? _payment;
+// ── Payment record ────────────────────────────────────────────────────────
+  @override
+  Map<String, dynamic>? get payment {
+    final value = _payment;
+    if (value == null) return null;
+    if (_payment is EqualUnmodifiableMapView) return _payment;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableMapView(value);
+  }
 
   @override
   String toString() {
-    return 'BookingModel(id: $id, bookingCode: $bookingCode, status: $status, bookingType: $bookingType, pickupAddress: $pickupAddress, destinationAddress: $destinationAddress, pickupLat: $pickupLat, pickupLng: $pickupLng, destinationLat: $destinationLat, destinationLng: $destinationLng, estimatedFare: $estimatedFare, finalFare: $finalFare, paymentStatus: $paymentStatus, paymentMethod: $paymentMethod, driverId: $driverId, driverName: $driverName, driverPhone: $driverPhone, driverAvatar: $driverAvatar, driverRating: $driverRating, vehicleTypeName: $vehicleTypeName, vehiclePlate: $vehiclePlate, vehicleColor: $vehicleColor, numStops: $numStops, durationMinutes: $durationMinutes, distanceKm: $distanceKm, routePolyline: $routePolyline, routeDistanceMeters: $routeDistanceMeters, routeDurationSeconds: $routeDurationSeconds, cancellationReason: $cancellationReason, createdAt: $createdAt, updatedAt: $updatedAt, driverEtaMinutes: $driverEtaMinutes, driverDistanceKm: $driverDistanceKm, lastEvent: $lastEvent, alternativeTypes: $alternativeTypes, arrivedAt: $arrivedAt, freeWaitingMinutes: $freeWaitingMinutes, waitingChargePerMin: $waitingChargePerMin, waitingExtraCharge: $waitingExtraCharge)';
+    return 'BookingModel(id: $id, bookingCode: $bookingCode, status: $status, bookingType: $bookingType, pickupAddress: $pickupAddress, destinationAddress: $destinationAddress, pickupLat: $pickupLat, pickupLng: $pickupLng, destinationLat: $destinationLat, destinationLng: $destinationLng, estimatedFare: $estimatedFare, finalFare: $finalFare, paymentStatus: $paymentStatus, paymentMethod: $paymentMethod, driverId: $driverId, driverName: $driverName, driverPhone: $driverPhone, driverAvatar: $driverAvatar, driverRating: $driverRating, vehicleTypeName: $vehicleTypeName, vehiclePlate: $vehiclePlate, vehicleColor: $vehicleColor, numStops: $numStops, durationMinutes: $durationMinutes, distanceKm: $distanceKm, routePolyline: $routePolyline, routeDistanceMeters: $routeDistanceMeters, routeDurationSeconds: $routeDurationSeconds, cancellationReason: $cancellationReason, createdAt: $createdAt, updatedAt: $updatedAt, driverEtaMinutes: $driverEtaMinutes, driverDistanceKm: $driverDistanceKm, lastEvent: $lastEvent, alternativeTypes: $alternativeTypes, arrivedAt: $arrivedAt, freeWaitingMinutes: $freeWaitingMinutes, waitingChargePerMin: $waitingChargePerMin, waitingExtraCharge: $waitingExtraCharge, recipientName: $recipientName, recipientPhone: $recipientPhone, senderPhone: $senderPhone, packageDescription: $packageDescription, packageSize: $packageSize, payment: $payment)';
   }
 
   @override
@@ -836,7 +945,18 @@ class _$BookingModelImpl implements _BookingModel {
             (identical(other.waitingChargePerMin, waitingChargePerMin) ||
                 other.waitingChargePerMin == waitingChargePerMin) &&
             (identical(other.waitingExtraCharge, waitingExtraCharge) ||
-                other.waitingExtraCharge == waitingExtraCharge));
+                other.waitingExtraCharge == waitingExtraCharge) &&
+            (identical(other.recipientName, recipientName) ||
+                other.recipientName == recipientName) &&
+            (identical(other.recipientPhone, recipientPhone) ||
+                other.recipientPhone == recipientPhone) &&
+            (identical(other.senderPhone, senderPhone) ||
+                other.senderPhone == senderPhone) &&
+            (identical(other.packageDescription, packageDescription) ||
+                other.packageDescription == packageDescription) &&
+            (identical(other.packageSize, packageSize) ||
+                other.packageSize == packageSize) &&
+            const DeepCollectionEquality().equals(other._payment, _payment));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -881,7 +1001,13 @@ class _$BookingModelImpl implements _BookingModel {
         arrivedAt,
         freeWaitingMinutes,
         waitingChargePerMin,
-        waitingExtraCharge
+        waitingExtraCharge,
+        recipientName,
+        recipientPhone,
+        senderPhone,
+        packageDescription,
+        packageSize,
+        const DeepCollectionEquality().hash(_payment)
       ]);
 
   /// Create a copy of BookingModel
@@ -940,7 +1066,13 @@ abstract class _BookingModel implements BookingModel {
       final String? arrivedAt,
       final int freeWaitingMinutes,
       final double waitingChargePerMin,
-      final double waitingExtraCharge}) = _$BookingModelImpl;
+      final double waitingExtraCharge,
+      final String? recipientName,
+      final String? recipientPhone,
+      final String? senderPhone,
+      final String? packageDescription,
+      final String? packageSize,
+      final Map<String, dynamic>? payment}) = _$BookingModelImpl;
 
   factory _BookingModel.fromJson(Map<String, dynamic> json) =
       _$BookingModelImpl.fromJson;
@@ -1024,7 +1156,21 @@ abstract class _BookingModel implements BookingModel {
   @override
   double get waitingChargePerMin;
   @override
-  double get waitingExtraCharge;
+  double
+      get waitingExtraCharge; // ── Delivery-specific fields ──────────────────────────────────────────────
+  @override
+  String? get recipientName;
+  @override
+  String? get recipientPhone;
+  @override
+  String? get senderPhone;
+  @override
+  String? get packageDescription;
+  @override
+  String?
+      get packageSize; // ── Payment record ────────────────────────────────────────────────────────
+  @override
+  Map<String, dynamic>? get payment;
 
   /// Create a copy of BookingModel
   /// with the given fields replaced by the non-null parameter values.

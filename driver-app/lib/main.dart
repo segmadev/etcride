@@ -51,6 +51,9 @@ class _ETCrideDriverAppState extends ConsumerState<ETCrideDriverApp> with Widget
         if (driver != null) {
           final repo = ref.read(driverRepositoryProvider);
           ChatNotificationService.instance.start(repo.getChatThreads);
+          // Check deletion status once after confirmed auth — safe because the
+          // token is guaranteed to be loaded at this point.
+          _checkAccountDeletionStatus();
           // Register / refresh FCM token whenever the driver logs in.
           DriverNotificationService.instance.getToken().then((token) {
             if (token != null && token.isNotEmpty) {
@@ -95,8 +98,9 @@ class _ETCrideDriverAppState extends ConsumerState<ETCrideDriverApp> with Widget
     if (state == AppLifecycleState.resumed) {
       // Check auth when app comes to foreground
       _validateAuth();
-      // Check if driver has pending account deletion
-      _checkAccountDeletionStatus();
+      // Deletion status is checked on the account-deletion screen itself;
+      // calling it here races against SecureStorage loading and causes spurious
+      // 401s that trigger logout before the token is available.
     }
   }
 
@@ -115,6 +119,8 @@ class _ETCrideDriverAppState extends ConsumerState<ETCrideDriverApp> with Widget
 
   Future<void> _checkAccountDeletionStatus() async {
     if (!mounted) return;
+    // Only run when the driver is authenticated.
+    if (ref.read(currentDriverProvider) == null) return;
     try {
       final status = await ref.read(accountDeletionRepositoryProvider).getRequestStatus();
       if (status != null && mounted) {

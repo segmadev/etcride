@@ -5,10 +5,13 @@ part 'payment_gateway_model.g.dart';
 
 @freezed
 class PaymentGatewayModel with _$PaymentGatewayModel {
+  const PaymentGatewayModel._();
+
   const factory PaymentGatewayModel({
     required int id,
     required String name,
     required String displayName,
+    String? logoUrl,
     @Default(true) bool isEnabled,
     @Default(0) int priority,
     @Default(0) double minAmount,
@@ -28,9 +31,10 @@ class PaymentGatewayModel with _$PaymentGatewayModel {
 
   /// Get icon for gateway
   String get icon => switch (name) {
+    'cash'        => '💵',
     'flutterwave' => '💳',
-    'korapay' => '🏦',
-    'monnify' => '💰',
-    _ => '💳',
+    'korapay'     => '🏦',
+    'monnify'     => '💰',
+    _             => '💳',
   };
 }

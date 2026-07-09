@@ -10,6 +10,8 @@ import '../../core/constants/app_text_styles.dart';
 import '../../core/config/router.dart';
 import '../../core/utils/formatters.dart';
 import '../../data/models/booking_model.dart';
+import '../../data/models/payment_gateway_model.dart';
+import '../../shared/providers/preferences.dart';
 import '../../shared/providers/providers.dart';
 import '../../shared/widgets/app_button.dart';
 import '../../shared/widgets/loading_overlay.dart';
@@ -25,7 +27,9 @@ class PaymentScreen extends ConsumerStatefulWidget {
 
 class _PaymentScreenState extends ConsumerState<PaymentScreen> {
   BookingModel? _booking;
+  List<PaymentGatewayModel> _gateways = const [];
   bool _loading        = true;
+  bool _loadingGateways = false;
   bool _paying         = false;
   bool _waitingGateway = false;   // true while we're polling after launching browser
   Timer? _pollTimer;
@@ -39,17 +43,58 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
 
   Future<void> _load() async {
     try {
-      final b = await ref.read(bookingRepositoryProvider).getBooking(widget.bookingId);
+      final repo = ref.read(bookingRepositoryProvider);
+
+      // Start both requests in parallel before awaiting either
+      final bookingFuture  = repo.getBooking(widget.bookingId);
+      final gatewaysFuture = repo.getPaymentGateways();
+
+      final b        = await bookingFuture;
+      final gateways = await gatewaysFuture;
+
+      // If already paid/completed, skip the payment screen.
+      // Delivery: payment is pre-pickup — paid means back to tracking, not trip-completed yet.
+      // Ride: payment is post-trip — paid means trip-completed.
+      if (mounted && (b.paymentStatus == 'paid' || b.status.isCompleted)) {
+        final isDeliveryPrePickup = b.bookingType == BookingType.delivery &&
+            b.status != BookingStatus.completed;
+        context.go(
+          isDeliveryPrePickup ? AppRoutes.driverAssigned : AppRoutes.tripCompleted,
+          extra: widget.bookingId,
+        );
+        return;
+      }
+
+      // Load last used gateway preference
+      final lastGateway = await PaymentPreferences.getLastUsedGateway();
+      final method = b.paymentMethod ?? PaymentMethod.fromString(lastGateway);
+
       if (mounted) {
         setState(() {
-          _booking = b;
-          _method  = b.paymentMethod ?? PaymentMethod.cash;
-          _loading = false;
+          _booking  = b;
+          _gateways = gateways;
+          _method   = method;
+          _loading  = false;
         });
+        // If a payment was already launched (gateway opened) but the app was
+        // backgrounded and resumed, restart polling so we catch the webhook result.
+        _startPolling();
       }
-    } catch (_) {
+    } catch (e) {
       if (mounted) setState(() => _loading = false);
+      // Still try to load gateways even if booking fetch fails
+      _loadGatewaysOnly();
     }
+  }
+
+  Future<void> _loadGatewaysOnly() async {
+    if (_loadingGateways) return;
+    _loadingGateways = true;
+    try {
+      final gateways = await ref.read(bookingRepositoryProvider).getPaymentGateways();
+      if (mounted) setState(() => _gateways = gateways);
+    } catch (_) {}
+    _loadingGateways = false;
   }
 
   @override
@@ -80,9 +125,12 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
         return;
       }
 
-      // Flutterwave: call backend to generate payment link
+      // Save selected gateway for next time
+      await PaymentPreferences.saveLastUsedGateway(_method.apiValue);
+
+      // Call backend to generate payment link (pass selected provider)
       final result = await ref.read(bookingRepositoryProvider)
-          .initiatePayment(widget.bookingId);
+          .initiatePayment(widget.bookingId, provider: _method.apiValue);
 
       final link = result['payment_link'] as String?;
       if (link == null || link.isEmpty) {
@@ -96,7 +144,7 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
         return;
       }
 
-      // Launch Flutterwave checkout in external browser
+      // Launch payment gateway checkout in external browser
       final uri = Uri.parse(link);
       if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
         if (mounted) {
@@ -133,7 +181,16 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
       final payStatus = status['payment_status'] as String? ?? '';
       if (payStatus == 'paid') {
         _pollTimer?.cancel();
-        if (mounted) context.go(AppRoutes.tripCompleted, extra: widget.bookingId);
+        if (mounted) {
+          final b = _booking;
+          // Delivery pre-pickup payment: trip not done yet — go back to tracking
+          if (b != null && b.bookingType == BookingType.delivery &&
+              b.status != BookingStatus.completed) {
+            context.go(AppRoutes.driverAssigned, extra: widget.bookingId);
+          } else {
+            context.go(AppRoutes.tripCompleted, extra: widget.bookingId);
+          }
+        }
       } else if (payStatus == 'failed') {
         _pollTimer?.cancel();
         if (mounted) {
@@ -220,6 +277,7 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
                         selected: _method,
                         onChanged: _changeMethod,
                         enabled: !_paying,
+                        gateways: _gateways,
                       ),
 
                       const SizedBox(height: 36),
@@ -270,9 +328,11 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
   }
 
   String get _payLabel => switch (_method) {
-    PaymentMethod.cash        => 'Confirm Cash Payment',
-    PaymentMethod.flutterwave => 'Pay with Card / Flutterwave',
-    _                         => 'Pay',
+    PaymentMethod.cash         => 'Confirm Cash Payment',
+    PaymentMethod.flutterwave  => 'Pay with Flutterwave',
+    PaymentMethod.korapay      => 'Pay with Korapay',
+    PaymentMethod.bankTransfer => 'Pay via Bank Transfer',
+    _                          => 'Pay Now',
   };
 }
 

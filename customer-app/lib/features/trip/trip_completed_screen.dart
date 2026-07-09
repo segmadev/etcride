@@ -11,6 +11,7 @@ import '../../../shared/providers/providers.dart';
 import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/star_rating.dart';
 import '../../../shared/widgets/loading_overlay.dart';
+import '../../../shared/widgets/trip_details_sheet.dart';
 
 class TripCompletedScreen extends ConsumerStatefulWidget {
   const TripCompletedScreen({super.key, required this.bookingId});
@@ -39,8 +40,10 @@ class _TripCompletedScreenState extends ConsumerState<TripCompletedScreen> {
       final b = await ref.read(bookingRepositoryProvider).getBooking(widget.bookingId);
       if (!mounted) return;
 
-      // If still payment_pending, send to payment screen
-      if (b.status == BookingStatus.paymentPending) {
+      // If payment is still pending AND not yet paid, send to payment screen.
+      // For delivery cash: status stays payment_pending after cash confirmed —
+      // don't redirect in that case (payment_status will be 'paid').
+      if (b.status == BookingStatus.paymentPending && b.paymentStatus != 'paid') {
         context.go(AppRoutes.payment, extra: widget.bookingId);
         return;
       }
@@ -194,9 +197,9 @@ class _TripCompletedScreenState extends ConsumerState<TripCompletedScreen> {
                         children: [
                           Expanded(
                             child: OutlinedButton(
-                              onPressed: () => context.push(
-                                  AppRoutes.tripReceipt,
-                                  extra: widget.bookingId),
+                              onPressed: _booking != null
+                                  ? () => showTripDetailsSheet(context, _booking!)
+                                  : () => context.push(AppRoutes.tripReceipt, extra: widget.bookingId),
                               style: OutlinedButton.styleFrom(
                                 padding: const EdgeInsets.symmetric(vertical: 16),
                                 side: const BorderSide(color: AppColors.divider),

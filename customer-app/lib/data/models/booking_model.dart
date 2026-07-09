@@ -121,6 +121,14 @@ class BookingModel with _$BookingModel {
     @Default(3) int freeWaitingMinutes,
     @Default(0.0) double waitingChargePerMin,
     @Default(0.0) double waitingExtraCharge,
+    // ── Delivery-specific fields ──────────────────────────────────────────────
+    String? recipientName,
+    String? recipientPhone,
+    String? senderPhone,
+    String? packageDescription,
+    String? packageSize,
+    // ── Payment record ────────────────────────────────────────────────────────
+    Map<String, dynamic>? payment,
   }) = _BookingModel;
 
   factory BookingModel.fromJson(Map<String, dynamic> json) =>

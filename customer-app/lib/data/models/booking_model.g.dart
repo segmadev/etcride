@@ -51,6 +51,12 @@ _$BookingModelImpl _$$BookingModelImplFromJson(Map<String, dynamic> json) =>
           (json['waitingChargePerMin'] as num?)?.toDouble() ?? 0.0,
       waitingExtraCharge:
           (json['waitingExtraCharge'] as num?)?.toDouble() ?? 0.0,
+      recipientName: json['recipientName'] as String?,
+      recipientPhone: json['recipientPhone'] as String?,
+      senderPhone: json['senderPhone'] as String?,
+      packageDescription: json['packageDescription'] as String?,
+      packageSize: json['packageSize'] as String?,
+      payment: json['payment'] as Map<String, dynamic>?,
     );
 
 Map<String, dynamic> _$$BookingModelImplToJson(_$BookingModelImpl instance) =>
@@ -94,6 +100,12 @@ Map<String, dynamic> _$$BookingModelImplToJson(_$BookingModelImpl instance) =>
       'freeWaitingMinutes': instance.freeWaitingMinutes,
       'waitingChargePerMin': instance.waitingChargePerMin,
       'waitingExtraCharge': instance.waitingExtraCharge,
+      'recipientName': instance.recipientName,
+      'recipientPhone': instance.recipientPhone,
+      'senderPhone': instance.senderPhone,
+      'packageDescription': instance.packageDescription,
+      'packageSize': instance.packageSize,
+      'payment': instance.payment,
     };
 
 const _$BookingStatusEnumMap = {
@@ -119,4 +131,5 @@ const _$PaymentMethodEnumMap = {
   PaymentMethod.cash: 'cash',
   PaymentMethod.bankTransfer: 'bankTransfer',
   PaymentMethod.flutterwave: 'flutterwave',
+  PaymentMethod.korapay: 'korapay',
 };

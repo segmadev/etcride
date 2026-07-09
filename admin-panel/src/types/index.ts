@@ -69,6 +69,7 @@ export interface Booking {
   booking_type: BookingType;
   status: BookingStatus;
   payment_status: PaymentStatus;
+  payment_method?: string | null;
   estimated_fare: number;
   final_fare: number | null;
   distance_km: number;

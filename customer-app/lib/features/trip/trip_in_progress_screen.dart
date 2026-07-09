@@ -19,6 +19,7 @@ import '../../../core/maps/maps_service.dart';
 import '../../../data/models/booking_model.dart';
 import '../../../shared/providers/providers.dart';
 import '../../../shared/widgets/driver_card.dart';
+import '../../../shared/widgets/trip_details_sheet.dart';
 import '../../../shared/widgets/trip_quick_nav.dart';
 import '../../../shared/widgets/app_bottom_drawer.dart';
 import '../home/widgets/home_drawer.dart';
@@ -66,7 +67,17 @@ class _TripInProgressScreenState
       if (b.status == BookingStatus.paymentPending ||
           b.status == BookingStatus.completed) {
         _pollTimer?.cancel();
-        context.go(AppRoutes.payment, extra: widget.bookingId);
+        if (b.paymentStatus == 'paid') {
+          // Delivery in payment_pending+paid means pre-pickup payment done — not yet completed.
+          if (b.status == BookingStatus.paymentPending &&
+              b.bookingType == BookingType.delivery) {
+            context.go(AppRoutes.driverAssigned, extra: widget.bookingId);
+          } else {
+            context.go(AppRoutes.tripCompleted, extra: widget.bookingId);
+          }
+        } else {
+          context.go(AppRoutes.payment, extra: widget.bookingId);
+        }
       } else if (b.status == BookingStatus.cancelled) {
         _pollTimer?.cancel();
         ref.invalidate(activeBookingProvider('ride'));
@@ -291,6 +302,7 @@ class _TripInProgressScreenState
                       onReroute: b.bookingType == BookingType.ride
                           ? () => _showRerouteSheet(context)
                           : null,
+                      onViewDetails: () => showTripDetailsSheet(context, b),
                     ),
                   ),
           ),

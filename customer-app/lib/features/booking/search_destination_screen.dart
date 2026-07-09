@@ -16,6 +16,7 @@ import '../../core/constants/app_strings.dart';
 import '../../core/config/router.dart';
 import '../../core/maps/maps_service.dart';
 import '../../core/maps/boundary_service.dart';
+import '../../core/services/saved_places_service.dart';
 import '../../data/models/booking_draft.dart';
 import '../../shared/providers/providers.dart';
 import '../../shared/widgets/app_bottom_drawer.dart';
@@ -56,6 +57,7 @@ class _SearchDestinationScreenState extends ConsumerState<SearchDestinationScree
 
   List<PlaceSuggestion> _suggestions = const [];
   List<PlaceSuggestion> _recentSearches = const [];
+  Set<String> _savedPlaceIds = {};
   bool _searching = false;
   Timer? _debounce;
   bool _requestInFlight = false;
@@ -89,8 +91,8 @@ class _SearchDestinationScreenState extends ConsumerState<SearchDestinationScree
     if (draft.hasPickup) _setPickupText(draft.pickupAddress);
     if (draft.hasDestination) _setDestText(draft.destinationAddress);
 
-    // For reroute (destination-only mode), set initial destination if provided
-    if (widget.destinationOnly && widget.initialDestination != null) {
+    // Pre-fill destination (reroute mode or saved place selection)
+    if (widget.initialDestination != null) {
       _setDestText(widget.initialDestination!);
     }
 
@@ -116,6 +118,23 @@ class _SearchDestinationScreenState extends ConsumerState<SearchDestinationScree
     });
 
     _loadRecentSearches();
+    _loadSavedPlaceIds();
+  }
+
+  Future<void> _loadSavedPlaceIds() async {
+    final places = await SavedPlacesService.getAll();
+    if (mounted) setState(() => _savedPlaceIds = places.map((p) => p.placeId).toSet());
+  }
+
+  Future<void> _toggleFavourite(PlaceSuggestion s) async {
+    final place = SavedPlace(
+      placeId: s.placeId,
+      mainText: s.mainText,
+      secondaryText: s.secondaryText,
+      fullText: s.fullText,
+    );
+    await SavedPlacesService.toggle(place);
+    await _loadSavedPlaceIds();
   }
 
   Future<void> _loadRecentSearches() async {
@@ -636,6 +655,22 @@ class _SearchDestinationScreenState extends ConsumerState<SearchDestinationScree
                       );
                     },
                   ),
+                  GestureDetector(
+                    onTap: () => _toggleFavourite(s),
+                    behavior: HitTestBehavior.opaque,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                      child: Icon(
+                        _savedPlaceIds.contains(s.placeId)
+                            ? Icons.star_rounded
+                            : Icons.star_outline_rounded,
+                        size: 22,
+                        color: _savedPlaceIds.contains(s.placeId)
+                            ? AppColors.primary
+                            : AppColors.textHint,
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -723,6 +758,60 @@ class _SearchDestinationScreenState extends ConsumerState<SearchDestinationScree
             ),
           ),
           const Divider(height: 1),
+          if (_savedPlaceIds.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(0, 12, 0, 8),
+              child: Text('Saved Places',
+                  style: AppTextStyles.labelSmall.copyWith(
+                    color: AppColors.textSecondary,
+                    fontWeight: FontWeight.w600,
+                  )),
+            ),
+            FutureBuilder<List<SavedPlace>>(
+              future: SavedPlacesService.getAll(),
+              builder: (context, snap) {
+                final places = snap.data ?? [];
+                return Column(
+                  children: places.map((p) {
+                    final s = PlaceSuggestion(
+                      placeId: p.placeId,
+                      mainText: p.mainText,
+                      secondaryText: p.secondaryText,
+                      fullText: p.fullText,
+                    );
+                    return GestureDetector(
+                      onTap: () => _selectSuggestion(s),
+                      behavior: HitTestBehavior.opaque,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.star_rounded, size: 18, color: AppColors.primary),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(p.mainText, style: AppTextStyles.bodyMedium),
+                                  if (p.secondaryText.isNotEmpty) ...[
+                                    const SizedBox(height: 2),
+                                    Text(p.secondaryText,
+                                        style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
+                                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                );
+              },
+            ),
+            const Divider(height: 1),
+          ],
           if (_recentSearches.isNotEmpty) ...[
             Padding(
               padding: const EdgeInsets.fromLTRB(0, 12, 0, 8),
@@ -1169,6 +1258,7 @@ Future<bool> showSearchDestinationDrawer(
   bool openSelectRideAfter = true,
   bool focusPickupInitially = false,
   bool pickupOnly = false,
+  String? initialDestination,
 }) async {
   final result = await showAppBottomDrawer<SearchDestinationResult>(
     context: context,
@@ -1176,6 +1266,7 @@ Future<bool> showSearchDestinationDrawer(
       asSheet: true,
       focusPickupInitially: focusPickupInitially,
       pickupOnly: pickupOnly,
+      initialDestination: initialDestination,
     ),
   );
   if (result != SearchDestinationResult.openSelectRide &&

@@ -292,18 +292,46 @@ function BookingDetailModal({ bookingId, onClose, onAssign, onDeassign, onCancel
             ))}
           </div>
 
-          {/* Payment */}
-          {b.payment && (
-            <div className="rounded-xl border border-slate-200 p-3.5">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 mb-2 flex items-center gap-1"><CreditCard size={10} /> Payment</p>
-              <div className="flex items-center gap-4 flex-wrap">
-                <span className="text-sm font-semibold text-slate-800 capitalize">{b.payment.provider}</span>
-                <span className="text-sm text-slate-600">{formatCurrency(b.payment.amount)}</span>
-                <Badge status={b.payment.status}>{b.payment.status}</Badge>
-                <span className="text-xs text-slate-400 ml-auto">{formatDateTime(b.payment.created_at)}</span>
+          {/* Payment method + transaction */}
+          <div className="rounded-xl border border-slate-200 p-3.5 space-y-3">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 flex items-center gap-1">
+              <CreditCard size={10} /> Payment
+            </p>
+            {/* Method row — always shown */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <div>
+                <p className="text-[10px] text-slate-400 mb-0.5">Method</p>
+                <p className="text-sm font-semibold text-slate-800 capitalize">
+                  {b.payment_method ? b.payment_method.replace(/_/g, ' ') : '—'}
+                </p>
               </div>
+              <div>
+                <p className="text-[10px] text-slate-400 mb-0.5">Status</p>
+                <Badge status={b.payment_status}>{b.payment_status}</Badge>
+              </div>
+              {b.final_fare && (
+                <div className="ml-auto text-right">
+                  <p className="text-[10px] text-slate-400 mb-0.5">Amount Paid</p>
+                  <p className="text-sm font-bold text-slate-800">{formatCurrency(b.final_fare)}</p>
+                </div>
+              )}
             </div>
-          )}
+            {/* Transaction record — shown when a gateway payment was made */}
+            {b.payment && (
+              <div className="border-t border-slate-100 pt-3 space-y-1">
+                <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide">Transaction</p>
+                <div className="flex items-center gap-3 flex-wrap text-sm">
+                  <span className="font-semibold text-slate-800 capitalize">{b.payment.provider}</span>
+                  <span className="text-slate-600">{formatCurrency(b.payment.amount)}</span>
+                  <Badge status={b.payment.status}>{b.payment.status}</Badge>
+                  <span className="text-xs text-slate-400 ml-auto">{formatDateTime(b.payment.created_at)}</span>
+                </div>
+                {(b.payment as any).reference && (
+                  <p className="text-[10px] text-slate-400 font-mono">Ref: {(b.payment as any).reference}</p>
+                )}
+              </div>
+            )}
+          </div>
 
           {/* Status history timeline */}
           {(b.history ?? b.status_history ?? []).length > 0 && (
@@ -548,7 +576,7 @@ export function BookingsPage() {
     },
     {
       key: 'status',
-      header: 'Status',
+      header: 'Status / Payment',
       render: (b: Booking) => (
         <div>
           <div className="flex items-center gap-2">
@@ -562,6 +590,15 @@ export function BookingsPage() {
           </div>
           <p className="text-xs font-semibold text-slate-800 mt-1">{formatCurrency(b.final_fare ?? b.estimated_fare)}</p>
           {b.distance_km ? <p className="text-[10px] text-slate-400">{b.distance_km} km</p> : null}
+          {b.payment_method && (
+            <p className="text-[10px] text-slate-400 mt-0.5 capitalize">
+              <CreditCard size={9} className="inline mr-0.5 -mt-px" />
+              {b.payment_method.replace(/_/g, ' ')}
+            </p>
+          )}
+          {b.payment_status && b.payment_status !== 'pending' && (
+            <Badge status={b.payment_status} className="mt-1 text-[9px]">{b.payment_status}</Badge>
+          )}
         </div>
       ),
     },
@@ -1073,7 +1110,7 @@ function BookingCard({ booking: b, onView, onAssign, onDeassign, onCancel, onCus
           </div>
         </div>
 
-        {/* Driver section */}
+        {/* Driver + payment row */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Car size={12} className="shrink-0 text-slate-400" />
@@ -1085,7 +1122,15 @@ function BookingCard({ booking: b, onView, onAssign, onDeassign, onCancel, onCus
               : <span className="text-xs text-slate-400 italic">No driver assigned</span>
             }
           </div>
-          {b.vehicle_type && <span className="text-[10px] text-slate-400 bg-slate-100 rounded-full px-2 py-0.5">{b.vehicle_type}</span>}
+          <div className="text-right">
+            {b.vehicle_type && <span className="text-[10px] text-slate-400 bg-slate-100 rounded-full px-2 py-0.5">{b.vehicle_type}</span>}
+            {b.payment_method && (
+              <p className="text-[10px] text-slate-400 mt-0.5 capitalize">
+                <CreditCard size={9} className="inline mr-0.5 -mt-px" />
+                {b.payment_method.replace(/_/g, ' ')}
+              </p>
+            )}
+          </div>
         </div>
 
         {/* Action buttons */}

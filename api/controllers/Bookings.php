@@ -214,6 +214,13 @@ class Bookings extends BaseController
             }
         }
 
+        // Payment method — accepted at booking time to avoid a second round-trip
+        $allowedMethods = ['cash', 'bank_transfer', 'flutterwave', 'korapay', 'monnify'];
+        $paymentMethod  = $this->str('payment_method');
+        if (in_array($paymentMethod, $allowedMethods)) {
+            $insertData['payment_method'] = $paymentMethod;
+        }
+
         // Optional nullable columns
         if ($zoneId)                          $insertData['zone_id'] = $zoneId;
         $notes = $this->str('notes');
@@ -409,7 +416,13 @@ class Bookings extends BaseController
 
             // Payments may not exist yet — guard against missing table
             try {
-                $booking['payment'] = $this->getall('payments', 'booking_id = ?', [$id]);
+                // Return the paid record if one exists, otherwise the latest attempt
+                $stmt = $this->db->prepare(
+                    "SELECT * FROM payments WHERE booking_id = ?
+                     ORDER BY CASE WHEN status = 'paid' THEN 0 ELSE 1 END, created_at DESC LIMIT 1"
+                );
+                $stmt->execute([$id]);
+                $booking['payment'] = $stmt->fetch(\PDO::FETCH_ASSOC) ?: null;
             } catch (\Throwable $e) {
                 $booking['payment'] = null;
             }
@@ -816,7 +829,7 @@ class Bookings extends BaseController
         }
 
         $method = $this->str('payment_method');
-        $allowed = ['cash', 'bank_transfer', 'flutterwave'];
+        $allowed = ['cash', 'bank_transfer', 'flutterwave', 'korapay', 'monnify'];
         if (!in_array($method, $allowed)) {
             echo utilities::apiMessage("Invalid payment method. Must be one of: " . implode(', ', $allowed), 422);
             return;

@@ -35,7 +35,7 @@ class FrontContent extends BaseController
      */
     public function serveUpload(string $folder): void
     {
-        $allowedFolders = ['vehicles', 'drivers'];
+        $allowedFolders = ['vehicles', 'drivers', 'gateways'];
         $filename = trim((string) $this->query('file', ''));
         $safeName = basename($filename);
 

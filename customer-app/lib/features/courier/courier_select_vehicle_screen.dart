@@ -15,6 +15,7 @@ import '../../../core/config/router.dart';
 import '../../../core/maps/google_maps_js_loader.dart';
 import '../../../core/maps/maps_service.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../data/models/booking_model.dart';
 import '../../../data/models/vehicle_type_model.dart';
 import '../../../shared/providers/providers.dart';
 import '../../../shared/widgets/app_button.dart';
@@ -177,9 +178,7 @@ class _CourierSelectVehicleScreenState
     ref.read(selectedPaymentMethodProvider.notifier).state = selected;
   }
 
-  String get _paymentLabel => _paymentMethod == 'flutterwave'
-      ? AppStrings.payWithFlutterwave
-      : AppStrings.cash;
+  String get _paymentLabel => PaymentMethod.fromString(_paymentMethod).displayName;
 
   // ── Build ────────────────────────────────────────────────────────────────────
 

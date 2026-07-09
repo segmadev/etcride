@@ -33,6 +33,8 @@ export interface PaymentGateway {
   id: number;
   name: string;
   display_name: string;
+  logo?: string | null;
+  logo_url?: string | null;
   is_enabled: boolean;
   priority: number;
   public_key?: string;
@@ -85,6 +87,16 @@ export const paymentGatewaysApi = {
     apiRequest<PaymentGateway>(
       apiClient.put(`/admin/payment-gateways/${id}`, data),
     ),
+
+  uploadLogo: (id: number, logo: File) => {
+    const fd = new FormData();
+    fd.append('logo', logo);
+    return apiRequest<{ logo_url: string }>(
+      apiClient.post(`/admin/payment-gateways/${id}/logo`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      }),
+    );
+  },
 
   toggle: (id: number) =>
     apiRequest<{ is_enabled: boolean }>(

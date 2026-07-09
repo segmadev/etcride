@@ -9,6 +9,7 @@ import '../../../core/constants/app_text_styles.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/config/router.dart';
 import '../../../core/services/chat_notification_service.dart';
+import '../../../core/services/saved_places_service.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../data/models/booking_draft.dart';
 import '../../../data/models/booking_model.dart';
@@ -46,14 +47,38 @@ class _HomeBottomSheetState extends ConsumerState<HomeBottomSheet> {
       case BookingStatus.inProgress:
         context.go(AppRoutes.tripInProgress, extra: b.id);
       case BookingStatus.paymentPending:
+        if (b.paymentStatus == 'paid' && b.bookingType == BookingType.delivery) {
+          // Pre-pickup payment done — driver still needs to deliver.
+          context.go(AppRoutes.driverAssigned, extra: b.id);
+        } else if (b.paymentStatus == 'paid') {
+          context.go(AppRoutes.tripCompleted, extra: b.id);
+        } else {
+          context.go(AppRoutes.payment, extra: b.id);
+        }
       case BookingStatus.completed:
-        context.go(AppRoutes.payment, extra: b.id);
+        context.go(AppRoutes.tripCompleted, extra: b.id);
       case BookingStatus.paid:
         context.go(AppRoutes.tripCompleted, extra: b.id);
       case BookingStatus.cancelled:
       case BookingStatus.rejected:
         break;
     }
+  }
+
+  void _showSavedPlacesSheet(BuildContext ctx) {
+    showModalBottomSheet(
+      context: ctx,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _SavedPlacesSheet(
+        onSelect: (place) {
+          Navigator.pop(ctx);
+          ref.read(bookingDraftProvider.notifier).state =
+              BookingDraft(bookingType: _isRide ? 'ride' : 'delivery');
+          showSearchDestinationDrawer(ctx, initialDestination: place.fullText);
+        },
+      ),
+    );
   }
 
   String _statusLabel(BookingStatus s) => switch (s) {
@@ -232,29 +257,6 @@ class _HomeBottomSheetState extends ConsumerState<HomeBottomSheet> {
                         style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textHint),
                       ),
                     ),
-                    const SizedBox(width: 10),
-                    GestureDetector(
-                      onTap: () {},
-                      behavior: HitTestBehavior.opaque,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary,
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.calendar_today_rounded, size: 14, color: AppColors.white),
-                            const SizedBox(width: 8),
-                            Text(
-                              AppStrings.scheduleDelivery,
-                              style: AppTextStyles.labelSmall.copyWith(color: AppColors.white),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -298,11 +300,7 @@ class _HomeBottomSheetState extends ConsumerState<HomeBottomSheet> {
               icon: Icons.star_rounded,
               label: AppStrings.savedPlaces,
               iconBg: AppColors.primary,
-                  onTap: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Saved places coming soon.')),
-                    );
-                  },
+              onTap: () => _showSavedPlacesSheet(context),
             ),
             const SizedBox(height: 10),
             const Divider(height: 1),
@@ -549,4 +547,96 @@ class _QuickAction extends StatelessWidget {
     title: Text(label, style: AppTextStyles.bodyLarge),
     onTap: onTap,
   );
+}
+
+class _SavedPlacesSheet extends StatefulWidget {
+  const _SavedPlacesSheet({required this.onSelect});
+  final void Function(SavedPlace) onSelect;
+
+  @override
+  State<_SavedPlacesSheet> createState() => _SavedPlacesSheetState();
+}
+
+class _SavedPlacesSheetState extends State<_SavedPlacesSheet> {
+  List<SavedPlace> _places = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    SavedPlacesService.getAll().then((list) {
+      if (mounted) setState(() { _places = list; _loading = false; });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      padding: const EdgeInsets.fromLTRB(22, 12, 22, 24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.divider,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text('Saved Places', style: AppTextStyles.h4),
+          const SizedBox(height: 12),
+          if (_loading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: Center(child: CircularProgressIndicator(color: AppColors.primary)),
+            )
+          else if (_places.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: Center(
+                child: Text(
+                  'No saved places yet.\nTap ★ next to any search result to save it.',
+                  style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            )
+          else
+            ...List.generate(_places.length, (i) {
+              final p = _places[i];
+              return Column(
+                children: [
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Container(
+                      width: 36, height: 36,
+                      decoration: const BoxDecoration(
+                        color: AppColors.primaryLight,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.star_rounded, size: 18, color: AppColors.primary),
+                    ),
+                    title: Text(p.mainText, style: AppTextStyles.bodyMedium),
+                    subtitle: p.secondaryText.isNotEmpty
+                        ? Text(p.secondaryText, style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary), maxLines: 1, overflow: TextOverflow.ellipsis)
+                        : null,
+                    onTap: () => widget.onSelect(p),
+                  ),
+                  if (i < _places.length - 1) const Divider(height: 1),
+                ],
+              );
+            }),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
 }

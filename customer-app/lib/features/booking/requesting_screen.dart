@@ -142,7 +142,16 @@ class _RequestingScreenState extends ConsumerState<RequestingScreen> {
     if (b.status == BookingStatus.paymentPending ||
         b.status == BookingStatus.completed) {
       _stop();
-      context.go(AppRoutes.payment, extra: widget.bookingId);
+      if (b.paymentStatus == 'paid') {
+        if (b.status == BookingStatus.paymentPending &&
+            b.bookingType == BookingType.delivery) {
+          context.go(AppRoutes.driverAssigned, extra: widget.bookingId);
+        } else {
+          context.go(AppRoutes.tripCompleted, extra: widget.bookingId);
+        }
+      } else {
+        context.go(AppRoutes.payment, extra: widget.bookingId);
+      }
       return;
     }
     if (b.status == BookingStatus.cancelled) {

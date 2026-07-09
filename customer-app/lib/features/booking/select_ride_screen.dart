@@ -12,6 +12,7 @@ import '../../core/config/router.dart';
 import '../../core/maps/boundary_service.dart';
 import '../../core/utils/formatters.dart';
 import '../../data/models/booking_draft.dart';
+import '../../data/models/booking_model.dart';
 import '../../data/models/vehicle_type_model.dart';
 import '../auth/complete_profile_screen.dart';
 import 'search_destination_screen.dart';
@@ -181,14 +182,8 @@ class _SelectRideScreenState extends ConsumerState<SelectRideScreen> {
         recipientName:       draft.recipientName,
         recipientPhone:      draft.recipientPhone,
         packageDescription:  draft.packageDescription,
+        paymentMethod:       _paymentMethod,
       );
-
-      try {
-        await ref.read(bookingRepositoryProvider).updatePaymentMethod(
-              booking.id,
-              _paymentMethod,
-            );
-      } catch (_) {}
 
       if (!mounted) return;
       if (widget.asSheet) {
@@ -231,10 +226,7 @@ class _SelectRideScreenState extends ConsumerState<SelectRideScreen> {
     ref.read(selectedPaymentMethodProvider.notifier).state = selected;
   }
 
-  String get _paymentLabel => switch (_paymentMethod) {
-    'flutterwave' => AppStrings.payWithFlutterwave,
-    _ => AppStrings.cash,
-  };
+  String get _paymentLabel => PaymentMethod.fromString(_paymentMethod).displayName;
 
   @override
   Widget build(BuildContext context) {

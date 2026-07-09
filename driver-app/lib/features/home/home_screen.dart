@@ -174,6 +174,7 @@ class _TabWithHeaderState extends ConsumerState<_TabWithHeader> {
       if (!hasPermission) return;
     }
 
+    if (!mounted) return;
     setState(() => _togglingOnline = true);
     try {
       await ref.read(driverRepositoryProvider).setAvailability(!current);
@@ -1306,6 +1307,7 @@ class _HomeTabState extends ConsumerState<_HomeTab> {
       if (!hasPermission) return; // user declined — stay offline
     }
 
+    if (!mounted) return;
     setState(() => _togglingOnline = true);
     try {
       await ref.read(driverRepositoryProvider).setAvailability(!current);
@@ -1637,7 +1639,11 @@ class _HomeTabState extends ConsumerState<_HomeTab> {
     final repo = ref.read(driverRepositoryProvider);
 
     // ── Payment pending ────────────────────────────────────────────────────
-    if (job != null && job.status == 'payment_pending') {
+    // Delivery bookings in payment_pending are waiting for the customer to pay
+    // in-app before the driver picks up — show the delivery arrived sheet which
+    // handles both "waiting" and "pick up" states via deliveryNeedsPayment/canPickup.
+    // Ride bookings in payment_pending show the cash/digital collection screen.
+    if (job != null && job.status == 'payment_pending' && job.bookingType != 'delivery') {
       return _PaymentView(
         key: ValueKey('payment_${job.id}'),
         job: job,
@@ -1659,9 +1665,10 @@ class _HomeTabState extends ConsumerState<_HomeTab> {
       );
     }
 
-    // ── Active trip (accepted / arrived / picked_up / in_progress) ────────────
+    // ── Active trip (accepted / arrived / picked_up / in_progress / payment_pending delivery) ──
     if (job != null &&
-        ['accepted', 'arrived', 'picked_up', 'in_progress'].contains(job.status)) {
+        (['accepted', 'arrived', 'picked_up', 'in_progress'].contains(job.status) ||
+         (job.status == 'payment_pending' && job.bookingType == 'delivery'))) {
       return _TripFlowScreen(
         key: ValueKey('active_${job.id}'),
         onMenuTap: widget.onMenuTap,
@@ -3037,7 +3044,29 @@ class _IncomingRequestCardState extends State<_IncomingRequestCard> {
                     label: 'DECLINE',
                     loading: _busy,
                     primary: false,
-                    onPressed: _busy ? null : () => _run(widget.onDecline),
+                    onPressed: _busy ? null : () async {
+                      final confirmed = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('Decline trip?'),
+                          content: const Text(
+                            'Are you sure you want to decline this trip? It will be offered to another driver.',
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx, false),
+                              child: const Text('Cancel'),
+                            ),
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx, true),
+                              style: TextButton.styleFrom(foregroundColor: Colors.red),
+                              child: const Text('Decline'),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirmed == true) _run(widget.onDecline);
+                    },
                   ),
                 ),
                 const SizedBox(width: 18),
@@ -3241,10 +3270,13 @@ class _ActiveTripViewState extends State<_ActiveTripView> {
               child: switch (widget.job.status) {
                 'accepted' => _buildAcceptedSheet(),
                 'arrived'  => widget.job.bookingType == 'delivery'
-                    ? _buildArrivedSheet()           // delivery: shows PACKAGE PICKED UP button (API call)
+                    ? _buildArrivedSheet()
                     : (_passengerReadyToStart
                         ? _buildPassengerPickedUpSheet()
-                        : _buildArrivedSheet()),     // ride: local toggle then START TRIP
+                        : _buildArrivedSheet()),
+                // delivery payment_pending: customer paying in-app; show same sheet
+                // (deliveryNeedsPayment/canPickup flags drive which sub-widget appears)
+                'payment_pending' => _buildArrivedSheet(),
                 'picked_up'   => _buildPickedUpSheet(),
                 'in_progress' => _buildInProgressSheet(),
                 _ => const SizedBox.shrink(),
@@ -4372,7 +4404,7 @@ class _TripMapViewState extends State<_TripMapView> {
 
   Future<void> _loadPersonIcon() async {
     if (_cachedPersonIcon != null) {
-      setState(() => _personIcon = _cachedPersonIcon);
+      if (mounted) setState(() => _personIcon = _cachedPersonIcon);
       return;
     }
     try {

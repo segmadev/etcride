@@ -20,9 +20,10 @@ const TripReportsPage  = lazy(() => import('./pages/trip-reports/TripReportsPage
 const MapSettingsPage  = lazy(() => import('./pages/map/MapSettingsPage').then(m => ({ default: m.MapSettingsPage })));
 const ProfilePage         = lazy(() => import('./pages/profile/ProfilePage').then(m => ({ default: m.ProfilePage })));
 const EmailTemplatesPage  = lazy(() => import('./pages/emailTemplates/EmailTemplatesPage').then(m => ({ default: m.EmailTemplatesPage })));
-const PaymentsPage        = lazy(() => import('./pages/payments/PaymentsPage'));
-const LiveChatPage        = lazy(() => import('./pages/settings/LiveChatPage').then(m => ({ default: m.default })));
-const AccountDeletionPage = lazy(() => import('./pages/account-deletion/AccountDeletionPage').then(m => ({ default: m.AccountDeletionPage })));
+const PaymentsPage           = lazy(() => import('./pages/payments/PaymentsPage'));
+const PaymentGatewaysSettings = lazy(() => import('./pages/settings/PaymentGatewaysSettings').then(m => ({ default: m.default })));
+const LiveChatPage           = lazy(() => import('./pages/settings/LiveChatPage').then(m => ({ default: m.default })));
+const AccountDeletionPage    = lazy(() => import('./pages/account-deletion/AccountDeletionPage').then(m => ({ default: m.AccountDeletionPage })));
 
 // ── React Query client ────────────────────────────────────────────────────────
 const queryClient = new QueryClient({
@@ -72,9 +73,10 @@ export default function App() {
               <Route path="/map"              element={<MapSettingsPage />} />
               <Route path="/email-templates" element={<EmailTemplatesPage />} />
               <Route path="/profile"         element={<ProfilePage />} />
-              <Route path="/payments"        element={<PaymentsPage />} />
-              <Route path="/live-chat"       element={<LiveChatPage />} />
-              <Route path="/account-deletion" element={<AccountDeletionPage />} />
+              <Route path="/payments"              element={<PaymentsPage />} />
+              <Route path="/settings/payment-gateways" element={<PaymentGatewaysSettings />} />
+              <Route path="/live-chat"                 element={<LiveChatPage />} />
+              <Route path="/account-deletion"          element={<AccountDeletionPage />} />
             </Route>
 
             {/* Fallback */}

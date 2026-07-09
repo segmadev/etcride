@@ -25,9 +25,15 @@ class Payments extends BaseController
             return;
         }
 
+        // delivery non-cash: driver arrives → status stays 'arrived' until our
+        // backend fix propagates; also allow 'arrived' for delivery bookings.
+        $isDelivery = ($booking['booking_type'] ?? '') === 'delivery';
         $allowedStatuses = ['accepted', 'payment_pending'];
+        if ($isDelivery) {
+            $allowedStatuses[] = 'arrived'; // pre-pickup payment for delivery
+        }
         if ($booking['pay_mode_snapshot'] === 'pay_on_completion') {
-            $allowedStatuses = ['payment_pending'];
+            $allowedStatuses = $isDelivery ? ['payment_pending', 'arrived'] : ['payment_pending'];
         }
 
         if (!in_array($booking['status'], $allowedStatuses)) {
@@ -113,10 +119,22 @@ class Payments extends BaseController
         ]);
     }
 
+    // ── Resolve secret key: payment_gateways table → .env → settings ────────
+    private function gatewaySecretKey(string $name): string
+    {
+        $row = $this->getall('payment_gateways', 'name = ? AND is_enabled = 1', [$name], 'secret_key');
+        if (is_array($row) && !empty($row['secret_key'])) {
+            return $row['secret_key'];
+        }
+        // Fallback to .env / settings table
+        $envKey = strtoupper($name) . '_SECRET_KEY';
+        return $_ENV[$envKey] ?? $this->setting(strtolower($name) . '_secret_key', '');
+    }
+
     // ── Call Flutterwave API to generate a hosted payment link ────────────────
     private function callFlutterwaveApi(array $payload): array
     {
-        $secretKey = $_ENV['FLUTTERWAVE_SECRET_KEY'] ?? $this->setting('flutterwave_secret_key', '');
+        $secretKey = $this->gatewaySecretKey('flutterwave');
 
         if (empty($secretKey)) {
             return ['ok' => false, 'error' => 'Flutterwave secret key not configured.'];
@@ -131,15 +149,19 @@ class Payments extends BaseController
                 'Authorization: Bearer ' . $secretKey,
                 'Content-Type: application/json',
             ],
-            CURLOPT_TIMEOUT        => 15,
+            CURLOPT_TIMEOUT        => 30,
+            CURLOPT_CAINFO         => 'C:/dev/xampp/apache/bin/curl-ca-bundle.crt',
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
         ]);
 
         $response = curl_exec($ch);
+        $curlErr  = curl_error($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
 
         if (!$response) {
-            return ['ok' => false, 'error' => 'Network error reaching Flutterwave.'];
+            return ['ok' => false, 'error' => 'Network error reaching Flutterwave: ' . $curlErr];
         }
 
         $data = json_decode($response, true);
@@ -154,7 +176,7 @@ class Payments extends BaseController
     // ── Call Korapay API to generate a hosted payment link ─────────────────────
     private function callKorapayApi(array $payload): array
     {
-        $secretKey = $_ENV['KORAPAY_SECRET_KEY'] ?? $this->setting('korapay_secret_key', '');
+        $secretKey = $this->gatewaySecretKey('korapay');
 
         if (empty($secretKey)) {
             return ['ok' => false, 'error' => 'Korapay secret key not configured.'];
@@ -169,15 +191,19 @@ class Payments extends BaseController
                 'Authorization: Bearer ' . $secretKey,
                 'Content-Type: application/json',
             ],
-            CURLOPT_TIMEOUT        => 15,
+            CURLOPT_TIMEOUT        => 30,
+            CURLOPT_CAINFO         => 'C:/dev/xampp/apache/bin/curl-ca-bundle.crt',
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
         ]);
 
         $response = curl_exec($ch);
+        $curlErr  = curl_error($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
 
         if (!$response) {
-            return ['ok' => false, 'error' => 'Network error reaching Korapay.'];
+            return ['ok' => false, 'error' => 'Network error reaching Korapay: ' . $curlErr];
         }
 
         $data = json_decode($response, true);
@@ -246,19 +272,22 @@ class Payments extends BaseController
         }
 
         if ($provider === 'korapay') {
+            // Korapay charges/initialize only accepts email + name in customer object.
+            // Amount must be in kobo (naira × 100). Phone field is not accepted.
+            $email = !empty($me['email'])
+                ? $me['email']
+                : preg_replace('/[^0-9]/', '', $me['phone']) . '@etcride.app';
             return [
-                'reference'       => $ref,
-                'amount'          => (int)($amount * 100), // Korapay expects amount in kobo
-                'currency'        => $this->setting('currency', 'NGN'),
-                'description'     => 'EtcRide Trip ' . ($booking['booking_code'] ?? $booking['id']),
+                'reference'        => $ref,
+                'amount'           => round($amount), // naira (Korapay accepts naira, not kobo)
+                'currency'         => $this->setting('currency', 'NGN'),
                 'notification_url' => $webhookUrl,
-                'redirect_url'    => $redirectUrl,
-                'customer'        => [
-                    'email' => $me['email'] ?? ($me['phone'] . '@etcride.app'),
+                'redirect_url'     => $redirectUrl,
+                'customer'         => [
+                    'email' => $email,
                     'name'  => $me['name'] ?? 'Customer',
-                    'phone' => $me['phone'],
                 ],
-                'metadata'        => [
+                'metadata'         => [
                     'booking_id'  => $booking['id'],
                     'customer_id' => $me['id'],
                 ],

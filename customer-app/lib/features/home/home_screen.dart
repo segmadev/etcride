@@ -10,6 +10,7 @@ import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/config/router.dart';
+import '../../data/models/booking_model.dart';
 import '../../core/maps/google_maps_js_loader.dart';
 import '../../core/services/notification_service.dart';
 import '../../core/services/biometric_service.dart';
@@ -230,9 +231,96 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
           ),
 
+          // ── Active trip floating button ───────────────────────────────────
+          const _ActiveTripBanner(),
+
           // ── Bottom sheet ──────────────────────────────────────────────────
           const HomeBottomSheet(),
         ],
+      ),
+    );
+  }
+}
+
+class _ActiveTripBanner extends ConsumerWidget {
+  const _ActiveTripBanner();
+
+  void _resume(BuildContext context, BookingModel b) {
+    switch (b.status) {
+      case BookingStatus.pending:
+        context.go(AppRoutes.requesting, extra: b.id);
+      case BookingStatus.assigned:
+      case BookingStatus.accepted:
+      case BookingStatus.arrived:
+      case BookingStatus.pickedUp:
+        context.go(AppRoutes.driverAssigned, extra: b.id);
+      case BookingStatus.inProgress:
+        context.go(AppRoutes.tripInProgress, extra: b.id);
+      case BookingStatus.paymentPending:
+        if (b.paymentStatus == 'paid' && b.bookingType == BookingType.delivery) {
+          context.go(AppRoutes.driverAssigned, extra: b.id);
+        } else if (b.paymentStatus == 'paid') {
+          context.go(AppRoutes.tripCompleted, extra: b.id);
+        } else {
+          context.go(AppRoutes.payment, extra: b.id);
+        }
+      case BookingStatus.completed:
+      case BookingStatus.paid:
+        context.go(AppRoutes.tripCompleted, extra: b.id);
+      case BookingStatus.cancelled:
+      case BookingStatus.rejected:
+        break;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final rideAsync = ref.watch(activeBookingProvider('ride'));
+    final deliveryAsync = ref.watch(activeDeliveryBookingsProvider);
+
+    final ride = rideAsync.valueOrNull;
+    final deliveries = deliveryAsync.valueOrNull ?? [];
+
+    final BookingModel? active = ride ?? (deliveries.isNotEmpty ? deliveries.first : null);
+    if (active == null) return const SizedBox.shrink();
+
+    final isDelivery = active.bookingType == BookingType.delivery;
+    final label = isDelivery ? 'Delivery in progress' : 'Trip in progress';
+    final icon = isDelivery ? Icons.local_shipping_rounded : Icons.directions_car_rounded;
+
+    return Positioned(
+      bottom: MediaQuery.of(context).size.height * 0.38 + 12,
+      left: 16,
+      right: 16,
+      child: GestureDetector(
+        onTap: () => _resume(context, active),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: AppColors.primary,
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.primary.withValues(alpha: 0.35),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Icon(icon, color: AppColors.white, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  label,
+                  style: AppTextStyles.labelMedium.copyWith(color: AppColors.white),
+                ),
+              ),
+              const Icon(Icons.arrow_forward_ios_rounded, color: AppColors.white, size: 14),
+            ],
+          ),
+        ),
       ),
     );
   }

@@ -98,9 +98,13 @@ $router->group('/notifications', function ($r) {
     $r->put('/read-all',  'Bookings@markAllNotificationsRead');
 }, ['auth' => true, 'authType' => 'customer']);
 
+// ── Payment gateways (public — list available gateways) ──────────────────────
+$router->get('/customer/payment-gateways', 'admin/PaymentGateways@enabledGateways');
+
 // ── Payment webhooks (public — verified via provider signature) ───────────────
 $router->post('/payments/webhook/flutterwave', 'payments/Webhook@flutterwave');
 $router->post('/payments/webhook/monnify',     'payments/Webhook@monnify');
+$router->post('/payments/webhook/korapay',     'payments/Webhook@korapay');
 // After Flutterwave checkout, user is redirected here → returns HTML that closes/redirects
 $router->get('/payments/callback', 'payments/Webhook@callback');
 

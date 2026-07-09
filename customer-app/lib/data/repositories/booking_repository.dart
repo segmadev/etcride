@@ -34,6 +34,7 @@ class BookingRepository {
       'bank_transfer' || 'banktransfer' || 'bank transfer' => 'bankTransfer',
       'cash'                                               => 'cash',
       'flutterwave'                                        => 'flutterwave',
+      'korapay'                                            => 'korapay',
       _                                                    => null,
     };
 
@@ -80,6 +81,14 @@ class BookingRepository {
       'freeWaitingMinutes': _toInt(raw['free_waiting_minutes'] ?? 3),
       'waitingChargePerMin': _toDouble(raw['waiting_charge_per_min'] ?? 0),
       'waitingExtraCharge': _toDouble(raw['waiting_extra_charge'] ?? 0),
+      // Delivery-specific
+      'recipientName':      raw['recipient_name']?.toString(),
+      'recipientPhone':     raw['recipient_phone']?.toString(),
+      'senderPhone':        raw['sender_phone']?.toString(),
+      'packageDescription': raw['package_description']?.toString(),
+      'packageSize':        raw['package_size']?.toString(),
+      // Payment record (from API show endpoint)
+      'payment':            raw['payment'] as Map<String, dynamic>?,
     };
   }
 
@@ -139,6 +148,7 @@ class BookingRepository {
     String? recipientPhone,
     String? senderPhone,
     String? packageDescription,
+    String? paymentMethod,
   }) async {
     final data = await _client.post<Map<String, dynamic>>(
       ApiEndpoints.bookings,
@@ -159,6 +169,7 @@ class BookingRepository {
         if (recipientPhone != null) 'recipient_phone': recipientPhone,
         if (senderPhone != null && senderPhone.isNotEmpty) 'sender_phone': senderPhone,
         if (packageDescription != null && packageDescription.isNotEmpty) 'package_description': packageDescription,
+        if (paymentMethod != null && paymentMethod.isNotEmpty) 'payment_method': paymentMethod,
       },
     );
     if (data == null) throw const FormatException('Empty response.');
@@ -214,7 +225,18 @@ class BookingRepository {
     );
     return (list ?? const [])
         .cast<Map<String, dynamic>>()
-        .map(PaymentGatewayModel.fromJson)
+        .map((raw) => PaymentGatewayModel.fromJson({
+              'id':                    raw['id'],
+              'name':                  raw['name'],
+              'displayName':           raw['display_name'] ?? raw['displayName'] ?? '',
+              'logoUrl':               raw['logo_url'] ?? raw['logoUrl'],
+              'isEnabled':             raw['is_enabled'] ?? raw['isEnabled'] ?? true,
+              'priority':              raw['priority'] ?? 0,
+              'minAmount':             _toDouble(raw['min_amount'] ?? raw['minAmount']),
+              'maxAmount':             _toDouble(raw['max_amount'] ?? raw['maxAmount']),
+              'transactionFeePercent': _toDouble(raw['transaction_fee_percent'] ?? raw['transactionFeePercent']),
+              'transactionFeeFixed':   _toDouble(raw['transaction_fee_fixed'] ?? raw['transactionFeeFixed']),
+            }))
         .toList();
   }
 

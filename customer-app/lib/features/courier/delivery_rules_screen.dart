@@ -114,7 +114,8 @@ class _DeliveryRulesScreenState extends ConsumerState<DeliveryRulesScreen> {
 
   Future<void> _gotIt() async {
     setState(() { _booking = true; _error = null; });
-    final draft = ref.read(bookingDraftProvider);
+    final draft          = ref.read(bookingDraftProvider);
+    final paymentMethod  = ref.read(selectedPaymentMethodProvider);
     try {
       final booking = await ref.read(bookingRepositoryProvider).createBooking(
         vehicleTypeId:      draft.vehicleTypeId,
@@ -129,6 +130,7 @@ class _DeliveryRulesScreenState extends ConsumerState<DeliveryRulesScreen> {
         senderPhone:        draft.senderPhone,
         recipientPhone:     draft.recipientPhone,
         packageDescription: draft.packageDescription,
+        paymentMethod:      paymentMethod,
       );
       if (!mounted) return;
       context.go(AppRoutes.requesting, extra: booking.id);
