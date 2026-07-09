@@ -150,7 +150,6 @@ class Payments extends BaseController
                 'Content-Type: application/json',
             ],
             CURLOPT_TIMEOUT        => 30,
-            CURLOPT_CAINFO         => 'C:/dev/xampp/apache/bin/curl-ca-bundle.crt',
             CURLOPT_SSL_VERIFYPEER => true,
             CURLOPT_SSL_VERIFYHOST => 2,
         ]);
@@ -192,7 +191,6 @@ class Payments extends BaseController
                 'Content-Type: application/json',
             ],
             CURLOPT_TIMEOUT        => 30,
-            CURLOPT_CAINFO         => 'C:/dev/xampp/apache/bin/curl-ca-bundle.crt',
             CURLOPT_SSL_VERIFYPEER => true,
             CURLOPT_SSL_VERIFYHOST => 2,
         ]);
@@ -246,7 +244,15 @@ class Payments extends BaseController
     // ── Private: build provider-specific payload ──────────────────────────────
     private function buildProviderPayload(string $provider, array $me, float $amount, string $ref, array $booking): array
     {
-        $appUrl      = rtrim($_ENV['APP_URL'] ?? '', '/');
+        // Prefer explicit APP_URL from .env; fall back to the actual request origin
+        // so localhost dev and production both produce correct webhook/redirect URLs.
+        $envUrl = $_ENV['APP_URL'] ?? '';
+        if (empty($envUrl) || str_contains($envUrl, 'localhost')) {
+            $scheme  = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+            $host    = $_SERVER['HTTP_HOST'] ?? 'localhost';
+            $envUrl  = $scheme . '://' . $host;
+        }
+        $appUrl = rtrim($envUrl, '/');
         $webhookUrl  = $appUrl . '/api/payments/webhook/' . $provider;
         // Redirect URL returns user to a payment-callback page that the Flutter web app handles
         $redirectUrl = $appUrl . '/api/payments/callback?tx_ref=' . urlencode($ref) . '&booking_id=' . urlencode($booking['id']);

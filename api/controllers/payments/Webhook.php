@@ -136,7 +136,6 @@ class Webhook extends BaseController
                 CURLOPT_RETURNTRANSFER => true,
                 CURLOPT_HTTPHEADER     => ['Authorization: Bearer ' . $secretKey],
                 CURLOPT_TIMEOUT        => 15,
-                CURLOPT_CAINFO         => 'C:/dev/xampp/apache/bin/curl-ca-bundle.crt',
                 CURLOPT_SSL_VERIFYPEER => true,
             ]);
             $resp = curl_exec($ch);
