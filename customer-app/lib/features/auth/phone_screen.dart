@@ -204,10 +204,6 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> with TickerProviderSt
     final carTopOverflow = MediaQuery.paddingOf(context).top + (carBoxHeight * 0.08);
     final contentTopPadding = (carBoxHeight - carTopOverflow + 24).clamp(0.0, screenSize.height).toDouble();
 
-    // Car drive-in animation on app load (intro)
-    final introProgress = _introCtrl.value;
-    final carDriveInOffset = (1 - introProgress) * (-carBoxHeight * 0.8); // Drive in from top
-
     return LoadingOverlay.wrap(
       loading: _loading,
       child: Scaffold(
@@ -216,15 +212,13 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> with TickerProviderSt
           child: Stack(
             children: [
               AnimatedBuilder(
-                animation: _driveCtrl,
+                animation: _introCtrl,
                 builder: (context, child) {
-                  return AnimatedPositioned(
-                    duration: _registrationSuccess ? Duration.zero : const Duration(milliseconds: 300),
-                    curve: Curves.easeOut,
-                    top: -carTopOverflow + carDriveInOffset,
-                    left: 0,
-                    right: 0,
-                    child: child!,
+                  final progress = _introCtrl.value;
+                  final driveOffset = (1 - progress) * (-carBoxHeight * 0.8);
+                  return Transform.translate(
+                    offset: Offset(0, -carTopOverflow + driveOffset),
+                    child: child,
                   );
                 },
                 child: IgnorePointer(
@@ -243,10 +237,10 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> with TickerProviderSt
                   ),
                 ),
               ),
-              AnimatedOpacity(
-                opacity: _registrationSuccess ? 0 : 1,
-                duration: const Duration(milliseconds: 500),
-                child: Positioned.fill(
+              Positioned.fill(
+                child: AnimatedOpacity(
+                  opacity: _registrationSuccess ? 0 : 1,
+                  duration: const Duration(milliseconds: 500),
                   child: SingleChildScrollView(
                     padding: EdgeInsets.fromLTRB(24, contentTopPadding, 24, 0),
                     child: Column(

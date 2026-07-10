@@ -60,15 +60,11 @@ final authInitProvider = FutureProvider<UserModel?>((ref) async {
 });
 
 /// Validates the current auth token. Returns true if valid, false otherwise.
-final authValidationProvider = FutureProvider<bool>((ref) async {
+/// autoDispose so each call from the periodic timer/resume re-hits the API
+/// rather than returning a cached result from the first check.
+final authValidationProvider = FutureProvider.autoDispose<bool>((ref) async {
   final repo = ref.read(authRepositoryProvider);
-  final isValid = await repo.validateAuth();
-  if (!isValid) {
-    // Token is invalid — clear user and force re-login
-    ref.read(currentUserProvider.notifier).state = null;
-    await ref.read(secureStorageProvider).clearAll();
-  }
-  return isValid;
+  return repo.validateAuth();
 });
 
 // ── Booking draft (shared across booking flow screens) ───────────────────────

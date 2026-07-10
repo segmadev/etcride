@@ -46,6 +46,10 @@ class ETCRideApp extends ConsumerStatefulWidget {
 class _ETCRideAppState extends ConsumerState<ETCRideApp> with WidgetsBindingObserver {
   StreamSubscription<void>? _sessionSub;
   Timer? _authCheckTimer;
+  // True once authInitProvider confirms the user is logged in this session.
+  // Guards against calling _validateAuth() before the user has ever authenticated
+  // (e.g., on cold-start resume on Android, which fires before the token is known).
+  bool _tokenConfirmedThisSession = false;
 
   @override
   void initState() {
@@ -68,16 +72,17 @@ class _ETCRideAppState extends ConsumerState<ETCRideApp> with WidgetsBindingObse
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && !kIsWeb) {
-      // Check auth when app comes to foreground (skip on web)
+    // Only run on resume AND only after we've confirmed a live session this launch.
+    // On Android cold start, 'resumed' fires immediately before the token is known —
+    // validating then causes a false-positive logout race with the splash navigation.
+    if (state == AppLifecycleState.resumed && !kIsWeb && _tokenConfirmedThisSession) {
       _validateAuth();
-      // Check if user has pending account deletion
       _checkAccountDeletionStatus();
     }
   }
 
   Future<void> _validateAuth() async {
-    if (!mounted || kIsWeb) return; // Skip on web
+    if (!mounted || kIsWeb || !_tokenConfirmedThisSession) return;
     try {
       final isValid = await ref.read(authValidationProvider.future);
       if (!isValid && mounted) {
@@ -95,6 +100,8 @@ class _ETCRideAppState extends ConsumerState<ETCRideApp> with WidgetsBindingObse
     ref.listenManual<AsyncValue<dynamic>>(authInitProvider, (_, next) {
       next.whenData((user) {
         if (user != null) {
+          // User is confirmed logged in — enable resume-based validation from now on.
+          _tokenConfirmedThisSession = true;
           final repo = ref.read(bookingRepositoryProvider);
           ChatNotificationService.instance.start(repo.getChatThreads);
           // Register / refresh FCM token whenever the user logs in.
@@ -144,6 +151,7 @@ class _ETCRideAppState extends ConsumerState<ETCRideApp> with WidgetsBindingObse
   }
 
   Future<void> _handleSessionExpired() async {
+    _tokenConfirmedThisSession = false;
     await SecureStorage.instance.clearAll();
     ChatNotificationService.instance.stop();
     ref.invalidate(authInitProvider);

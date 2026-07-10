@@ -19,6 +19,10 @@ use PHPMailer\PHPMailer\Exception as MailerException;
 
 class Mymailer
 {
+    private string $lastError = '';
+
+    public function getLastError(): string { return $this->lastError; }
+
     // ── Active SMTP config (lazy-loaded from smtp_configs table) ──────────────
     private static ?array $activeSmtp = null;
 
@@ -150,6 +154,8 @@ class Mymailer
      */
     public function smtpmailer(string $to, string $subject, string $body, string $name = '', array $config = []): bool
     {
+        $this->lastError = '';
+
         // ── Dev log mode ───────────────────────────────────────────────────────
         if (($_ENV['mail_type'] ?? '') === 'log') {
             $logFile = ROOT . 'maillog.log';
@@ -176,7 +182,8 @@ class Mymailer
         $encryption = strtolower($config['smtp_encryption'] ?? $active['smtp_encryption'] ?? $_ENV['MAIL_ENCRYPTION'] ?? 'tls');
 
         if (empty($host) || empty($username)) {
-            error_log('EtcRide Mailer: SMTP not configured — add an active SMTP profile in Admin → Settings → SMTP, or set MAIL_HOST/MAIL_USERNAME in .env');
+            $this->lastError = 'SMTP not configured — add an active SMTP profile in Admin → Settings → SMTP, or set MAIL_HOST/MAIL_USERNAME in .env';
+            error_log('EtcRide Mailer: ' . $this->lastError);
             return false;
         }
 
@@ -202,7 +209,8 @@ class Mymailer
             $mail->send();
             return true;
         } catch (MailerException $e) {
-            error_log('EtcRide Mailer: ' . $e->getMessage());
+            $this->lastError = $e->getMessage();
+            error_log('EtcRide Mailer: ' . $this->lastError);
             return false;
         }
     }

@@ -144,7 +144,8 @@ class SmtpConfigs extends BaseController
         if ($sent) {
             echo utilities::apiMessage('Test email sent successfully.', 200);
         } else {
-            echo utilities::apiMessage('Failed to send test email. Check your SMTP settings and server logs.', 500);
+            $error = $mailer->getLastError() ?: 'Unknown error — check server error log.';
+            echo utilities::apiMessage('Failed to send test email: ' . $error, 500);
         }
     }
 

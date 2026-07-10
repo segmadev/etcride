@@ -247,21 +247,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
     final contentTopPadding =
         (carBoxHeight - carTopOverflow + 24).clamp(0.0, screenSize.height).toDouble();
 
-    // Car drive-in animation on app load (intro)
-    final introProgress = _introCtrl.value;
-    final carDriveInOffset = (1 - introProgress) * (-carBoxHeight * 0.8); // Drive in from top
-
     // Animate car based on keyboard visibility
     final keyboardOffset = keyboardHeight > 0 ? -keyboardHeight * 0.4 : 0.0;
-
-    // Animate car position during login drive animation
-    final driveProgress = _driveCtrl.value;
-    final carDriveAwayOffset = driveProgress * screenSize.height * 1.5; // Drive off-screen
-
-    // Car offset: use drive-away if logging in, else use intro + keyboard adjustments
-    final carOffset = _loginSuccess
-        ? carDriveAwayOffset
-        : carDriveInOffset + keyboardOffset;
 
     return LoadingOverlay.wrap(
       loading: _loading,
@@ -271,12 +258,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
           child: Stack(
             children: [
               AnimatedBuilder(
-                animation: _driveCtrl,
+                animation: Listenable.merge([_introCtrl, _driveCtrl]),
                 builder: (context, child) {
-                  return AnimatedPositioned(
-                    duration: _loginSuccess ? Duration.zero : const Duration(milliseconds: 300),
-                    curve: Curves.easeOut,
-                    top: -carTopOverflow + carOffset,
+                  final progress = _introCtrl.value;
+                  final driveOffset = (1 - progress) * (-carBoxHeight * 0.8);
+                  final driveAway = _driveCtrl.value * screenSize.height * 1.5;
+                  final top = -carTopOverflow + (_loginSuccess ? driveAway : driveOffset + keyboardOffset);
+                  return Positioned(
+                    top: top,
                     left: 0,
                     right: 0,
                     child: child!,
@@ -298,10 +287,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
                   ),
                 ),
               ),
-              AnimatedOpacity(
-                opacity: _loginSuccess ? 0 : 1,
-                duration: const Duration(milliseconds: 500),
-                child: Positioned.fill(
+              Positioned.fill(
+                child: AnimatedOpacity(
+                  opacity: _loginSuccess ? 0 : 1,
+                  duration: const Duration(milliseconds: 500),
                   child: SingleChildScrollView(
                     padding: EdgeInsets.fromLTRB(24, contentTopPadding, 24, 0),
                     child: Column(
