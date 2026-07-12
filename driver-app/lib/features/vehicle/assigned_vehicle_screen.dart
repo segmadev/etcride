@@ -8,13 +8,102 @@ import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../shared/providers/providers.dart';
 
-class AssignedVehicleScreen extends ConsumerWidget {
+class AssignedVehicleScreen extends ConsumerStatefulWidget {
   const AssignedVehicleScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AssignedVehicleScreen> createState() => _AssignedVehicleScreenState();
+}
+
+class _AssignedVehicleScreenState extends ConsumerState<AssignedVehicleScreen> {
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchFresh();
+  }
+
+  Future<void> _fetchFresh() async {
+    try {
+      final driver = await ref.read(driverAuthRepositoryProvider).getProfile();
+      if (mounted) {
+        ref.read(currentDriverProvider.notifier).state = driver;
+        setState(() { _loading = false; _error = null; });
+      }
+    } catch (e) {
+      if (mounted) setState(() { _loading = false; _error = e.toString(); });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final driver = ref.watch(currentDriverProvider);
     final vehicle = driver?.assignedVehicle;
+
+    if (_loading) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF4F4F4),
+        body: SafeArea(
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+                child: Row(
+                  children: [
+                    _BackCircle(onTap: () => Navigator.of(context).maybePop()),
+                    const Spacer(),
+                    Text('Assigned Vehicle', style: AppTextStyles.h2.copyWith(color: Colors.black, fontWeight: FontWeight.w700)),
+                    const Spacer(),
+                    const SizedBox(width: 42),
+                  ],
+                ),
+              ),
+              const Expanded(child: Center(child: CircularProgressIndicator(color: AppColors.primary))),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_error != null) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF4F4F4),
+        body: SafeArea(
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+                child: Row(
+                  children: [
+                    _BackCircle(onTap: () => Navigator.of(context).maybePop()),
+                    const Spacer(),
+                    Text('Assigned Vehicle', style: AppTextStyles.h2.copyWith(color: Colors.black, fontWeight: FontWeight.w700)),
+                    const Spacer(),
+                    const SizedBox(width: 42),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.error_outline_rounded, color: AppColors.error, size: 40),
+                      const SizedBox(height: 12),
+                      Text('Failed to load vehicle', style: AppTextStyles.bodyMedium),
+                      const SizedBox(height: 12),
+                      TextButton(onPressed: () { setState(() { _loading = true; _error = null; }); _fetchFresh(); }, child: const Text('Retry')),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: const Color(0xFFF4F4F4),

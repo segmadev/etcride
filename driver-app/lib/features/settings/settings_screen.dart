@@ -19,6 +19,7 @@ class DriverSettingsScreen extends ConsumerStatefulWidget {
 class _DriverSettingsScreenState extends ConsumerState<DriverSettingsScreen> {
   bool _biometricsAvailable = false;
   bool _biometricsEnabled   = false;
+  bool _loggingOut          = false;
 
   @override
   void initState() {
@@ -71,6 +72,7 @@ class _DriverSettingsScreenState extends ConsumerState<DriverSettingsScreen> {
   }
 
   Future<void> _logout() async {
+    if (_loggingOut) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -90,10 +92,14 @@ class _DriverSettingsScreenState extends ConsumerState<DriverSettingsScreen> {
     );
     if (confirmed != true || !mounted) return;
 
-    await ref.read(driverAuthRepositoryProvider).logout();
-    ref.read(currentDriverProvider.notifier).state = null;
-    if (!mounted) return;
-    context.go(AppRoutes.signIn);
+    setState(() => _loggingOut = true);
+    try {
+      await ref.read(driverAuthRepositoryProvider).logout();
+      ref.read(currentDriverProvider.notifier).state = null;
+      if (mounted) context.go(AppRoutes.signIn);
+    } catch (_) {
+      if (mounted) setState(() => _loggingOut = false);
+    }
   }
 
   @override
@@ -158,14 +164,19 @@ class _DriverSettingsScreenState extends ConsumerState<DriverSettingsScreen> {
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton(
-                  onPressed: _logout,
+                  onPressed: _loggingOut ? null : _logout,
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.red,
                     side: const BorderSide(color: Colors.red),
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
-                  child: const Text('Log Out'),
+                  child: _loggingOut
+                      ? const SizedBox(
+                          width: 20, height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.red),
+                        )
+                      : const Text('Log Out'),
                 ),
               ),
             ],

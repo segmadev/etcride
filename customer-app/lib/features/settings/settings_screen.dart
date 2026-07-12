@@ -7,6 +7,7 @@ import '../../../core/constants/app_strings.dart';
 import '../../../core/config/router.dart';
 import '../../../core/services/biometric_service.dart';
 import '../../../shared/providers/providers.dart';
+import '../../../shared/widgets/loading_overlay.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -18,6 +19,7 @@ class SettingsScreen extends ConsumerStatefulWidget {
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _biometricsAvailable = false;
   bool _biometricsEnabled   = false;
+  bool _loggingOut          = false;
 
   @override
   void initState() {
@@ -69,9 +71,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     if (mounted) setState(() => _biometricsEnabled = value);
   }
 
+  Future<void> _logout() async {
+    setState(() => _loggingOut = true);
+    try {
+      await ref.read(authRepositoryProvider).logout();
+      ref.read(currentUserProvider.notifier).state = null;
+      if (mounted) context.go(AppRoutes.phone);
+    } catch (_) {
+      if (mounted) setState(() => _loggingOut = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return LoadingOverlay.wrap(
+      loading: _loggingOut,
+      child: Scaffold(
       backgroundColor: AppColors.white,
       body: SafeArea(
         child: ListView(
@@ -164,11 +179,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               child: _SettingsRow(
                 icon: Icons.logout_rounded,
                 label: AppStrings.logout,
-                onTap: () async {
-                  await ref.read(authRepositoryProvider).logout();
-                  ref.read(currentUserProvider.notifier).state = null;
-                  if (context.mounted) context.go(AppRoutes.phone);
-                },
+                onTap: _logout,
               ),
             ),
             const SizedBox(height: 14),
@@ -190,7 +201,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ],
         ),
       ),
-    );
+    ));
   }
 
   void _comingSoon(BuildContext context) {

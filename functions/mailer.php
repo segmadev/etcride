@@ -47,8 +47,8 @@ class Mymailer
                         'smtp_username'   => $row['username'],
                         'smtp_password'   => $row['password'],
                         'smtp_encryption' => $row['encryption'],
-                        'smtp_from_name'  => $row['from_name'],
-                        'smtp_from_email' => $row['from_email'],
+                        'smtp_from_name'  => $row['from_name']  ?: '',
+                        'smtp_from_email' => ($row['from_email'] !== 'null' ? $row['from_email'] : '') ?: $row['username'],
                     ];
                     return self::$activeSmtp;
                 }
@@ -173,13 +173,18 @@ class Mymailer
         // Merge: explicit $config > active smtp_configs row > .env
         $active = empty($config) ? $this->loadActiveSmtp() : [];
 
+        $nullish = fn($v) => ($v === null || $v === '' || $v === 'null');
+
         $host       = $config['smtp_host']       ?? $active['smtp_host']       ?? $_ENV['MAIL_HOST']       ?? '';
         $port       = (int) ($config['smtp_port'] ?? $active['smtp_port']       ?? $_ENV['MAIL_PORT']       ?? 587);
         $username   = $config['smtp_username']   ?? $active['smtp_username']   ?? $_ENV['MAIL_USERNAME']   ?? '';
         $password   = $config['smtp_password']   ?? $active['smtp_password']   ?? $_ENV['MAIL_PASSWORD']   ?? '';
-        $fromEmail  = $config['smtp_from_email'] ?? $active['smtp_from_email'] ?? $_ENV['MAIL_FROM_EMAIL'] ?? $username;
-        $fromName   = $config['smtp_from_name']  ?? $active['smtp_from_name']  ?? $_ENV['MAIL_FROM_NAME']  ?? ($_ENV['app_name'] ?? 'EtcRide');
         $encryption = strtolower($config['smtp_encryption'] ?? $active['smtp_encryption'] ?? $_ENV['MAIL_ENCRYPTION'] ?? 'tls');
+
+        $fromEmail  = $config['smtp_from_email'] ?? $active['smtp_from_email'] ?? $_ENV['MAIL_FROM_EMAIL'] ?? '';
+        $fromName   = $config['smtp_from_name']  ?? $active['smtp_from_name']  ?? $_ENV['MAIL_FROM_NAME']  ?? ($_ENV['app_name'] ?? 'EtcRide');
+        if ($nullish($fromEmail)) $fromEmail = $username;
+        if ($nullish($fromName))  $fromName  = $_ENV['app_name'] ?? 'EtcRide';
 
         if (empty($host) || empty($username)) {
             $this->lastError = 'SMTP not configured — add an active SMTP profile in Admin → Settings → SMTP, or set MAIL_HOST/MAIL_USERNAME in .env';

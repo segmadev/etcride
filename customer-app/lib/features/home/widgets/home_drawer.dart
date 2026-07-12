@@ -12,8 +12,26 @@ import '../../booking/search_destination_screen.dart';
 import '../../../shared/providers/providers.dart';
 import './home_bottom_sheet.dart';
 
-class HomeDrawer extends ConsumerWidget {
+class HomeDrawer extends ConsumerStatefulWidget {
   const HomeDrawer({super.key});
+
+  @override
+  ConsumerState<HomeDrawer> createState() => _HomeDrawerState();
+}
+
+class _HomeDrawerState extends ConsumerState<HomeDrawer> {
+  bool _loggingOut = false;
+
+  Future<void> _logout() async {
+    setState(() => _loggingOut = true);
+    try {
+      await ref.read(authRepositoryProvider).logout();
+      ref.read(currentUserProvider.notifier).state = null;
+      if (mounted) context.go(AppRoutes.phone);
+    } catch (_) {
+      if (mounted) setState(() => _loggingOut = false);
+    }
+  }
 
   String _titleCaseName(String v) {
     final cleaned = v.trim().replaceAll(RegExp(r'\s+'), ' ');
@@ -29,7 +47,7 @@ class HomeDrawer extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final init = ref.watch(authInitProvider);
     final user = ref.watch(currentUserProvider);
     final initializing = init.isLoading && user == null;
@@ -151,14 +169,16 @@ class HomeDrawer extends ConsumerWidget {
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
               child: GestureDetector(
-                onTap: () async {
-                  await ref.read(authRepositoryProvider).logout();
-                  ref.read(currentUserProvider.notifier).state = null;
-                  if (context.mounted) context.go(AppRoutes.phone);
-                },
+                onTap: _loggingOut ? null : _logout,
                 child: Row(
                   children: [
-                    const Icon(Icons.logout_rounded, size: 20, color: AppColors.error),
+                    if (_loggingOut)
+                      const SizedBox(
+                        width: 20, height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.error),
+                      )
+                    else
+                      const Icon(Icons.logout_rounded, size: 20, color: AppColors.error),
                     const SizedBox(width: 12),
                     Text(AppStrings.logout,
                       style: AppTextStyles.bodyMedium.copyWith(color: AppColors.error, fontWeight: FontWeight.w800)),

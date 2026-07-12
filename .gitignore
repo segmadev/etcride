@@ -24,3 +24,4 @@ sec
 *.sql
 *.zip
 *.md
+.mcp.json

@@ -25,6 +25,7 @@ enum _LoginMethod { phone, email }
 
 class _PhoneScreenState extends ConsumerState<PhoneScreen> with TickerProviderStateMixin {
   final _contactCtrl = TextEditingController();
+  final _contactFocus = FocusNode();
   bool _loading = false;
   String? _error;
   _LoginMethod _method = _LoginMethod.phone;
@@ -33,7 +34,7 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> with TickerProviderSt
   bool _agreedTerms = false;
   late final AnimationController _introCtrl = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 2100),
+    duration: const Duration(milliseconds: 1200),
   )..forward();
   late final AnimationController _driveCtrl = AnimationController(
     vsync: this,
@@ -165,21 +166,29 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> with TickerProviderSt
         children: [
           tab('Phone', isPhone, () {
             if (_method == _LoginMethod.phone) return;
+            _contactFocus.unfocus();
             setState(() {
               _method = _LoginMethod.phone;
               _emailSuggestions = const [];
               _contactCtrl.clear();
               _error = null;
             });
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _contactFocus.requestFocus();
+            });
           }),
           const SizedBox(width: 6),
           tab('Email', !isPhone, () {
             if (_method == _LoginMethod.email) return;
+            _contactFocus.unfocus();
             setState(() {
               _method = _LoginMethod.email;
               _emailSuggestions = const [];
               _contactCtrl.clear();
               _error = null;
+            });
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _contactFocus.requestFocus();
             });
           }),
         ],
@@ -193,6 +202,7 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> with TickerProviderSt
     _introCtrl.dispose();
     _driveCtrl.dispose();
     _contactCtrl.dispose();
+    _contactFocus.dispose();
     super.dispose();
   }
 
@@ -209,6 +219,7 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> with TickerProviderSt
       child: Scaffold(
         backgroundColor: AppColors.white,
         body: SafeArea(
+          child: SizedBox.expand(
           child: Stack(
             children: [
               AnimatedBuilder(
@@ -248,7 +259,7 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> with TickerProviderSt
                     children: [
                       _FadeSlide(
                         controller: _introCtrl,
-                        interval: const Interval(0.62, 0.76, curve: Curves.easeOut),
+                        interval: const Interval(0.35, 0.55, curve: Curves.easeOut),
                         from: const Offset(0, 10),
                         child: Text(
                           AppStrings.startJourney,
@@ -259,7 +270,7 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> with TickerProviderSt
                       const SizedBox(height: 8),
                       _FadeSlide(
                         controller: _introCtrl,
-                        interval: const Interval(0.70, 0.82, curve: Curves.easeOut),
+                        interval: const Interval(0.40, 0.60, curve: Curves.easeOut),
                         from: const Offset(0, 10),
                         child: Text(
                           AppStrings.startJourneySub,
@@ -269,19 +280,11 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> with TickerProviderSt
                       ),
                       const SizedBox(height: 36),
 
-                      _FadeSlide(
-                        controller: _introCtrl,
-                        interval: const Interval(0.74, 0.88, curve: Curves.easeOut),
-                        from: const Offset(0, 12),
-                        child: _methodTabs(),
-                      ),
+                      _methodTabs(),
                       const SizedBox(height: 16),
-                      _FadeSlide(
-                        controller: _introCtrl,
-                        interval: const Interval(0.78, 0.90, curve: Curves.easeOut),
-                        from: const Offset(0, 12),
-                        child: AppTextField(
+                      AppTextField(
                           controller: _contactCtrl,
+                          focusNode: _contactFocus,
                           label: _method == _LoginMethod.phone ? AppStrings.phoneNumber : AppStrings.emailAddress,
                           hint: _method == _LoginMethod.phone ? '8123456789' : 'you@example.com',
                           keyboardType: _method == _LoginMethod.phone
@@ -312,7 +315,6 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> with TickerProviderSt
                               : null,
                           onChanged: _onContactChanged,
                           onSubmitted: (_) => _continue(),
-                        ),
                       ),
                       if (_method == _LoginMethod.email && _emailSuggestions.isNotEmpty) ...[
                         const SizedBox(height: 8),
@@ -433,27 +435,17 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> with TickerProviderSt
                         ],
                       ),
                       const SizedBox(height: 24),
-                      _FadeSlide(
-                        controller: _introCtrl,
-                        interval: const Interval(0.84, 1.00, curve: Curves.easeOut),
-                        from: const Offset(0, 14),
-                        child: AppButton(
-                          label: AppStrings.continueBtn,
-                          onPressed: _isValid && _agreedTerms && !_loading ? _continue : null,
-                          enabled: _isValid && _agreedTerms && !_loading,
-                        ),
+                      AppButton(
+                        label: AppStrings.continueBtn,
+                        onPressed: _isValid && _agreedTerms && !_loading ? _continue : null,
+                        enabled: _isValid && _agreedTerms && !_loading,
                       ),
                       const SizedBox(height: 16),
-                      _FadeSlide(
-                        controller: _introCtrl,
-                        interval: const Interval(0.90, 1.00, curve: Curves.easeOut),
-                        from: const Offset(0, 10),
-                        child: Center(
-                          child: Text(
-                            AppStrings.otpSentNote,
-                            textAlign: TextAlign.center,
-                            style: AppTextStyles.caption.copyWith(color: AppColors.textHint),
-                          ),
+                      Center(
+                        child: Text(
+                          AppStrings.otpSentNote,
+                          textAlign: TextAlign.center,
+                          style: AppTextStyles.caption.copyWith(color: AppColors.textHint),
                         ),
                       ),
                       const SizedBox(height: 10),
@@ -482,6 +474,7 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> with TickerProviderSt
               ),
               ),
             ],
+          ),
           ),
         ),
       ),

@@ -114,26 +114,47 @@ class SmtpConfigs extends BaseController
         $to = $this->str('to');
         $id = $this->int('smtp_config_id', 0);
 
-        $config = [];
+        // Resolve which DB row to use
         if ($id > 0) {
             $row = $this->getSmtp($id);
-            if ($row) {
-                $config = [
-                    'smtp_host'       => $row['host'],
-                    'smtp_port'       => (int) $row['port'],
-                    'smtp_username'   => $row['username'],
-                    'smtp_password'   => $row['password'],
-                    'smtp_encryption' => $row['encryption'],
-                    'smtp_from_name'  => $row['from_name'],
-                    'smtp_from_email' => $row['from_email'],
-                ];
+        } else {
+            $stmt = $this->db->query(
+                'SELECT * FROM smtp_configs WHERE is_active = 1 LIMIT 1'
+            );
+            $row = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : false;
+            if (!$row) {
+                $stmt2 = $this->db->query('SELECT * FROM smtp_configs ORDER BY id ASC LIMIT 1');
+                $row   = $stmt2 ? $stmt2->fetch(PDO::FETCH_ASSOC) : false;
             }
         }
 
+        if (!$row) {
+            echo utilities::apiMessage('No SMTP profile found in the database. Add one first.', 422);
+            return;
+        }
+
+        // Build config strictly from DB — never fall back to .env
+        $fromEmail = ($row['from_email'] !== '' && $row['from_email'] !== 'null')
+            ? $row['from_email']
+            : $row['username'];
+        $fromName  = ($row['from_name'] !== '' && $row['from_name'] !== 'null')
+            ? $row['from_name']
+            : ($this->setting('app_name', 'ETCRide'));
+
+        $config = [
+            'smtp_host'       => $row['host'],
+            'smtp_port'       => (int) $row['port'],
+            'smtp_username'   => $row['username'],
+            'smtp_password'   => $row['password'],
+            'smtp_encryption' => $row['encryption'],
+            'smtp_from_name'  => $fromName,
+            'smtp_from_email' => $fromEmail,
+        ];
+
         require_once ROOT . 'functions/mailer.php';
-        $mailer = new Mymailer();
+        $mailer  = new Mymailer();
         $appName = $this->setting('app_name', 'ETCRide');
-        $sent = $mailer->smtpmailer(
+        $sent    = $mailer->smtpmailer(
             $to,
             "Test email from $appName",
             "This is a test email from your $appName SMTP configuration.",
@@ -141,11 +162,21 @@ class SmtpConfigs extends BaseController
             $config
         );
 
+        $debug = [
+            'smtp_profile_id'   => (int) $row['id'],
+            'smtp_profile_name' => $row['name'],
+            'host'              => $row['host'],
+            'port'              => (int) $row['port'],
+            'username'          => $row['username'],
+            'from_email'        => $fromEmail,
+            'encryption'        => $row['encryption'],
+        ];
+
         if ($sent) {
-            echo utilities::apiMessage('Test email sent successfully.', 200);
+            echo utilities::apiMessage('Test email sent successfully.', 200, $debug);
         } else {
             $error = $mailer->getLastError() ?: 'Unknown error — check server error log.';
-            echo utilities::apiMessage('Failed to send test email: ' . $error, 500);
+            echo utilities::apiMessage('Failed to send test email: ' . $error, 500, $debug);
         }
     }
 

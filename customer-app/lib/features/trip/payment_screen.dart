@@ -219,6 +219,14 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
           backgroundColor: AppColors.white,
           elevation: 0,
           automaticallyImplyLeading: false,
+          leading: IconButton(
+            icon: const Icon(Icons.close_rounded),
+            onPressed: () {
+              _pollTimer?.cancel();
+              if (context.canPop()) context.pop();
+              else context.go(AppRoutes.home);
+            },
+          ),
           title: Text('Payment', style: AppTextStyles.h4),
           centerTitle: true,
         ),
