@@ -17,8 +17,8 @@
 <meta property="og:url" content="https://etcride.com/">
 <meta property="og:title" content="ETCride — Get there. Send it. Done.">
 <meta property="og:description" content="Book a ride or send a package in minutes. ETCride connects you with trusted drivers across your city — fast, safe, and affordable.">
-<meta property="og:image" content="https://etcride.com/images/social-preview.png">
-<meta property="og:image:secure_url" content="https://etcride.com/images/social-preview.png">
+<meta property="og:image" content="https://etcride.com/images/social-preview-img.png">
+<meta property="og:image:secure_url" content="https://etcride.com/images/social-preview-img.png">
 <meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -27,9 +27,9 @@
 <meta name="twitter:url" content="https://etcride.com/">
 <meta name="twitter:title" content="ETCride — Get there. Send it. Done.">
 <meta name="twitter:description" content="Book a ride or send a package in minutes. ETCride connects you with trusted drivers across your city — fast, safe, and affordable.">
-<meta name="twitter:image" content="https://etcride.com/images/social-preview.png">
+<meta name="twitter:image" content="https://etcride.com/images/social-preview-img.png">
 <meta name="twitter:image:alt" content="ETCride social preview showing brand headline, service tags, and a ride-booking app screen">
-<link rel="image_src" href="https://etcride.com/images/social-preview.png">
+<link rel="image_src" href="https://etcride.com/images/social-preview-img.png">
 <link rel="icon" type="image/png" href="images/etcride-favicon.png">
 <script type="application/ld+json">
 {
@@ -1021,7 +1021,7 @@
     color:rgba(255,255,255,0.78);
     padding:0;
     margin-top:-4px;
-    background:linear-gradient(135deg, #11120d 0%, #17160f 42%, #2d2208 100%);
+    background:linear-gradient(135deg, #020202 0%, #050505 48%, #100d08 100%);
   }
   footer::before{
     content:none;
@@ -1031,13 +1031,13 @@
     position:absolute;
     inset:-20%;
     background:
-      radial-gradient(circle at center, rgba(245,166,35,0.34) 0%, rgba(245,166,35,0.18) 26%, rgba(245,166,35,0.06) 46%, transparent 68%),
-      radial-gradient(circle at center, rgba(255,214,122,0.26) 0%, rgba(255,214,122,0.12) 24%, rgba(255,214,122,0.04) 44%, transparent 66%),
-      radial-gradient(circle at center, rgba(201,132,18,0.16) 0%, rgba(201,132,18,0.08) 28%, transparent 62%);
+      radial-gradient(circle at center, rgba(245,166,35,0.17) 0%, rgba(245,166,35,0.07) 22%, rgba(245,166,35,0.02) 40%, transparent 64%),
+      radial-gradient(circle at center, rgba(255,214,122,0.11) 0%, rgba(255,214,122,0.05) 20%, rgba(255,214,122,0.02) 38%, transparent 62%),
+      radial-gradient(circle at center, rgba(201,132,18,0.07) 0%, rgba(201,132,18,0.03) 22%, transparent 56%);
     background-repeat:no-repeat;
     background-size:60% 60%, 54% 54%, 72% 72%;
     background-position:82% 18%, 16% 78%, 54% 36%;
-    opacity:0.92;
+    opacity:0.72;
     filter:blur(20px);
     pointer-events:none;
     transform:translate3d(0, 0, 0) scale(1);
@@ -1251,10 +1251,39 @@
     .spotlight-slide__text p{margin-left:auto; margin-right:auto;}
     .mission__grid{grid-template-columns:1fr; text-align:center;}
     .mission p.body{margin-left:auto; margin-right:auto;}
+    #mission{padding-bottom:52px;}
+    #mission .mission__visual{
+      margin-top:8px;
+      margin-bottom:-6px;
+    }
     .split, .split--reverse{grid-template-columns:1fr; text-align:center;}
     .split .split__text, .split--reverse .split__text{order:2 !important;}
     .split .split__visual, .split--reverse .split__visual{order:1 !important;}
     .split__text p{margin-left:auto; margin-right:auto;}
+    #for-riders{padding-top:46px;}
+    #for-riders .split__visual{
+      margin-top:-14px;
+      margin-bottom:2px;
+    }
+    #for-drivers{
+      padding-top:54px;
+      padding-bottom:54px;
+    }
+    #for-drivers .split__text{
+      order:1 !important;
+    }
+    #for-drivers .split__visual{
+      order:2 !important;
+      margin-top:18px;
+      margin-bottom:-10px;
+    }
+    #for-delivery{
+      padding-top:48px;
+    }
+    #for-delivery .split__visual{
+      margin-top:-16px;
+      margin-bottom:4px;
+    }
     .tab-panel.active{grid-template-columns:1fr; text-align:center; gap:24px;}
     #download{
       padding-top:58px;
@@ -1389,11 +1418,22 @@
     }
     .footer-bottom{
       padding-top:16px;
-      padding-bottom:16px;
+      padding-bottom:104px;
       gap:8px;
     }
     .footer-signature{
-      display:none;
+      display:block;
+      left:50%;
+      right:auto;
+      bottom:12px;
+      width:100vw;
+      padding-left:10px;
+      transform:translateX(-50%);
+      font-size:clamp(94px, 30vw, 168px);
+      line-height:0.9;
+      letter-spacing:-0.085em;
+      color:rgba(255,255,255,0.08);
+      overflow:visible;
     }
     .stats-strip{
       margin-top:8px;
@@ -1589,10 +1629,21 @@
       align-items:flex-start;
       gap:8px;
       padding-top:16px;
-      padding-bottom:16px;
+      padding-bottom:92px;
     }
     .footer-signature{
-      display:none;
+      display:block;
+      left:50%;
+      right:auto;
+      bottom:8px;
+      width:100vw;
+      padding-left:6px;
+      transform:translateX(-50%);
+      font-size:92px;
+      line-height:0.9;
+      letter-spacing:-0.09em;
+      color:rgba(255,255,255,0.075);
+      overflow:visible;
     }
   }
 
@@ -2317,7 +2368,8 @@
         progressSpan:0.82,
         swapStart:0.34,
         swapEnd:0.56,
-        mobileScale:0.9
+        mobileScale:0.9,
+        allowMobile:false
       }
     },
     {
@@ -2334,7 +2386,8 @@
         progressSpan:0.76,
         swapStart:0.4,
         swapEnd:0.6,
-        mobileScale:0.92
+        mobileScale:0.92,
+        allowMobile:true
       }
     },
     {
@@ -2351,7 +2404,8 @@
         progressSpan:0.78,
         swapStart:0.42,
         swapEnd:0.62,
-        mobileScale:0.92
+        mobileScale:0.92,
+        allowMobile:false
       }
     },
     {
@@ -2368,7 +2422,8 @@
         progressSpan:0.76,
         swapStart:0.44,
         swapEnd:0.64,
-        mobileScale:0.91
+        mobileScale:0.91,
+        allowMobile:true
       }
     },
     {
@@ -2385,7 +2440,8 @@
         progressSpan:0.8,
         swapStart:0.46,
         swapEnd:0.66,
-        mobileScale:0.89
+        mobileScale:0.89,
+        allowMobile:false
       }
     }
   ].filter(function(pair){
@@ -2404,6 +2460,11 @@
     return t < 0.5
       ? 4 * t * t * t
       : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  }
+
+  function isMobileHandoffAllowed(pair, viewportWidth){
+    if(viewportWidth > 860){ return true; }
+    return !!(pair && pair.config && pair.config.allowMobile);
   }
 
   function getPhoneAngle(phone){
@@ -2489,6 +2550,9 @@
     var activeProgress = 0;
 
     handoffPairs.some(function(pair){
+      if(!isMobileHandoffAllowed(pair, viewportWidth)){
+        return false;
+      }
       var targetRect = pair.toSection.getBoundingClientRect();
       var pairConfig = pair.config || {};
       var progress = clamp((viewportHeight * (pairConfig.entryAnchor || 0.9) - targetRect.top) / (viewportHeight * (pairConfig.progressSpan || 0.76)), 0, 1);
