@@ -407,7 +407,7 @@ class auth extends BaseController
             $this->mailer->sendOtpEmail($contact, $otp, $appName);
         } else {
             require_once ROOT . 'functions/sms.php';
-            Sms::send($contact, "Your $appName code: $otp. Valid 10 mins.");
+            Sms::send($contact, "Your $appName Verification code is $otp. It expires in 10 minutes.");
         }
 
         $devMode = defined('APP_ENV') ? (APP_ENV !== 'production') : (strtolower((string) ($_ENV['APP_ENV'] ?? 'development')) !== 'production');
@@ -550,7 +550,7 @@ class auth extends BaseController
             $sent = $this->mailer->sendOtpEmail($contact, $otp, $appName);
         } else {
             require_once ROOT . 'functions/sms.php';
-            $sent = Sms::send($contact, "Your $appName code is: $otp. Valid for 10 mins.");
+            $sent = Sms::send($contact, "Your $appName Verification code is $otp. It expires in 10 minutes.");
         }
 
         // In non-production, always include OTP in response so devs can test

@@ -33,7 +33,7 @@ class Sms
             'from'         => $sender,
             'sms'          => $message,
             'type'         => 'plain',
-            'channel'      => 'generic',
+            'channel'      => 'dnd',
             'api_key'      => $apiKey,
         ]);
 

@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
+import './payment_webview_screen.dart';
 import '../../core/constants/app_assets.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
@@ -144,20 +144,21 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
         return;
       }
 
-      // Launch payment gateway checkout in external browser
-      final uri = Uri.parse(link);
-      if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Could not open payment page.'), backgroundColor: AppColors.error),
-          );
-          setState(() => _paying = false);
-        }
-        return;
-      }
+      // Open payment gateway in an in-app WebView so the user never leaves the app.
+      if (!mounted) return;
+      await Navigator.of(context).push<PaymentWebViewResult>(
+        MaterialPageRoute(
+          fullscreenDialog: true,
+          builder: (_) => PaymentWebViewScreen(
+            url: link,
+            bookingId: widget.bookingId,
+          ),
+        ),
+      );
 
-      // Browser is open — remove the full-screen spinner so Cancel is accessible,
-      // and show the "Waiting for confirmation" banner instead.
+      // WebView closed (payment completed, cancelled, or user manually dismissed).
+      // Show the "Waiting for confirmation" banner and start polling — the backend
+      // webhook updates payment status regardless of how the WebView was closed.
       if (mounted) setState(() { _paying = false; _waitingGateway = true; });
       _startPolling();
     } catch (e) {

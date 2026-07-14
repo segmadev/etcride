@@ -262,7 +262,7 @@ class Auth extends BaseController
             $this->mailer->sendOtpEmail($contact, $otp, $appName);
         } else {
             require_once ROOT . 'functions/sms.php';
-            Sms::send($contact, "Your $appName driver code is: $otp. Valid for 10 mins.");
+            Sms::send($contact, "Your $appName Verification code is $otp. It expires in 10 minutes.");
         }
 
         $devMode = defined('APP_ENV') ? (APP_ENV !== 'production') : (strtolower((string) ($_ENV['APP_ENV'] ?? 'development')) !== 'production');
