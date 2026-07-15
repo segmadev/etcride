@@ -2,13 +2,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:smart_auth/smart_auth.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
-import '../../core/constants/app_strings.dart';
-import '../../core/config/app_config.dart';
+import '../../core/config/app_config.dart'; // otpLength
 import '../../core/config/router.dart';
-import '../../core/errors/app_exception.dart';
 import '../../core/utils/formatters.dart';
 import '../../shared/providers/providers.dart';
 import '../../shared/widgets/app_button.dart';
@@ -16,69 +13,47 @@ import '../../shared/widgets/app_back_button.dart';
 import '../../shared/widgets/otp_input.dart';
 import '../../shared/widgets/loading_overlay.dart';
 
-class OtpScreen extends ConsumerStatefulWidget {
-  const OtpScreen({
+class TwoFaScreen extends ConsumerStatefulWidget {
+  const TwoFaScreen({
     super.key,
-    required this.contact,
-    required this.contactType,   // 'email' | 'phone'
-    this.isRegistration = false,
+    required this.twoFaToken,
+    required this.twoFaContact,
   });
-  final String contact;
-  final String contactType;
-  final bool   isRegistration;
+  final String twoFaToken;
+  final String twoFaContact;
 
   @override
-  ConsumerState<OtpScreen> createState() => _OtpScreenState();
+  ConsumerState<TwoFaScreen> createState() => _TwoFaScreenState();
 }
 
-class _OtpScreenState extends ConsumerState<OtpScreen> {
+class _TwoFaScreenState extends ConsumerState<TwoFaScreen> {
   final _controller = TextEditingController();
   bool _loading = false;
   String? _error;
-  late int _countdown;
+  int _countdown = 180; // 3 min for email 2FA
   Timer? _timer;
-
-  int get _resendSecs => widget.contactType == 'phone' ? 480 : 180;
 
   @override
   void initState() {
     super.initState();
-    _countdown = _resendSecs;
     _startTimer();
-    if (widget.contactType == 'phone') {
-      _listenForSms();
-    }
   }
 
   void _startTimer() {
     _timer?.cancel();
-    setState(() => _countdown = _resendSecs);
+    setState(() => _countdown = 180);
     _timer = Timer.periodic(const Duration(seconds: 1), (t) {
       if (_countdown <= 0) { t.cancel(); return; }
       setState(() => _countdown--);
     });
   }
 
-  Future<void> _listenForSms() async {
-    try {
-      final result = await SmartAuth.instance.getSmsWithUserConsentApi();
-      if (!mounted || !result.hasData) return;
-      final code = result.data!.code;
-      if (code != null && code.length == AppConfig.otpLength) {
-        _controller.text = code;
-        await _verify(code);
-      }
-    } catch (_) {
-      // SMS autofill is best-effort — ignore errors
-    }
-  }
-
   Future<void> _verify(String otp) async {
     if (otp.length < AppConfig.otpLength) return;
     setState(() { _loading = true; _error = null; });
     try {
-      final user = await ref.read(authRepositoryProvider).verifyOtp(
-        contact: widget.contact,
+      final user = await ref.read(authRepositoryProvider).verify2fa(
+        twoFaToken: widget.twoFaToken,
         otp: otp,
       );
       ref.read(currentUserProvider.notifier).state = user;
@@ -89,30 +64,9 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
       } else {
         context.go(AppRoutes.home);
       }
-    } on TwoFaRequiredException catch (e) {
-      if (!mounted) return;
-      setState(() { _loading = false; });
-      context.push(
-        AppRoutes.twoFa,
-        extra: {'token': e.twoFaToken, 'contact': e.twoFaContact},
-      );
     } catch (e) {
       setState(() { _error = e.toString(); _loading = false; });
       _controller.clear();
-    }
-  }
-
-  Future<void> _resend() async {
-    if (_countdown > 0) return;
-    setState(() { _loading = true; _error = null; });
-    try {
-      await ref.read(authRepositoryProvider).sendOtp(widget.contact);
-      _startTimer();
-      if (widget.contactType == 'phone') _listenForSms();
-    } catch (e) {
-      setState(() => _error = e.toString());
-    } finally {
-      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -142,10 +96,8 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                       color: AppColors.primaryLight,
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: Icon(
-                      widget.contactType == 'phone'
-                          ? Icons.phone_android_rounded
-                          : Icons.email_rounded,
+                    child: const Icon(
+                      Icons.security_rounded,
                       size: 36,
                       color: AppColors.primary,
                     ),
@@ -154,15 +106,15 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                 const SizedBox(height: 28),
 
                 Center(
-                  child: Text(widget.contact,
-                      style: AppTextStyles.h3.copyWith(fontWeight: FontWeight.w700)),
+                  child: Text(
+                    'Two-Factor Verification',
+                    style: AppTextStyles.h3.copyWith(fontWeight: FontWeight.w700),
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Center(
                   child: Text(
-                    widget.contactType == 'phone'
-                        ? AppStrings.otpSentPhone
-                        : AppStrings.otpSentEmail,
+                    'A verification code was sent to\n${widget.twoFaContact}',
                     textAlign: TextAlign.center,
                     style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary),
                   ),
@@ -188,21 +140,20 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                 Center(
                   child: _countdown > 0
                       ? Text(
-                          '${AppStrings.resendCode} ${AppFormatters.countdown(_countdown)}',
-                          style:
-                              AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary),
+                          'Code expires in ${AppFormatters.countdown(_countdown)}',
+                          style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary),
                         )
-                      : TextButton(
-                          onPressed: _resend,
-                          child: Text(AppStrings.resendNow,
-                              style: AppTextStyles.labelMedium.copyWith(color: AppColors.primary)),
+                      : Text(
+                          'Code expired. Please go back and try again.',
+                          textAlign: TextAlign.center,
+                          style: AppTextStyles.bodySmall.copyWith(color: AppColors.error),
                         ),
                 ),
 
                 const Spacer(),
 
                 AppButton(
-                  label: AppStrings.verifyOtp,
+                  label: 'Verify',
                   onPressed: () => _verify(_controller.text),
                   enabled: _controller.text.length == AppConfig.otpLength && !_loading,
                 ),

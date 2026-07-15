@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Terms &amp; Conditions — ETCride</title>
+<meta name="description" content="ETCride Terms and Conditions. The legal agreement between you and ETC Horizon Global Ltd governing use of the ETCride platform.">
+<meta name="robots" content="index,follow">
+<meta name="author" content="ETCride">
+<meta name="theme-color" content="#F5A623">
+<link rel="canonical" href="https://etcride.com/terms">
+<link rel="icon" type="image/png" href="images/etcride-favicon.png">
+<style>
+  :root{
+    --amber:#F5A623;--amber-dark:#E09010;--amber-light:#FFF3DC;
+    --ink:#181818;--white:#FFFFFF;--dark:#111111;
+    --gray-600:#6B7280;--gray-400:#9CA3AF;
+    --surface:#ffffff;--surface-border:#ececec;
+    --font:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    --radius-pill:999px;--ease:cubic-bezier(.22,.9,.32,1);
+  }
+  html[data-theme="dark"]{
+    --amber-light:rgba(245,166,35,0.14);--white:#090A0D;--dark:#040506;
+    --ink:#F6F7FB;--gray-600:#B4BCC9;--gray-400:#98A2B3;
+    --surface:#111318;--surface-border:rgba(255,255,255,0.08);
+  }
+  *,*::before,*::after{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{margin:0;font-family:var(--font);color:var(--ink);background:var(--white);-webkit-font-smoothing:antialiased;overflow-x:hidden;transition:background 220ms var(--ease),color 220ms var(--ease);}
+  a{color:var(--amber-dark);text-decoration:none;}
+  a:hover{text-decoration:underline;}
+  a:focus-visible{outline:2px solid var(--amber);outline-offset:2px;border-radius:4px;}
+  h1,h2,h3,h4,p{margin:0;}
+
+  .nav{position:sticky;top:0;z-index:100;background:var(--white);border-bottom:1px solid var(--surface-border);padding:0 24px;display:flex;align-items:center;justify-content:space-between;height:64px;transition:background 220ms var(--ease);}
+  .nav__logo{display:inline-flex;align-items:center;text-decoration:none;}
+  .nav__logo img{height:32px;width:auto;display:block;}
+  .nav__logo .logo-light{display:block;}
+  .nav__logo .logo-dark{display:none;}
+  html[data-theme="dark"] .nav__logo .logo-light{display:none;}
+  html[data-theme="dark"] .nav__logo .logo-dark{display:block;}
+  .nav__actions{display:flex;align-items:center;gap:16px;}
+  .nav__back{display:inline-flex;align-items:center;gap:6px;font-size:14px;font-weight:600;color:var(--gray-600);text-decoration:none;transition:color 180ms;}
+  .nav__back:hover{color:var(--amber-dark);text-decoration:none;}
+  .theme-toggle{background:none;border:none;cursor:pointer;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--gray-600);transition:background 180ms,color 180ms;}
+  .theme-toggle:hover{background:var(--amber-light);color:var(--amber-dark);}
+
+  .legal-hero{background:linear-gradient(135deg,var(--amber-light) 0%,var(--white) 60%);padding:56px 24px 48px;text-align:center;border-bottom:1px solid var(--surface-border);}
+  html[data-theme="dark"] .legal-hero{background:linear-gradient(135deg,rgba(245,166,35,0.10) 0%,var(--white) 60%);}
+  .legal-hero__badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;color:var(--amber-dark);background:var(--amber-light);padding:5px 14px;border-radius:var(--radius-pill);margin-bottom:20px;}
+  .legal-hero h1{font-size:clamp(28px,5vw,44px);font-weight:900;letter-spacing:-0.03em;line-height:1.1;color:var(--ink);}
+  .legal-hero__meta{margin-top:14px;font-size:14px;color:var(--gray-600);display:flex;align-items:center;justify-content:center;gap:16px;flex-wrap:wrap;}
+  .legal-hero__meta span{display:flex;align-items:center;gap:5px;}
+
+  .legal-body{max-width:800px;margin:0 auto;padding:56px 24px 80px;}
+
+  .legal-content h2{font-size:20px;font-weight:800;letter-spacing:-0.02em;color:var(--ink);margin:48px 0 14px;padding-bottom:10px;border-bottom:2px solid var(--amber);display:inline-block;}
+  .legal-content h2:first-child{margin-top:0;}
+  .legal-content h3{font-size:16px;font-weight:700;color:var(--ink);margin:28px 0 10px;}
+  .legal-content h4{font-size:14px;font-weight:700;color:var(--ink);margin:20px 0 8px;}
+  .legal-content p{font-size:15px;line-height:1.75;color:var(--gray-600);margin-bottom:14px;}
+  html[data-theme="dark"] .legal-content p{color:var(--gray-400);}
+  .legal-content ul,.legal-content ol{padding-left:22px;margin:0 0 14px;}
+  .legal-content li{font-size:15px;line-height:1.75;color:var(--gray-600);margin-bottom:6px;}
+  html[data-theme="dark"] .legal-content li{color:var(--gray-400);}
+  .legal-content strong{color:var(--ink);font-weight:700;}
+  .legal-content a{color:var(--amber-dark);}
+  .legal-content hr{border:none;border-top:1px solid var(--surface-border);margin:32px 0;}
+  .legal-content blockquote{border-left:4px solid var(--amber);background:var(--amber-light);margin:20px 0;padding:14px 20px;border-radius:0 12px 12px 0;font-size:14px;line-height:1.65;color:var(--ink);}
+  .legal-content table{width:100%;border-collapse:collapse;font-size:14px;margin:16px 0 20px;border-radius:12px;overflow:hidden;border:1px solid var(--surface-border);}
+  .legal-content th{text-align:left;padding:12px 16px;background:var(--amber-light);color:var(--ink);font-weight:700;font-size:13px;border-bottom:1px solid var(--surface-border);}
+  .legal-content td{padding:12px 16px;color:var(--gray-600);border-bottom:1px solid var(--surface-border);vertical-align:top;line-height:1.6;}
+  html[data-theme="dark"] .legal-content td{color:var(--gray-400);}
+  .legal-content tr:last-child td{border-bottom:none;}
+  .legal-content code{font-family:monospace;background:var(--amber-light);padding:2px 6px;border-radius:4px;font-size:13px;}
+
+  .skeleton{animation:skeleton-pulse 1.5s ease-in-out infinite;}
+  .skeleton-line{height:14px;border-radius:6px;background:var(--surface-border);margin-bottom:12px;}
+  .skeleton-line.wide{width:100%;}
+  .skeleton-line.med{width:72%;}
+  .skeleton-line.short{width:45%;}
+  .skeleton-heading{height:22px;width:55%;border-radius:6px;background:var(--surface-border);margin:32px 0 14px;}
+  @keyframes skeleton-pulse{0%,100%{opacity:1;}50%{opacity:0.4;}}
+
+  .error-state{text-align:center;padding:48px 24px;color:var(--gray-600);}
+  .error-state svg{margin:0 auto 16px;display:block;opacity:0.4;}
+  .error-state h3{font-size:18px;font-weight:700;color:var(--ink);margin-bottom:8px;}
+  .error-state p{font-size:14px;line-height:1.6;}
+  .retry-btn{display:inline-flex;align-items:center;gap:6px;margin-top:20px;padding:10px 22px;border-radius:var(--radius-pill);background:var(--amber);color:#111;font-weight:700;font-size:14px;border:none;cursor:pointer;transition:background 180ms;}
+  .retry-btn:hover{background:var(--amber-dark);}
+
+  .legal-footer{background:var(--dark);color:rgba(255,255,255,0.55);text-align:center;padding:32px 24px;font-size:13px;}
+  .legal-footer a{color:rgba(255,255,255,0.55);text-decoration:none;transition:color 180ms;}
+  .legal-footer a:hover{color:#fff6df;text-decoration:none;}
+  .legal-footer__links{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;margin-top:10px;}
+  .legal-footer__links span{opacity:0.4;}
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <a href="/" class="nav__logo">
+    <img src="images/logo-light.svg" alt="ETCride" class="logo-light">
+    <img src="images/logo-dark.svg" alt="ETCride" class="logo-dark">
+  </a>
+  <div class="nav__actions">
+    <a href="/" class="nav__back">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+      Back to home
+    </a>
+    <button class="theme-toggle" id="themeToggle" aria-label="Toggle dark mode">
+      <svg id="iconSun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+      <svg id="iconMoon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    </button>
+  </div>
+</nav>
+
+<div class="legal-hero">
+  <div class="legal-hero__badge">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+    Legal Document
+  </div>
+  <h1>Terms &amp; Conditions</h1>
+  <div class="legal-hero__meta">
+    <span>
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      <span id="lastUpdated">Loading…</span>
+    </span>
+    <span>
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+      Governing Law: Federal Republic of Nigeria
+    </span>
+  </div>
+</div>
+
+<div class="legal-body">
+  <div id="content" class="legal-content" aria-live="polite">
+    <div class="skeleton">
+      <div class="skeleton-heading"></div>
+      <div class="skeleton-line wide"></div><div class="skeleton-line wide"></div><div class="skeleton-line med"></div>
+      <div class="skeleton-heading"></div>
+      <div class="skeleton-line wide"></div><div class="skeleton-line wide"></div><div class="skeleton-line short"></div>
+      <div class="skeleton-heading"></div>
+      <div class="skeleton-line wide"></div><div class="skeleton-line med"></div><div class="skeleton-line wide"></div><div class="skeleton-line short"></div>
+    </div>
+  </div>
+</div>
+
+<footer class="legal-footer">
+  <div>© 2025 ETCride. All rights reserved. ETC Horizon Global Ltd, Federal Republic of Nigeria.</div>
+  <div class="legal-footer__links">
+    <a href="/">Home</a>
+    <span>·</span>
+    <a href="privacy-policy.html">Privacy Policy</a>
+    <span>·</span>
+    <a href="terms.html">Terms &amp; Conditions</a>
+    <span>·</span>
+    <a href="mailto:support@etcride.com">support@etcride.com</a>
+  </div>
+</footer>
+
+<script>
+  // ── Theme ──────────────────────────────────────────────────────────────────
+  const root = document.documentElement;
+  const btn = document.getElementById('themeToggle');
+  const sun = document.getElementById('iconSun');
+  const moon = document.getElementById('iconMoon');
+  const stored = localStorage.getItem('etcride-theme');
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  let dark = stored ? stored === 'dark' : prefersDark;
+  function applyTheme() {
+    root.setAttribute('data-theme', dark ? 'dark' : 'light');
+    sun.style.display = dark ? 'none' : '';
+    moon.style.display = dark ? '' : 'none';
+  }
+  applyTheme();
+  btn.addEventListener('click', () => { dark = !dark; localStorage.setItem('etcride-theme', dark ? 'dark' : 'light'); applyTheme(); });
+
+  // ── Minimal markdown → HTML renderer ──────────────────────────────────────
+  function mdToHtml(md) {
+    if (!md) return '';
+    const lines = md.split('\n');
+    let html = '';
+    let inTable = false;
+    let tableHead = true;
+    let inUl = false;
+
+    function closeList() { if (inUl) { html += '</ul>'; inUl = false; } }
+    function closeTable() { if (inTable) { html += '</tbody></table>'; inTable = false; tableHead = true; } }
+
+    function inline(text) {
+      return text
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+        .replace(/`(.+?)`/g, '<code>$1</code>')
+        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    }
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const trimmed = line.trim();
+
+      if (/^---+$/.test(trimmed)) { closeList(); closeTable(); html += '<hr>'; continue; }
+
+      if (trimmed.startsWith('|')) {
+        closeList();
+        const cells = trimmed.split('|').filter((_, idx, arr) => idx > 0 && idx < arr.length - 1);
+        if (cells.every(c => /^[-: ]+$/.test(c))) { html += '</thead><tbody>'; tableHead = false; continue; }
+        if (!inTable) { html += '<table>'; inTable = true; tableHead = true; html += '<thead>'; }
+        const tag = tableHead ? 'th' : 'td';
+        html += '<tr>' + cells.map(c => `<${tag}>${inline(c.trim())}</${tag}>`).join('') + '</tr>';
+        continue;
+      } else { closeTable(); }
+
+      if (/^### /.test(line)) { closeList(); html += `<h3>${inline(line.slice(4))}</h3>`; continue; }
+      if (/^## /.test(line)) { closeList(); html += `<h2>${inline(line.slice(3))}</h2>`; continue; }
+      if (/^# /.test(line)) { closeList(); html += `<h2>${inline(line.slice(2))}</h2>`; continue; }
+
+      if (/^- /.test(line)) {
+        if (!inUl) { html += '<ul>'; inUl = true; }
+        html += `<li>${inline(line.slice(2))}</li>`;
+        continue;
+      } else { closeList(); }
+
+      if (trimmed === '') continue;
+      html += `<p>${inline(trimmed)}</p>`;
+    }
+    closeList();
+    closeTable();
+    return html;
+  }
+
+  // ── Fetch ──────────────────────────────────────────────────────────────────
+  const API = 'https://api.etcride.com/api/content/terms-conditions';
+  const contentEl = document.getElementById('content');
+  const lastUpdatedEl = document.getElementById('lastUpdated');
+
+  function formatDate(str) {
+    if (!str) return 'Last updated';
+    try {
+      return 'Last updated: ' + new Date(str).toLocaleDateString('en-NG', { year: 'numeric', month: 'long', day: 'numeric' });
+    } catch { return 'Last updated: ' + str; }
+  }
+
+  function showSkeleton() {
+    contentEl.innerHTML = `<div class="skeleton">
+      <div class="skeleton-heading"></div>
+      <div class="skeleton-line wide"></div><div class="skeleton-line wide"></div><div class="skeleton-line med"></div>
+      <div class="skeleton-heading"></div>
+      <div class="skeleton-line wide"></div><div class="skeleton-line wide"></div><div class="skeleton-line short"></div>
+    </div>`;
+  }
+
+  function showError(msg) {
+    contentEl.innerHTML = `
+      <div class="error-state">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+        <h3>Could not load content</h3>
+        <p>${msg}</p>
+        <button class="retry-btn" onclick="loadContent()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+          Try again
+        </button>
+      </div>`;
+  }
+
+  async function loadContent() {
+    showSkeleton();
+    try {
+      const res = await fetch(API, { headers: { 'Accept': 'application/json' } });
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+      const json = await res.json();
+      const data = json.data ?? json;
+      const text = data.terms_and_conditions || '';
+      if (!text) throw new Error('Terms and Conditions content is empty.');
+      lastUpdatedEl.textContent = formatDate(data.terms_version);
+      contentEl.innerHTML = mdToHtml(text);
+    } catch (err) {
+      showError(err.message || 'Please check your connection and try again.');
+    }
+  }
+
+  loadContent();
+</script>
+</body>
+</html>

@@ -125,12 +125,24 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
         return;
       }
 
-      // Save selected gateway for next time
       await PaymentPreferences.saveLastUsedGateway(_method.apiValue);
 
-      // Call backend to generate payment link (pass selected provider)
+      // The backend handles all idempotency: already_paid, resume_pending, and fresh.
       final result = await ref.read(bookingRepositoryProvider)
           .initiatePayment(widget.bookingId, provider: _method.apiValue);
+
+      // Backend may detect a paid/pending payment even without our pre-check
+      // (race condition or another device).
+      if (result['already_paid'] == true) {
+        _handlePaymentSuccess();
+        return;
+      }
+
+      if (result['resume_pending'] == true) {
+        final resumeLink = result['payment_link'] as String?;
+        await _openWebView(resumeLink);
+        return;
+      }
 
       final link = result['payment_link'] as String?;
       if (link == null || link.isEmpty) {
@@ -144,23 +156,7 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
         return;
       }
 
-      // Open payment gateway in an in-app WebView so the user never leaves the app.
-      if (!mounted) return;
-      await Navigator.of(context).push<PaymentWebViewResult>(
-        MaterialPageRoute(
-          fullscreenDialog: true,
-          builder: (_) => PaymentWebViewScreen(
-            url: link,
-            bookingId: widget.bookingId,
-          ),
-        ),
-      );
-
-      // WebView closed (payment completed, cancelled, or user manually dismissed).
-      // Show the "Waiting for confirmation" banner and start polling — the backend
-      // webhook updates payment status regardless of how the WebView was closed.
-      if (mounted) setState(() { _paying = false; _waitingGateway = true; });
-      _startPolling();
+      await _openWebView(link);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -168,6 +164,98 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
         );
         setState(() { _paying = false; _waitingGateway = false; });
       }
+    }
+  }
+
+  Future<void> _openWebView(String? link) async {
+    if (link == null || link.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Payment link unavailable. Try again.'), backgroundColor: AppColors.error),
+        );
+        setState(() => _paying = false);
+      }
+      return;
+    }
+    if (!mounted) return;
+    await Navigator.of(context).push<PaymentWebViewResult>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => PaymentWebViewScreen(url: link, bookingId: widget.bookingId),
+      ),
+    );
+    if (mounted) setState(() { _paying = false; _waitingGateway = true; });
+    _startPolling();
+    // Immediately sync with the provider when the WebView closes so we don't
+    // wait up to 4 seconds for the first polling tick to catch the result.
+    _forceCheckStatus();
+  }
+
+  void _handlePaymentSuccess() {
+    _pollTimer?.cancel();
+    if (!mounted) return;
+    final b = _booking;
+    if (b != null && b.bookingType == BookingType.delivery &&
+        b.status != BookingStatus.completed) {
+      context.go(AppRoutes.driverAssigned, extra: widget.bookingId);
+    } else {
+      context.go(AppRoutes.tripCompleted, extra: widget.bookingId);
+    }
+  }
+
+  bool _forcingCheck = false;
+
+  Future<void> _forceCheckStatus() async {
+    if (_forcingCheck) return;
+    setState(() => _forcingCheck = true);
+    try {
+      final result = await ref.read(bookingRepositoryProvider)
+          .syncPaymentStatus(widget.bookingId);
+      final status = result['payment_status'] as String? ?? '';
+      if (status == 'paid') {
+        _handlePaymentSuccess();
+        return;
+      }
+      if (status == 'failed') {
+        _pollTimer?.cancel();
+        if (mounted) {
+          setState(() { _waitingGateway = false; _forcingCheck = false; });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Payment failed. Please try again.'), backgroundColor: AppColors.error),
+          );
+        }
+        return;
+      }
+      // Still pending — offer to re-open WebView to complete payment
+      final resumeLink = result['checkout_url'] as String?;
+      if (resumeLink != null && resumeLink.isNotEmpty && mounted) {
+        final reopen = await showDialog<bool>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Payment Pending'),
+            content: const Text('Your payment is still pending. Would you like to re-open the payment page to complete it?'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('No, wait')),
+              TextButton(onPressed: () => Navigator.pop(context, true),  child: const Text('Re-open')),
+            ],
+          ),
+        );
+        if (reopen == true && mounted) {
+          await _openWebView(resumeLink);
+        }
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Payment still pending. Please wait or try again.')),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not check payment status. Try again.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _forcingCheck = false);
     }
   }
 
@@ -183,16 +271,7 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
       final payStatus = status['payment_status'] as String? ?? '';
       if (payStatus == 'paid') {
         _pollTimer?.cancel();
-        if (mounted) {
-          final b = _booking;
-          // Delivery pre-pickup payment: trip not done yet — go back to tracking
-          if (b != null && b.bookingType == BookingType.delivery &&
-              b.status != BookingStatus.completed) {
-            context.go(AppRoutes.driverAssigned, extra: widget.bookingId);
-          } else {
-            context.go(AppRoutes.tripCompleted, extra: widget.bookingId);
-          }
-        }
+        _handlePaymentSuccess();
       } else if (payStatus == 'failed') {
         _pollTimer?.cancel();
         if (mounted) {
@@ -316,6 +395,24 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
                           ),
                         ),
                         const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed: _forcingCheck ? null : _forceCheckStatus,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primary,
+                              foregroundColor: AppColors.white,
+                              disabledBackgroundColor: AppColors.primary.withValues(alpha: 0.6),
+                              padding: const EdgeInsets.symmetric(vertical: 13),
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            child: _forcingCheck
+                                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.white))
+                                : Text('I\'ve paid — check status', style: AppTextStyles.bodySmall.copyWith(color: AppColors.white, fontWeight: FontWeight.w600)),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
                         TextButton(
                           onPressed: () {
                             _pollTimer?.cancel();

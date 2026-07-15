@@ -21,7 +21,34 @@ class Payments extends BaseController
         }
 
         if ($booking['payment_status'] === 'paid') {
-            echo utilities::apiMessage('This booking is already paid.', 409);
+            echo utilities::apiMessage('This booking is already paid.', 200, ['already_paid' => true]);
+            return;
+        }
+
+        // Check for an existing pending payment — avoid double-charging.
+        $existing = $this->getall('payments', "booking_id = ? AND status = 'pending' ORDER BY created_at DESC LIMIT 1", [$bookingId]);
+        if (is_array($existing)) {
+            // Verify live with the provider to see if payment actually went through.
+            $verified = $this->verifyWithProvider($existing['provider'], $existing['reference']);
+            if ($verified['paid']) {
+                // Provider confirms paid but webhook hadn't updated us yet — do it now.
+                require_once ROOT . 'api/controllers/payments/Webhook.php';
+                (new Webhook())->processPaymentPublic($existing['reference'], true, $verified['provider_ref'], $verified['raw'], $existing['provider']);
+                echo utilities::apiMessage('Payment already confirmed.', 200, ['already_paid' => true]);
+                return;
+            }
+            // Still genuinely pending — return the original checkout URL so the user
+            // can resume the same payment session without being charged again.
+            echo utilities::apiMessage('Payment already initiated.', 200, [
+                'already_paid'    => false,
+                'resume_pending'  => true,
+                'payment_id'      => $existing['id'],
+                'reference'       => $existing['reference'],
+                'provider'        => $existing['provider'],
+                'payment_link'    => $existing['checkout_url'] ?? null,
+                'amount'          => (float) $existing['amount'],
+                'currency'        => $this->setting('currency', 'NGN'),
+            ]);
             return;
         }
 
@@ -65,16 +92,17 @@ class Payments extends BaseController
             return;
         }
 
-        // Save pending payment record
+        // Save pending payment record (checkout_url filled in after link is obtained below)
         $payId = utilities::genID('PAY_', 10);
         $this->quick_insert('payments', [
-            'id'         => $payId,
-            'booking_id' => $bookingId,
-            'provider'   => $provider,
-            'amount'     => $amount,
-            'currency'   => $this->setting('currency', 'NGN'),
-            'status'     => 'pending',
-            'reference'  => $ref,
+            'id'          => $payId,
+            'booking_id'  => $bookingId,
+            'provider'    => $provider,
+            'amount'      => $amount,
+            'currency'    => $this->setting('currency', 'NGN'),
+            'status'      => 'pending',
+            'reference'   => $ref,
+            'checkout_url'=> null,
         ]);
 
         // Update booking payment status
@@ -99,6 +127,11 @@ class Payments extends BaseController
             } else {
                 $linkError = $result['error'];
             }
+        }
+
+        // Persist checkout URL so pending-payment resumption can return it without re-charging.
+        if ($paymentLink) {
+            $this->update('payments', ['checkout_url' => $paymentLink], "id = '$payId'");
         }
 
         $this->logActivity('customer', $me['id'], 'payment_initiated', [
@@ -239,6 +272,112 @@ class Payments extends BaseController
                 'provider'     => $payment['provider'],
             ] : null,
         ]);
+    }
+
+    // ── POST /bookings/:id/pay/sync — force-check live payment status ─────────
+    public function sync(string $bookingId): void
+    {
+        $me        = BaseController::$authUser;
+        $bookingId = $this->normalizeId($bookingId);
+        $booking   = $this->getall('bookings', 'id = ? AND customer_id = ?', [$bookingId, $me['id']]);
+
+        if (!is_array($booking)) {
+            echo utilities::apiMessage('Booking not found.', 404);
+            return;
+        }
+
+        if ($booking['payment_status'] === 'paid') {
+            echo utilities::apiMessage('Already paid.', 200, ['payment_status' => 'paid', 'was_updated' => false]);
+            return;
+        }
+
+        $payment = $this->getall('payments', "booking_id = ? AND status = 'pending' ORDER BY created_at DESC LIMIT 1", [$bookingId]);
+        if (!is_array($payment)) {
+            echo utilities::apiMessage('No pending payment found.', 404);
+            return;
+        }
+
+        $verified = $this->verifyWithProvider($payment['provider'], $payment['reference']);
+
+        if ($verified['paid']) {
+            require_once ROOT . 'api/controllers/payments/Webhook.php';
+            (new Webhook())->processPaymentPublic($payment['reference'], true, $verified['provider_ref'], $verified['raw'], $payment['provider']);
+            echo utilities::apiMessage('Payment confirmed.', 200, ['payment_status' => 'paid', 'was_updated' => true]);
+            return;
+        }
+
+        if ($verified['failed']) {
+            $this->update('payments', ['status' => 'failed'], "id = '{$payment['id']}'");
+            echo utilities::apiMessage('Payment failed.', 200, ['payment_status' => 'failed', 'was_updated' => true]);
+            return;
+        }
+
+        echo utilities::apiMessage('Payment still pending.', 200, [
+            'payment_status' => 'pending',
+            'was_updated'    => false,
+            'checkout_url'   => $payment['checkout_url'],
+        ]);
+    }
+
+    // ── Shared: call provider verify API by reference ─────────────────────────
+    // Returns ['paid'=>bool, 'failed'=>bool, 'provider_ref'=>string, 'raw'=>array]
+    private function verifyWithProvider(string $provider, string $ref): array
+    {
+        $default = ['paid' => false, 'failed' => false, 'provider_ref' => '', 'raw' => []];
+
+        if ($provider === 'korapay') {
+            $secretKey = $this->gatewaySecretKey('korapay');
+            if (empty($secretKey)) return $default;
+
+            $ch = curl_init('https://api.korapay.com/merchant/api/v1/charges/' . urlencode($ref));
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_HTTPHEADER     => ['Authorization: Bearer ' . $secretKey],
+                CURLOPT_TIMEOUT        => 15,
+                CURLOPT_SSL_VERIFYPEER => true,
+                CURLOPT_SSL_VERIFYHOST => 2,
+            ]);
+            $resp = curl_exec($ch);
+            curl_close($ch);
+
+            if (!$resp) return $default;
+            $data   = json_decode($resp, true) ?? [];
+            $status = strtolower($data['data']['status'] ?? '');
+            return [
+                'paid'         => $status === 'success',
+                'failed'       => in_array($status, ['failed', 'expired'], true),
+                'provider_ref' => (string) ($data['data']['reference'] ?? $ref),
+                'raw'          => $data['data'] ?? [],
+            ];
+        }
+
+        if ($provider === 'flutterwave') {
+            $secretKey = $this->gatewaySecretKey('flutterwave');
+            if (empty($secretKey)) return $default;
+
+            $ch = curl_init('https://api.flutterwave.com/v3/transactions/verify_by_reference?tx_ref=' . urlencode($ref));
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_HTTPHEADER     => ['Authorization: Bearer ' . $secretKey],
+                CURLOPT_TIMEOUT        => 15,
+                CURLOPT_SSL_VERIFYPEER => true,
+                CURLOPT_SSL_VERIFYHOST => 2,
+            ]);
+            $resp = curl_exec($ch);
+            curl_close($ch);
+
+            if (!$resp) return $default;
+            $data   = json_decode($resp, true) ?? [];
+            $status = strtolower($data['data']['status'] ?? '');
+            return [
+                'paid'         => $status === 'successful',
+                'failed'       => in_array($status, ['failed', 'cancelled'], true),
+                'provider_ref' => (string) ($data['data']['id'] ?? ''),
+                'raw'          => $data['data'] ?? [],
+            ];
+        }
+
+        return $default;
     }
 
     // ── Private: build provider-specific payload ──────────────────────────────

@@ -16,6 +16,7 @@ import '../../../core/constants/app_strings.dart';
 import '../../../core/config/router.dart';
 import '../../../core/maps/google_maps_js_loader.dart';
 import '../../../core/maps/maps_service.dart';
+import '../../../core/services/notification_service.dart';
 import '../../../data/models/booking_model.dart';
 import '../../../shared/providers/providers.dart';
 import '../../../shared/widgets/driver_card.dart';
@@ -41,6 +42,8 @@ class _TripInProgressScreenState
   BookingModel? _booking;
   Timer?        _pollTimer;
   bool _isRefreshing = false;
+  bool _earlyEndRequested = false;
+  bool _earlyEndLoading   = false;
   late final AnimationController _refreshCtrl = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 800),
@@ -55,6 +58,39 @@ class _TripInProgressScreenState
     super.initState();
     _load();
     _pollTimer = Timer.periodic(const Duration(seconds: 6), (_) => _load());
+    NotificationService.instance.onEarlyEndAccepted = (id) {
+      if (id == widget.bookingId && mounted) {
+        setState(() => _earlyEndRequested = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Driver accepted early end. Trip ending soon.'), backgroundColor: AppColors.success),
+        );
+      }
+    };
+    NotificationService.instance.onEarlyEndRejected = (id) {
+      if (id == widget.bookingId && mounted) {
+        setState(() { _earlyEndRequested = false; });
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Request Declined'),
+            content: const Text('The driver could not accept your early end request. You can file a report if you need assistance.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('OK'),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  if (mounted) _showReportSheet(context);
+                },
+                child: const Text('File Report'),
+              ),
+            ],
+          ),
+        );
+      }
+    };
   }
 
   Future<void> _load() async {
@@ -115,6 +151,8 @@ class _TripInProgressScreenState
   void dispose() {
     _pollTimer?.cancel();
     _refreshCtrl.dispose();
+    NotificationService.instance.onEarlyEndAccepted = null;
+    NotificationService.instance.onEarlyEndRejected = null;
     super.dispose();
   }
 
@@ -144,6 +182,43 @@ class _TripInProgressScreenState
       backgroundColor: Colors.transparent,
       builder: (ctx) => _ReportTripSheet(bookingId: _booking!.id),
     );
+  }
+
+  Future<void> _requestEarlyEnd() async {
+    if (_earlyEndLoading) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Request Early End'),
+        content: const Text('Ask the driver to end the trip at your current location? You will be charged the estimated fare for the distance covered.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Request'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _earlyEndLoading = true);
+    try {
+      await ref.read(bookingRepositoryProvider).requestEarlyEnd(widget.bookingId);
+      if (mounted) {
+        setState(() { _earlyEndRequested = true; _earlyEndLoading = false; });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Request sent. Waiting for driver response.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _earlyEndLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed: $e'), backgroundColor: AppColors.error),
+        );
+      }
+    }
   }
 
   Future<void> _showRerouteSheet(BuildContext context) async {
@@ -288,21 +363,49 @@ class _TripInProgressScreenState
                   )
                 : CollapsibleMapSheet(
                     initialChildSize: 0.34,
-                    child: DriverCard(
-                      booking: b,
-                      statusIcon: const Icon(Icons.navigation_rounded,
-                          size: 16, color: AppColors.primary),
-                      statusLabel: b.bookingType == BookingType.delivery
-                          ? 'Package in transit'
-                          : 'Heading to destination',
-                      onChat: () => context.push(
-                        AppRoutes.driverChat,
-                        extra: b.id,
-                      ),
-                      onReroute: b.bookingType == BookingType.ride
-                          ? () => _showRerouteSheet(context)
-                          : null,
-                      onViewDetails: () => showTripDetailsSheet(context, b),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        DriverCard(
+                          booking: b,
+                          statusIcon: const Icon(Icons.navigation_rounded,
+                              size: 16, color: AppColors.primary),
+                          statusLabel: b.bookingType == BookingType.delivery
+                              ? 'Package in transit'
+                              : 'Heading to destination',
+                          onChat: () => context.push(
+                            AppRoutes.driverChat,
+                            extra: b.id,
+                          ),
+                          onReroute: b.bookingType == BookingType.ride
+                              ? () => _showRerouteSheet(context)
+                              : null,
+                          onViewDetails: () => showTripDetailsSheet(context, b),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
+                          child: SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed: (_earlyEndRequested || _earlyEndLoading)
+                                  ? null
+                                  : _requestEarlyEnd,
+                              icon: _earlyEndLoading
+                                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                                  : const Icon(Icons.stop_circle_outlined, size: 18),
+                              label: Text(_earlyEndRequested
+                                  ? 'Waiting for driver...'
+                                  : 'Request to End Trip'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppColors.error,
+                                side: const BorderSide(color: AppColors.error),
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
           ),

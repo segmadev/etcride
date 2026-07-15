@@ -185,12 +185,7 @@ class _DriverChatScreenState extends ConsumerState<DriverChatScreen> {
                         top: BorderSide(color: AppColors.divider, width: 1),
                       ),
                     ),
-                    padding: EdgeInsets.fromLTRB(
-                      16,
-                      12,
-                      16,
-                      12 + MediaQuery.of(context).viewInsets.bottom,
-                    ),
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
                     child: _ChatInput(
                       controller: _ctrl,
                       focusNode: _focus,

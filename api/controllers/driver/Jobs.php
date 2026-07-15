@@ -188,6 +188,12 @@ class Jobs extends BaseController
             'body'        => $body,
         ]);
 
+        // Push notification to customer
+        $preview = mb_strlen($body) > 60 ? mb_substr($body, 0, 60) . '…' : $body;
+        $this->notify('customer', $job['customer_id'],
+            'Message from ' . ($me['name'] ?? 'Driver'),
+            $preview, 'new_message', $id);
+
         echo utilities::apiMessage('Message sent.', 200, $this->getall('trip_messages', 'id = ?', [$msgId]));
     }
 
@@ -351,10 +357,13 @@ class Jobs extends BaseController
         // Notify the customer
         if (!empty($job['customer_id'])) {
             $this->notify('customer', $job['customer_id'],
-                'Trip Cancelled by Driver',
-                'Your driver has cancelled the trip. We\'re looking for another driver.',
-                'booking_cancelled', $id);
+                'Driver Cancelled',
+                'Your driver has cancelled the trip. We\'re finding you another driver.',
+                'driver_declined', $id);
         }
+
+        // Attempt to reassign to the next closest available driver
+        $this->tryReassignBooking($id, $job);
 
         echo utilities::apiMessage('Job cancelled.', 200);
     }
@@ -564,6 +573,32 @@ class Jobs extends BaseController
             return;
         }
 
+        // ── Destination proximity check ───────────────────────────────────────
+        $earlyEndApproved = (int) ($job['early_end_approved'] ?? 0);
+        if (!$earlyEndApproved) {
+            $driverLat   = $this->flt('lat');
+            $driverLng   = $this->flt('lng');
+            $gpsAccuracy = abs($this->flt('gps_accuracy_m'));
+
+            if ($driverLat !== 0.0 && $driverLng !== 0.0) {
+                $destLat    = (float) ($job['destination_lat'] ?? 0);
+                $destLng    = (float) ($job['destination_lng'] ?? 0);
+                $thresholdKm = (float) $this->setting('complete_proximity_km', '0.3');
+                $effectiveKm = $thresholdKm + ($gpsAccuracy / 1000);
+                $distKm = $this->haversine($driverLat, $driverLng, $destLat, $destLng);
+
+                if ($distKm > $effectiveKm) {
+                    $remainingM = round(($distKm - $thresholdKm) * 1000);
+                    echo utilities::apiMessage(
+                        "You are {$remainingM}m away from the destination. "
+                        . "Get closer to complete the trip, or ask the customer to request an early end.",
+                        422
+                    );
+                    return;
+                }
+            }
+        }
+
         $now = date('Y-m-d H:i:s');
 
         // ── Recalculate fare from actual GPS distance + trip duration ──────────
@@ -585,10 +620,10 @@ class Jobs extends BaseController
             $fareUpdate['final_fare'] = $job['estimated_fare'];
         }
 
-        // Determine final status and payment handling
-        $newStatus = 'completed';
+        // Determine final status — go to payment_pending if not yet paid, otherwise completed
+        $newStatus = ($job['payment_status'] !== 'paid') ? 'payment_pending' : 'completed';
         $this->update('bookings', array_merge($fareUpdate, $distanceUpdate, ['status' => $newStatus]), "id = '$id'");
-        $this->recordStatusChange($id, 'in_progress', 'completed', 'driver', $me['id']);
+        $this->recordStatusChange($id, 'in_progress', $newStatus, 'driver', $me['id']);
 
         // Update trip record
         $trip = $this->getall('trips', 'booking_id = ?', [$id]);
@@ -599,16 +634,20 @@ class Jobs extends BaseController
             ], "id = '{$trip['id']}'");
         }
 
-        // Always move to payment_pending so the customer settles via app
-        if ($job['payment_status'] !== 'paid') {
-            $this->update('bookings', ['status' => 'payment_pending'], "id = '$id'");
+        if ($newStatus === 'payment_pending') {
             $this->notify('customer', $job['customer_id'], 'Trip Completed — Payment Required',
                 'Your trip is complete. Please make your payment.',
                 'trip_completed', $id);
+            // For early-end trips, send the thank-you email now rather than waiting
+            // for payment confirmation, since the journey is already done.
+            if ($earlyEndApproved) {
+                $this->sendTripCompletedEmail($job, $me);
+            }
         } else {
             $this->notify('customer', $job['customer_id'], 'Trip Completed',
                 'Your trip has been completed. Thank you for riding with us!',
                 'trip_completed', $id);
+            $this->sendTripCompletedEmail($job, $me);
         }
 
         $this->logActivity('driver', $me['id'], 'trip_completed', ['booking_id' => $id]);
@@ -659,7 +698,9 @@ class Jobs extends BaseController
 
         $this->notify('customer', $job['customer_id'], 'Payment Confirmed',
             'Your payment has been received. Thank you for riding with us!',
-            'trip_completed', $id);
+            'payment_confirmed', $id);
+
+        $this->sendTripCompletedEmail($job, $me);
 
         $this->logActivity('driver', $me['id'], 'payment_confirmed', ['booking_id' => $id]);
 
@@ -738,6 +779,249 @@ class Jobs extends BaseController
         $this->update('notifications', ['is_read' => 1],
             "id = '$notifId' AND recipient_id = '{$me['id']}' AND recipient_role = 'driver'");
         echo utilities::apiMessage('Marked as read.', 200);
+    }
+
+    // ── Send trip-completed thank-you email ────────────────────────────────────
+    private function sendTripCompletedEmail(array $job, array $driver): void
+    {
+        $customer = $this->getall('users', 'id = ?', [$job['customer_id']]);
+        if (!is_array($customer)) return;
+        if (empty($customer['email'])) return;
+        if (isset($customer['email_trip_completed']) && (int)$customer['email_trip_completed'] === 0) return;
+
+        $name     = $customer['name'] ?? 'Valued Customer';
+        $fare     = number_format((float)($job['final_fare'] ?? $job['estimated_fare'] ?? 0), 2);
+        $from     = $job['pickup_address'] ?? '';
+        $to       = $job['destination_address'] ?? '';
+        $drvName  = $driver['name'] ?? 'Your driver';
+        $appName  = $this->setting('app_name', 'EtcRide');
+        $support  = $this->setting('support_email', '');
+
+        $inner = "
+            <p style='margin:0 0 16px;'>Hi <strong>" . htmlspecialchars($name) . "</strong>,</p>
+            <p style='margin:0 0 20px;'>Thank you for riding with us! Your trip has been completed successfully.</p>
+            <table role='presentation' cellpadding='0' cellspacing='0' width='100%' style='margin:0 0 24px;background:#f8fafc;border-radius:8px;'>
+              <tr><td style='padding:20px 24px;'>
+                <p style='margin:0 0 10px;font-size:13px;color:#64748b;text-transform:uppercase;letter-spacing:1px;font-weight:600;'>Trip Summary</p>
+                " . ($from ? "<p style='margin:0 0 6px;font-size:14px;'><strong>From:</strong> " . htmlspecialchars($from) . "</p>" : '') . "
+                " . ($to   ? "<p style='margin:0 0 6px;font-size:14px;'><strong>To:</strong> " . htmlspecialchars($to)   . "</p>" : '') . "
+                <p style='margin:0 0 6px;font-size:14px;'><strong>Driver:</strong> " . htmlspecialchars($drvName) . "</p>
+                <p style='margin:0;font-size:18px;font-weight:700;color:#0f172a;'>Total: ₦{$fare}</p>
+              </td></tr>
+            </table>
+            <p style='margin:0 0 16px;'>We hope you enjoyed your ride. Please take a moment to rate your driver in the app — it helps us keep quality high.</p>
+            <p style='margin:0;color:#64748b;font-size:14px;'>See you on your next trip!</p>
+        ";
+
+        $html = \Mymailer::layout('Trip Completed', '#0f172a', $inner, $appName, $support);
+        $mailer = new \Mymailer();
+        $mailer->send_email($customer['email'], 'Your trip is complete — Thank you!', $html, $name);
+    }
+
+    // ── POST /driver/jobs/:id/accept-early-end ────────────────────────────────
+    public function acceptEarlyEnd(string $id): void
+    {
+        $me  = BaseController::$authDriver;
+        $job = $this->getall('bookings', 'id = ? AND driver_id = ?', [$id, $me['id']]);
+
+        if (!is_array($job)) { echo utilities::apiMessage('Job not found.', 404); return; }
+        if ($job['status'] !== 'in_progress') {
+            echo utilities::apiMessage('Trip is not in progress.', 409); return;
+        }
+        if (!(int)($job['early_end_requested'] ?? 0)) {
+            echo utilities::apiMessage('No early end request pending.', 409); return;
+        }
+
+        $this->update('bookings', ['early_end_approved' => 1], "id = '$id'");
+        $this->notify('customer', $job['customer_id'], 'Early End Accepted',
+            'The driver accepted your request. The trip will end at your current location.',
+            'early_end_accepted', $id);
+
+        echo utilities::apiMessage('Early end accepted. Complete the trip when ready.', 200);
+    }
+
+    // ── POST /driver/jobs/:id/reject-early-end ────────────────────────────────
+    public function rejectEarlyEnd(string $id): void
+    {
+        $me  = BaseController::$authDriver;
+        $job = $this->getall('bookings', 'id = ? AND driver_id = ?', [$id, $me['id']]);
+
+        if (!is_array($job)) { echo utilities::apiMessage('Job not found.', 404); return; }
+        if ($job['status'] !== 'in_progress') {
+            echo utilities::apiMessage('Trip is not in progress.', 409); return;
+        }
+
+        $this->update('bookings', ['early_end_requested' => 0, 'early_end_approved' => 0], "id = '$id'");
+        $this->notify('customer', $job['customer_id'], 'Early End Rejected',
+            'The driver could not accept your early end request. You can file a report if you need assistance.',
+            'early_end_rejected', $id);
+
+        echo utilities::apiMessage('Early end rejected.', 200);
+    }
+
+    // ── GET /driver/jobs/available ────────────────────────────────────────────
+    /**
+     * Returns pending, unassigned bookings whose vehicle_type_id matches this
+     * driver's assigned vehicle. Excludes bookings the driver previously rejected.
+     */
+    public function availableBookings(): void
+    {
+        $me = BaseController::$authDriver;
+
+        // Driver must be online
+        if (!(int)($me['is_online'] ?? 0)) {
+            echo utilities::apiMessage('Go online to see available bookings.', 200, ['bookings' => []]);
+            return;
+        }
+
+        // Get vehicle type from driver's assigned vehicle
+        $driverRow = $this->db->prepare(
+            'SELECT v.vehicle_type_id FROM drivers d
+             LEFT JOIN vehicles v ON v.id = d.vehicle_id
+             WHERE d.id = ?'
+        );
+        $driverRow->execute([$me['id']]);
+        $driverData = $driverRow->fetch(PDO::FETCH_ASSOC);
+
+        if (!$driverData || !$driverData['vehicle_type_id']) {
+            echo utilities::apiMessage('No vehicle assigned.', 200, ['bookings' => []]);
+            return;
+        }
+        $vtId = $driverData['vehicle_type_id'];
+
+        // Booking IDs this driver already rejected or cancelled
+        $rejStmt = $this->db->prepare(
+            "SELECT DISTINCT booking_id FROM booking_status_history
+             WHERE changed_by_id = ? AND changed_by_role = 'driver'
+               AND to_status IN ('rejected','cancelled')"
+        );
+        $rejStmt->execute([$me['id']]);
+        $rejectedIds = array_column($rejStmt->fetchAll(PDO::FETCH_ASSOC), 'booking_id');
+
+        $excludeSql = '';
+        $params = [$vtId];
+        if ($rejectedIds) {
+            $placeholders = implode(',', array_fill(0, count($rejectedIds), '?'));
+            $excludeSql   = "AND b.id NOT IN ($placeholders)";
+            $params       = array_merge($params, $rejectedIds);
+        }
+
+        $stmt = $this->db->prepare("
+            SELECT b.id, b.booking_ref, b.booking_code, b.booking_type,
+                   b.pickup_address, b.destination_address,
+                   b.pickup_lat, b.pickup_lng,
+                   b.destination_lat, b.destination_lng,
+                   b.estimated_fare, b.payment_method,
+                   b.distance_km, b.created_at,
+                   vt.name AS vehicle_type_name,
+                   COALESCE(u.name, b.customer_name) AS customer_name
+            FROM bookings b
+            JOIN vehicle_types vt ON vt.id = b.vehicle_type_id
+            LEFT JOIN users u ON u.id = b.customer_id
+            WHERE b.vehicle_type_id = ?
+              AND b.status = 'pending'
+              AND b.driver_id IS NULL
+              $excludeSql
+            ORDER BY b.created_at DESC
+            LIMIT 50
+        ");
+        $stmt->execute($params);
+        $bookings = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        echo utilities::apiMessage('Available bookings retrieved.', 200, ['bookings' => $bookings]);
+    }
+
+    // ── POST /driver/jobs/:id/self-assign ─────────────────────────────────────
+    /**
+     * Driver claims an available pending booking for themselves.
+     * Uses an UPDATE with status = 'pending' AND driver_id IS NULL guard
+     * so two drivers can't claim the same job simultaneously.
+     */
+    public function selfAssign(string $id): void
+    {
+        $me = BaseController::$authDriver;
+
+        if (!(int)($me['is_online'] ?? 0)) {
+            echo utilities::apiMessage('Go online before accepting a job.', 400);
+            return;
+        }
+
+        // Block if driver already has an active trip
+        $activeStmt = $this->db->prepare(
+            "SELECT id FROM bookings
+             WHERE driver_id = ?
+               AND status IN ('assigned','accepted','arrived','picked_up','in_progress','payment_pending')
+             LIMIT 1"
+        );
+        $activeStmt->execute([$me['id']]);
+        if ($activeStmt->fetch()) {
+            echo utilities::apiMessage('Complete your current trip before taking a new one.', 400);
+            return;
+        }
+
+        // Verify booking exists, is pending, unassigned, and matches vehicle type
+        $driverRow = $this->db->prepare(
+            'SELECT v.vehicle_type_id FROM drivers d
+             LEFT JOIN vehicles v ON v.id = d.vehicle_id
+             WHERE d.id = ?'
+        );
+        $driverRow->execute([$me['id']]);
+        $driverData = $driverRow->fetch(PDO::FETCH_ASSOC);
+
+        if (!$driverData || !$driverData['vehicle_type_id']) {
+            echo utilities::apiMessage('No vehicle assigned to your account.', 400);
+            return;
+        }
+
+        $bookingStmt = $this->db->prepare(
+            'SELECT * FROM bookings WHERE id = ? AND status = ? AND driver_id IS NULL AND vehicle_type_id = ?'
+        );
+        $bookingStmt->execute([$id, 'pending', $driverData['vehicle_type_id']]);
+        $booking = $bookingStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$booking) {
+            echo utilities::apiMessage('Booking is no longer available.', 404);
+            return;
+        }
+
+        // Atomic claim — rowCount = 0 means another driver got there first
+        $claimStmt = $this->db->prepare(
+            "UPDATE bookings SET status = 'assigned', driver_id = ?
+             WHERE id = ? AND status = 'pending' AND driver_id IS NULL"
+        );
+        $claimStmt->execute([$me['id'], $id]);
+
+        if ($claimStmt->rowCount() === 0) {
+            echo utilities::apiMessage('Booking was just taken by another driver.', 409);
+            return;
+        }
+
+        // Log history
+        $this->recordStatusChange($id, 'pending', 'assigned', 'driver', $me['id']);
+
+        // Notify customer
+        $this->notify(
+            'customer', $booking['customer_id'],
+            'Driver Found',
+            'A driver has accepted your booking and is on the way.',
+            'driver_assigned', $id
+        );
+
+        // Return the full job so the app can transition immediately
+        $jobStmt = $this->db->prepare("
+            SELECT b.*, vt.name AS vehicle_type_name,
+                   COALESCE(u.name, b.customer_name) AS customer_name,
+                   COALESCE(u.phone, b.customer_phone) AS customer_phone
+            FROM bookings b
+            JOIN vehicle_types vt ON vt.id = b.vehicle_type_id
+            LEFT JOIN users u ON u.id = b.customer_id
+            WHERE b.id = ?
+        ");
+        $jobStmt->execute([$id]);
+        $job = $jobStmt->fetch(PDO::FETCH_ASSOC);
+        $job['stops'] = $this->getStops($id);
+
+        echo utilities::apiMessage('Job accepted.', 200, ['job' => $job]);
     }
 
     // ── Private helper ────────────────────────────────────────────────────────

@@ -77,12 +77,14 @@ class DriverAuthRepository {
     required String name,
     String? email,
     String? emailToken,
+    String? fcmToken,
   }) async {
     final body = <String, dynamic>{
       'name': name.trim(),
       'email': email?.trim() ?? '',
     };
     if (emailToken != null && emailToken.isNotEmpty) body['email_token'] = emailToken;
+    if (fcmToken   != null && fcmToken.isNotEmpty)   body['fcm_token']   = fcmToken;
     final data = await _client.put<Map<String, dynamic>>(
       ApiEndpoints.driverUpdateProfile,
       body: body,
@@ -167,6 +169,28 @@ class DriverAuthRepository {
         body: {'fcm_token': token},
       );
     } catch (_) {}
+  }
+
+  Future<void> forgotPassword(String email) async {
+    await _client.post<Map<String, dynamic>>(
+      ApiEndpoints.driverForgotPassword,
+      body: {'email': email},
+    );
+  }
+
+  Future<void> resetPassword({
+    required String email,
+    required String code,
+    required String password,
+  }) async {
+    await _client.post<Map<String, dynamic>>(
+      ApiEndpoints.driverResetPassword,
+      body: {
+        'email':    email,
+        'code':     code,
+        'password': _encodePassword(password),
+      },
+    );
   }
 
   Future<void> logout() async {

@@ -221,6 +221,12 @@ class Webhook extends BaseController
 HTML;
     }
 
+    // ── Public wrapper so Payments controller can call processPayment ─────────
+    public function processPaymentPublic(string $ref, bool $success, string $provRef, array $raw, string $provider): void
+    {
+        $this->processPayment($ref, $success, $provRef, $raw, $provider);
+    }
+
     // ── Shared payment processing ─────────────────────────────────────────────
     private function processPayment(string $ref, bool $success, string $provRef, array $raw, string $provider): void
     {

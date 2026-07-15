@@ -3,6 +3,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../config/router.dart';
+import 'notification_prefs_service.dart';
 
 @pragma('vm:entry-point')
 Future<void> _fcmBackgroundHandler(RemoteMessage message) async {
@@ -63,6 +64,7 @@ class DriverNotificationService {
         _pendingExtra = extra;
       }
 
+      await DriverNotificationPrefsService.instance.init();
       _initialized = true;
     } catch (e) {
       debugPrint('[FCM] DriverNotificationService.initialize() failed: $e');
@@ -72,7 +74,36 @@ class DriverNotificationService {
   Future<String?> getToken() async {
     if (!_initialized) return null;
     try {
+      final status = await FirebaseMessaging.instance.getNotificationSettings();
+      if (status.authorizationStatus == AuthorizationStatus.denied) return null;
       return await FirebaseMessaging.instance.getToken();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<bool> hasPermission() async {
+    if (!_initialized) return false;
+    try {
+      final settings = await FirebaseMessaging.instance.getNotificationSettings();
+      return settings.authorizationStatus == AuthorizationStatus.authorized ||
+             settings.authorizationStatus == AuthorizationStatus.provisional;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<String?> requestPermissionAndGetToken() async {
+    if (!_initialized) return null;
+    try {
+      final result = await FirebaseMessaging.instance.requestPermission(
+        alert: true, badge: true, sound: true,
+      );
+      if (result.authorizationStatus == AuthorizationStatus.authorized ||
+          result.authorizationStatus == AuthorizationStatus.provisional) {
+        return await FirebaseMessaging.instance.getToken();
+      }
+      return null;
     } catch (_) {
       return null;
     }
@@ -103,8 +134,14 @@ class DriverNotificationService {
   }
 
   void _showLocal(RemoteMessage message) {
+    final type      = message.data['type']?.toString() ?? '';
+    final bookingId = message.data['booking_id']?.toString() ?? '';
+    if (type == 'early_end_request' && bookingId.isNotEmpty) {
+      onEarlyEndRequest?.call(bookingId);
+    }
     final n = message.notification;
     if (n == null) return;
+    if (!DriverNotificationPrefsService.instance.isTypeEnabled(type)) return;
     _localNotifications.show(
       message.hashCode,
       n.title,
@@ -135,11 +172,16 @@ class DriverNotificationService {
   (String?, String?) _routeFor(Map<String, dynamic> data) {
     final type = data['type']?.toString() ?? '';
     return switch (type) {
-      'trip_interest_request' => (AppRoutes.home, null),
-      'booking_cancelled'     => (AppRoutes.home, null),
-      'payment_received'      => (AppRoutes.home, null),
-      'driver_rating'         => (AppRoutes.home, null),
-      _                       => (null,           null),
+      'trip_interest_request' => (AppRoutes.home,        null),
+      'booking_cancelled'     => (AppRoutes.home,        null),
+      'payment_received'      => (AppRoutes.home,        null),
+      'driver_rating'         => (AppRoutes.home,        null),
+      'new_message'           => (AppRoutes.chatHistory, null),
+      'early_end_request'     => (AppRoutes.home,        null),
+      _                       => (null,                  null),
     };
   }
+
+  /// Callback set by DriverHomeScreen to receive early-end request notifications.
+  void Function(String bookingId)? onEarlyEndRequest;
 }

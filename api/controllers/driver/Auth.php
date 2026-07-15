@@ -10,6 +10,7 @@ class Auth extends BaseController
     {
         parent::__construct();
         $this->mailer = new Mymailer();
+        Mymailer::setDb($this->db);
     }
 
     private function driverAuthMode(): string
@@ -135,6 +136,26 @@ class Auth extends BaseController
 
         $this->logActivity('driver', $driver['id'], 'login');
 
+        // Save FCM token if supplied at login time
+        $fcmToken = $this->str('fcm_token');
+        if ($fcmToken !== '') {
+            $this->update('drivers', ['fcm_token' => $fcmToken], "id = '{$driver['id']}'");
+            $driver['fcm_token'] = $fcmToken;
+            error_log('[FCM] driver token registered for driver ' . $driver['id']);
+        } else {
+            error_log('[FCM] driver login without fcm_token — driver ' . $driver['id'] . ' (' . ($driver['phone'] ?? '') . ')');
+        }
+
+        // Login notification email
+        if (!empty($driver['email']) && $this->setting('email_notifications_enabled', '1') === '1') {
+            $this->sendTemplateEmail('driver_login', $driver['email'], $driver['name'], [
+                '{{driver_name}}' => $driver['name'],
+                '{{login_time}}' => date('D, d M Y \a\t g:i A'),
+                '{{device}}'     => substr($_SERVER['HTTP_USER_AGENT'] ?? 'Unknown device', 0, 80),
+                '{{ip}}'         => $_SERVER['REMOTE_ADDR'] ?? 'Unknown',
+            ]);
+        }
+
         echo utilities::apiMessage('Login successful.', 200, $this->driverPayload($driver, [
             'token' => $token,
             'expires_at' => $expiresAt,
@@ -241,11 +262,14 @@ class Auth extends BaseController
             return;
         }
 
+        $contactKey   = 'driver:' . $contact;
+        $rateLimitErr = $this->checkOtpSendRateLimit($contactKey);
+        if ($rateLimitErr) { echo $rateLimitErr; return; }
+
         $otp     = str_pad((string) mt_rand(0, 999999), 6, '0', STR_PAD_LEFT);
         $hash    = password_hash($otp, PASSWORD_DEFAULT);
         $expires = date('Y-m-d H:i:s', time() + 600);
 
-        $contactKey = 'driver:' . $contact;
         $this->delete('otp_requests', 'contact = ? AND used = 0', [$contactKey]);
 
         $this->quick_insert('otp_requests', [
@@ -262,6 +286,7 @@ class Auth extends BaseController
             $this->mailer->sendOtpEmail($contact, $otp, $appName);
         } else {
             require_once ROOT . 'functions/sms.php';
+            Sms::setDb($this->db);
             Sms::send($contact, "Your $appName Verification code is $otp. It expires in 10 minutes.");
         }
 
@@ -302,9 +327,12 @@ class Auth extends BaseController
             return;
         }
 
+        // Dev shortcut only — completely disabled in production (APP_ENV=production).
         $bypass = $devMode && $otp === '123456';
 
-        if (!$bypass) {
+        if ($bypass) {
+            // Dev-only path — never active in production
+        } else {
             $contactKey = 'driver:' . $contact;
             $stmt = $this->db->prepare(
                 "SELECT * FROM otp_requests
@@ -314,10 +342,13 @@ class Auth extends BaseController
             $stmt->execute([$contactKey]);
             $otpRow = $stmt->fetch(PDO::FETCH_ASSOC);
 
-            if (!$otpRow || !password_verify($otp, $otpRow['otp_hash'])) {
+            if (!$otpRow) {
                 echo utilities::apiMessage('Invalid or expired code. Please try again.', 400);
                 return;
             }
+
+            $bruteErr = $this->verifyOtpWithBruteForceGuard($otpRow, $otp);
+            if ($bruteErr) { echo $bruteErr; return; }
 
             $this->update('otp_requests', ['used' => 1], "id = '{$otpRow['id']}'");
         }
@@ -412,7 +443,10 @@ class Auth extends BaseController
             }
         }
 
-        if ($this->str('fcm_token') !== '') $fields['fcm_token'] = $this->str('fcm_token');
+        if (isset($_POST['fcm_token'])) {
+            $tok = $this->str('fcm_token');
+            $fields['fcm_token'] = ($tok === 'disabled') ? null : $tok;
+        }
 
         if (empty($fields)) {
             echo utilities::apiMessage('No fields to update.', 400);
@@ -518,6 +552,75 @@ class Auth extends BaseController
         }
 
         echo utilities::apiMessage('Contact verified.', 200, ['verification_token' => $token]);
+    }
+
+    // ── POST /driver/auth/forgot-password ────────────────────────────────────
+    public function forgotPassword(): void
+    {
+        $err = $this->requireFields(['email']);
+        if ($err) { echo $err; return; }
+
+        $email  = $this->str('email');
+        $driver = $this->getall('drivers', 'email = ?', [$email]);
+
+        // Always 200 to avoid account enumeration
+        if (!is_array($driver)) {
+            echo utilities::apiMessage('If that email is registered you will receive a reset code.', 200);
+            return;
+        }
+
+        $code = mt_rand(100000, 999999);
+        $this->update('drivers', [
+            'reset_code' => password_hash((string) $code, PASSWORD_DEFAULT),
+        ], "id = '{$driver['id']}'");
+
+        $devMode = defined('APP_ENV') ? (APP_ENV !== 'production') : true;
+        $extra   = $devMode ? ['_dev_code' => $code] : [];
+
+        $this->sendTemplateEmail('driver_password_reset', $email, $driver['name'], [
+            '{{driver_name}}' => $driver['name'],
+            '{{code}}'        => (string) $code,
+        ]);
+
+        echo utilities::apiMessage('If that email is registered you will receive a reset code.', 200, $extra);
+    }
+
+    // ── POST /driver/auth/reset-password ─────────────────────────────────────
+    public function resetPassword(): void
+    {
+        $err = $this->requireFields(['email', 'code', 'password']);
+        if ($err) { echo $err; return; }
+
+        $email   = $this->str('email');
+        $code    = trim((string) $this->input('code', ''));
+        $passRaw = $this->input('password', '');
+
+        $decoded = base64_decode($passRaw, true);
+        if ($decoded === false || strlen(trim($decoded)) < 6) {
+            echo utilities::apiMessage('Password must be at least 6 characters.', 422);
+            return;
+        }
+
+        $driver = $this->getall('drivers', 'email = ?', [$email]);
+        if (!is_array($driver) || empty($driver['reset_code'])) {
+            echo utilities::apiMessage('Invalid request.', 400);
+            return;
+        }
+
+        if (!password_verify($code, $driver['reset_code'])) {
+            echo utilities::apiMessage('Invalid or expired reset code.', 400);
+            return;
+        }
+
+        $this->update('drivers', [
+            'password'   => password_hash($decoded, PASSWORD_DEFAULT),
+            'reset_code' => null,
+        ], "id = '{$driver['id']}'");
+
+        // Invalidate all active sessions
+        $this->delete('driver_sessions', 'driver_id = ?', [$driver['id']]);
+
+        echo utilities::apiMessage('Password updated successfully.', 200);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

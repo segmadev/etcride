@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:smart_auth/smart_auth.dart';
 import '../../core/config/router.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
@@ -27,21 +28,44 @@ class _DriverOtpScreenState extends ConsumerState<DriverOtpScreen> {
   bool    _verifying = false;
   bool    _resending = false;
   String? _error;
-  int     _resendCountdown = 60;
+  late int _resendCountdown;
   Timer?  _timer;
 
   bool get _canSubmit => _otp.length == 6;
   String get _formattedResend => '00:${_resendCountdown.toString().padLeft(2, '0')}';
 
+  int get _resendSecs => widget.contact.contains('@') ? 180 : 480;
+
   @override
   void initState() {
     super.initState();
+    _resendCountdown = _resendSecs;
     _startTimer();
+    if (!widget.contact.contains('@')) {
+      _listenForSms();
+    }
+  }
+
+  Future<void> _listenForSms() async {
+    try {
+      final result = await SmartAuth.instance.getSmsWithUserConsentApi();
+      if (!mounted || !result.hasData) return;
+      final digits = result.data!.code;
+      if (digits != null && digits.length == 6) {
+        for (var i = 0; i < 6; i++) {
+          _ctrls[i].text = digits[i];
+        }
+        setState(() {});
+        await _verify();
+      }
+    } catch (_) {
+      // SMS autofill is best-effort — ignore errors
+    }
   }
 
   void _startTimer() {
     _timer?.cancel();
-    setState(() => _resendCountdown = 60);
+    setState(() => _resendCountdown = _resendSecs);
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (_resendCountdown <= 1) {
         _timer?.cancel();

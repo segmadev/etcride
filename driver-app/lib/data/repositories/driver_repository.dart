@@ -120,10 +120,19 @@ class DriverRepository {
     );
   }
 
-  Future<void> completeTrip(String id, {double? distanceKm, double? durationMinutes}) async {
+  Future<void> completeTrip(String id, {
+    double? distanceKm,
+    double? durationMinutes,
+    double? lat,
+    double? lng,
+    double? gpsAccuracyM,
+  }) async {
     final body = <String, dynamic>{};
-    if (distanceKm != null) body['distance_km'] = distanceKm;
+    if (distanceKm != null)    body['distance_km']     = distanceKm;
     if (durationMinutes != null) body['duration_minutes'] = durationMinutes;
+    if (lat != null)           body['lat']              = lat;
+    if (lng != null)           body['lng']              = lng;
+    if (gpsAccuracyM != null)  body['gps_accuracy_m']  = gpsAccuracyM;
     await _client.post<Map<String, dynamic>>(
       ApiEndpoints.completeJob(id),
       body: body,
@@ -144,6 +153,33 @@ class DriverRepository {
       ApiEndpoints.reachStop(jobId, stopId),
       body: {},
     );
+  }
+
+  Future<void> acceptEarlyEnd(String id) async {
+    await _client.post<void>(ApiEndpoints.acceptEarlyEnd(id), body: {});
+  }
+
+  Future<void> rejectEarlyEnd(String id) async {
+    await _client.post<void>(ApiEndpoints.rejectEarlyEnd(id), body: {});
+  }
+
+  // ── Job marketplace ───────────────────────────────────────────────────────
+
+  Future<List<JobModel>> getAvailableJobs() async {
+    final res = await _client.get<Map<String, dynamic>>(ApiEndpoints.availableJobs);
+    final list = res?['bookings'];
+    if (list is! List) return [];
+    return list.whereType<Map<String, dynamic>>().map(JobModel.fromJson).toList();
+  }
+
+  Future<JobModel> selfAssignJob(String id) async {
+    final res = await _client.post<Map<String, dynamic>>(
+      ApiEndpoints.selfAssignJob(id),
+      body: {},
+    );
+    final job = res?['job'];
+    if (job is Map<String, dynamic>) return JobModel.fromJson(job);
+    throw const ApiException('Failed to assign job');
   }
 
   // ── Chat ──────────────────────────────────────────────────────────────────

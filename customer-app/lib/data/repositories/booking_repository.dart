@@ -261,6 +261,15 @@ class BookingRepository {
     return data ?? {};
   }
 
+  /// Calls the backend to verify the payment with the provider live and update the DB.
+  Future<Map<String, dynamic>> syncPaymentStatus(String bookingId) async {
+    final data = await _client.post<Map<String, dynamic>>(
+      ApiEndpoints.syncPayment(bookingId),
+      body: {},
+    );
+    return data ?? {};
+  }
+
   Future<void> updatePaymentMethod(String bookingId, String paymentMethod) async {
     await _client.put<Map<String, dynamic>>(
       ApiEndpoints.paymentMethod(bookingId),
@@ -366,5 +375,9 @@ class BookingRepository {
       params: {if (bookingType != null) 'type': bookingType},
     );
     return data ?? const [];
+  }
+
+  Future<void> requestEarlyEnd(String bookingId) async {
+    await _client.post<void>(ApiEndpoints.requestEarlyEnd(bookingId));
   }
 }

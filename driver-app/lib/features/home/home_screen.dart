@@ -144,6 +144,7 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
           _HomeTab(onMenuTap: _openDrawer),
           _TabWithHeader(onMenuTap: _openDrawer, child: const _EarningsTab()),
           _TabWithHeader(onMenuTap: _openDrawer, child: const _HistoryTab()),
+          _TabWithHeader(onMenuTap: _openDrawer, child: const _AvailableJobsTab()),
         ],
       ),
       bottomNavigationBar: hideBottomNav
@@ -243,7 +244,7 @@ class _BottomNav extends StatelessWidget {
           ),
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final itemWidth = constraints.maxWidth / 3;
+              final itemWidth = constraints.maxWidth / 4;
               final indicatorWidth = itemWidth - 22;
               final indicatorLeft =
                   (itemWidth * current) + ((itemWidth - indicatorWidth) / 2);
@@ -296,6 +297,16 @@ class _BottomNav extends StatelessWidget {
                           iconSize: const Size(22, 22),
                         ),
                       ),
+                      Expanded(
+                        child: _NavItem(
+                          icon: Icons.work_outline_rounded,
+                          label: 'Jobs',
+                          index: 3,
+                          current: current,
+                          onTap: onTap,
+                          iconSize: const Size(22, 22),
+                        ),
+                      ),
                     ],
                   ),
                 ],
@@ -310,14 +321,16 @@ class _BottomNav extends StatelessWidget {
 
 class _NavItem extends StatelessWidget {
   const _NavItem({
-    required this.assetPath,
+    this.assetPath,
+    this.icon,
     required this.label,
     required this.index,
     required this.current,
     required this.onTap,
     required this.iconSize,
-  });
-  final String assetPath;
+  }) : assert(assetPath != null || icon != null);
+  final String? assetPath;
+  final IconData? icon;
   final String label;
   final int index;
   final int current;
@@ -350,16 +363,17 @@ class _NavItem extends StatelessWidget {
                 curve: Curves.easeInOutCubicEmphasized,
                 tween: ColorTween(end: color),
                 builder: (context, animatedColor, child) {
+                  final c = animatedColor ?? color;
+                  if (icon != null) {
+                    return Icon(icon, color: c, size: iconSize.width);
+                  }
                   return SizedBox(
                     width: iconSize.width,
                     height: iconSize.height,
                     child: SvgPicture.asset(
-                      assetPath,
+                      assetPath!,
                       fit: BoxFit.contain,
-                      colorFilter: ColorFilter.mode(
-                        animatedColor ?? color,
-                        BlendMode.srcIn,
-                      ),
+                      colorFilter: ColorFilter.mode(c, BlendMode.srcIn),
                     ),
                   );
                 },
@@ -1107,6 +1121,9 @@ class _HomeTabState extends ConsumerState<_HomeTab> {
   /// True while the auto-arrive dialog is showing (prevents duplicate dialogs).
   bool _autoArrivePending = false;
 
+  /// True while the early-end dialog is showing (prevents duplicates).
+  bool _earlyEndPending = false;
+
   /// IDs of jobs the driver was actively working — used to detect
   /// customer-initiated cancellation when the job disappears from active list.
   final Set<String> _trackedActiveJobIds = {};
@@ -1134,6 +1151,9 @@ class _HomeTabState extends ConsumerState<_HomeTab> {
     });
     if (ref.read(driverOnlineProvider)) _startTracking();
     LocationService.instance.positionNotifier.addListener(_checkAutoArrive);
+    DriverNotificationService.instance.onEarlyEndRequest = (bookingId) {
+      if (mounted && !_earlyEndPending) _showEarlyEndDialog(bookingId);
+    };
   }
 
   @override
@@ -1143,6 +1163,7 @@ class _HomeTabState extends ConsumerState<_HomeTab> {
     _jobPollTimer?.cancel();
     LocationService.instance.stop();
     _newRidePlayer.dispose();
+    DriverNotificationService.instance.onEarlyEndRequest = null;
     super.dispose();
   }
 
@@ -1228,6 +1249,36 @@ class _HomeTabState extends ConsumerState<_HomeTab> {
       _tripDistanceKm += deltaM / 1000.0;
     }
     _lastTripPosition = pos;
+  }
+
+  void _showEarlyEndDialog(String bookingId) {
+    if (!mounted) return;
+    _earlyEndPending = true;
+    showModalBottomSheet<bool>(
+      context: context,
+      isDismissible: false,
+      enableDrag: false,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _EarlyEndSheet(
+        onAccept: () => Navigator.pop(ctx, true),
+        onReject: () => Navigator.pop(ctx, false),
+      ),
+    ).then((accepted) async {
+      _earlyEndPending = false;
+      if (!mounted) return;
+      final repo = ref.read(driverRepositoryProvider);
+      try {
+        if (accepted == true) {
+          await repo.acceptEarlyEnd(bookingId);
+          if (mounted) _showInfoSnack('Early end accepted. Complete the trip when ready.');
+        } else {
+          await repo.rejectEarlyEnd(bookingId);
+          if (mounted) _showInfoSnack('Early end rejected.');
+        }
+      } catch (e) {
+        if (mounted) _showInfoSnack('Failed: $e');
+      }
+    });
   }
 
   void _showAutoArriveDialog(JobModel job) {
@@ -1712,10 +1763,14 @@ class _HomeTabState extends ConsumerState<_HomeTab> {
                   final durationMin = _tripStartTime != null
                       ? DateTime.now().difference(_tripStartTime!).inSeconds / 60.0
                       : null;
+                  final pos = LocationService.instance.lastPosition;
                   return _doJobAction(() => repo.completeTrip(
                     job.id,
                     distanceKm: _tripDistanceKm > 0.1 ? _tripDistanceKm : null,
                     durationMinutes: (durationMin != null && durationMin > 0.5) ? durationMin : null,
+                    lat: pos?.latitude,
+                    lng: pos?.longitude,
+                    gpsAccuracyM: pos?.accuracy,
                   ));
                 }
               : null,
@@ -6383,4 +6438,453 @@ class _ReasonTile extends StatelessWidget {
       ),
     ),
   );
+}
+
+// ── Available Jobs Tab ────────────────────────────────────────────────────────
+
+class _AvailableJobsTab extends ConsumerStatefulWidget {
+  const _AvailableJobsTab();
+
+  @override
+  ConsumerState<_AvailableJobsTab> createState() => _AvailableJobsTabState();
+}
+
+class _AvailableJobsTabState extends ConsumerState<_AvailableJobsTab> {
+  bool _taking = false;
+
+  Future<void> _takeJob(JobModel job) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Take This Job?',
+            style: TextStyle(fontWeight: FontWeight.w700)),
+        content: Text(
+          '${job.pickupAddress}\n→ ${job.destinationAddress}',
+          style: const TextStyle(fontSize: 14, color: Color(0xFF64748B), height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _kAmber,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Accept Job'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _taking = true);
+    try {
+      await ref.read(driverRepositoryProvider).selfAssignJob(job.id);
+      ref.invalidate(driverJobsProvider);
+      ref.invalidate(availableJobsProvider);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Job accepted — check your active jobs.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _taking = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isOnline  = ref.watch(driverOnlineProvider);
+    final jobsAsync = ref.watch(availableJobsProvider);
+
+    if (!isOnline) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.wifi_off_rounded, size: 52, color: Color(0xFFCBD5E1)),
+            const SizedBox(height: 16),
+            const Text('You\'re offline',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 17, color: Color(0xFF1E293B))),
+            const SizedBox(height: 6),
+            const Text('Go online to browse available jobs',
+                style: TextStyle(fontSize: 14, color: Color(0xFF64748B))),
+          ],
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      color: _kAmber,
+      onRefresh: () async => ref.invalidate(availableJobsProvider),
+      child: jobsAsync.when(
+        loading: () => const Center(child: CircularProgressIndicator(color: _kAmber)),
+        error: (e, _) => Center(
+          child: Text('Error: $e', style: const TextStyle(color: Colors.red)),
+        ),
+        data: (jobs) {
+          if (jobs.isEmpty) {
+            return ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              children: const [
+                SizedBox(height: 140),
+                Center(
+                  child: Column(
+                    children: [
+                      Icon(Icons.work_off_outlined, size: 52, color: Color(0xFFCBD5E1)),
+                      SizedBox(height: 16),
+                      Text('No available jobs right now',
+                          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 17, color: Color(0xFF1E293B))),
+                      SizedBox(height: 6),
+                      Text('Pull down to refresh',
+                          style: TextStyle(fontSize: 14, color: Color(0xFF64748B))),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          }
+
+          return Stack(
+            children: [
+              ListView.separated(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
+                itemCount: jobs.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 10),
+                itemBuilder: (ctx, i) => _AvailableJobCard(
+                  job: jobs[i],
+                  onTake: _taking ? null : () => _takeJob(jobs[i]),
+                ),
+              ),
+              if (_taking)
+                const Positioned.fill(
+                  child: ColoredBox(
+                    color: Color(0x55FFFFFF),
+                    child: Center(child: CircularProgressIndicator(color: _kAmber)),
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _AvailableJobCard extends StatelessWidget {
+  const _AvailableJobCard({required this.job, required this.onTake});
+  final JobModel job;
+  final VoidCallback? onTake;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDelivery = job.bookingType == 'delivery';
+    final fareText   = AppFormatters.naira(job.estimatedFare);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header row
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _kAmber.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    isDelivery ? 'Delivery' : 'Ride',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: _kAmber,
+                    ),
+                  ),
+                ),
+                if (job.vehicleTypeName != null) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      job.vehicleTypeName!,
+                      style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                    ),
+                  ),
+                ],
+                const Spacer(),
+                Text(
+                  fareText,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF1E293B),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+
+            // Route
+            _RouteRow(
+              pickup: job.pickupAddress,
+              destination: job.destinationAddress,
+            ),
+
+            if (job.distanceKm != null) ...[
+              const SizedBox(height: 10),
+              Text(
+                '${job.distanceKm!.toStringAsFixed(1)} km',
+                style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+              ),
+            ],
+
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: onTake,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _kAmber,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: const Text(
+                  'Take This Job',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RouteRow extends StatelessWidget {
+  const _RouteRow({required this.pickup, required this.destination});
+  final String pickup;
+  final String destination;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Column(
+          children: [
+            Container(
+              width: 10, height: 10,
+              decoration: BoxDecoration(
+                color: const Color(0xFF22C55E),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+                boxShadow: [BoxShadow(color: const Color(0xFF22C55E).withValues(alpha: 0.4), blurRadius: 4)],
+              ),
+            ),
+            Container(width: 2, height: 28, color: const Color(0xFFE2E8F0)),
+            Container(
+              width: 10, height: 10,
+              decoration: BoxDecoration(
+                color: AppColors.error,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+                boxShadow: [BoxShadow(color: AppColors.error.withValues(alpha: 0.4), blurRadius: 4)],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                pickup,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Color(0xFF1E293B)),
+              ),
+              const SizedBox(height: 18),
+              Text(
+                destination,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Color(0xFF1E293B)),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Swipe-to-accept sheet for early end requests ──────────────────────────────
+
+class _EarlyEndSheet extends StatefulWidget {
+  const _EarlyEndSheet({required this.onAccept, required this.onReject});
+  final VoidCallback onAccept;
+  final VoidCallback onReject;
+
+  @override
+  State<_EarlyEndSheet> createState() => _EarlyEndSheetState();
+}
+
+class _EarlyEndSheetState extends State<_EarlyEndSheet> {
+  double _dragFraction = 0.0;
+  bool _accepted = false;
+
+  static const double _trackH = 60.0;
+  static const double _thumbW = 64.0;
+  static const double _trackPadH = 6.0;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 36),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 40, height: 4,
+            decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)),
+          ),
+          const SizedBox(height: 20),
+          Container(
+            width: 56, height: 56,
+            decoration: BoxDecoration(
+              color: Colors.orange.withOpacity(0.12),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.directions_car_rounded, color: Colors.orange, size: 28),
+          ),
+          const SizedBox(height: 14),
+          const Text(
+            'Early End Request',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF1E293B)),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'The customer wants to end the trip early.\nSlide to accept or tap Reject to decline.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 14, color: Color(0xFF64748B), height: 1.5),
+          ),
+          const SizedBox(height: 24),
+          LayoutBuilder(builder: (ctx, constraints) {
+            final trackW = constraints.maxWidth;
+            final maxDrag = trackW - _thumbW - _trackPadH * 2;
+            final thumbLeft = _dragFraction * maxDrag;
+            final progressColor = Color.lerp(
+              const Color(0xFF22C55E).withOpacity(0.18),
+              const Color(0xFF22C55E),
+              _dragFraction,
+            )!;
+
+            return GestureDetector(
+              onHorizontalDragUpdate: (d) {
+                if (_accepted) return;
+                setState(() {
+                  _dragFraction = ((_dragFraction * maxDrag + d.delta.dx) / maxDrag).clamp(0.0, 1.0);
+                });
+              },
+              onHorizontalDragEnd: (_) {
+                if (_dragFraction >= 0.9 && !_accepted) {
+                  setState(() { _dragFraction = 1.0; _accepted = true; });
+                  Future.delayed(const Duration(milliseconds: 200), widget.onAccept);
+                } else {
+                  setState(() => _dragFraction = 0.0);
+                }
+              },
+              child: Container(
+                height: _trackH,
+                width: trackW,
+                decoration: BoxDecoration(
+                  color: progressColor,
+                  borderRadius: BorderRadius.circular(_trackH / 2),
+                  border: Border.all(color: const Color(0xFF22C55E).withOpacity(0.4)),
+                ),
+                child: Stack(
+                  alignment: Alignment.centerLeft,
+                  children: [
+                    Center(
+                      child: Text(
+                        _accepted ? 'Accepted!' : 'Slide to Accept',
+                        style: TextStyle(
+                          color: const Color(0xFF16A34A).withOpacity(0.8),
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      left: _trackPadH + thumbLeft,
+                      child: Container(
+                        width: _thumbW,
+                        height: _trackH - _trackPadH * 2,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF22C55E),
+                          borderRadius: BorderRadius.circular((_trackH - _trackPadH * 2) / 2),
+                          boxShadow: [BoxShadow(color: const Color(0xFF22C55E).withOpacity(0.4), blurRadius: 8)],
+                        ),
+                        child: Icon(
+                          _accepted ? Icons.check_rounded : Icons.chevron_right_rounded,
+                          color: Colors.white,
+                          size: 28,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
+          const SizedBox(height: 12),
+          TextButton(
+            onPressed: widget.onReject,
+            child: const Text(
+              'Reject',
+              style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600, fontSize: 15),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

@@ -3,6 +3,12 @@ RewriteCond %{THE_REQUEST} /([^.]+).php [NC]
 RewriteRule ^ /%1 [NC,L,R]
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteRule ^([^.]+)$ $1.php [NC,L]
+
+# Clean URLs for HTML pages: /privacy-policy → privacy-policy.html, /terms → terms.html
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_FILENAME}.html -f
+RewriteRule ^([^\.]+)$ $1.html [NC,L]
 <FilesMatch "\.(txt|json)$">
      Order Allow,Deny
     Deny from all

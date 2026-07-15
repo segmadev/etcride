@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -43,6 +44,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     _checkBiometricPrompt();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) NotificationService.instance.consumePending(context);
+      _checkNotificationPermission();
     });
   }
 
@@ -58,6 +60,109 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         _showBiometricPrompt();
       });
     }
+  }
+
+  Future<void> _checkNotificationPermission() async {
+    final hasPermission = await NotificationService.instance.hasPermission();
+    final token = hasPermission ? await NotificationService.instance.getToken() : null;
+    final needsPrompt = !hasPermission || (token == null || token.isEmpty);
+    if (!needsPrompt || !mounted) return;
+
+    // Snooze logic: don't show more than once every 7 days,
+    // and stop entirely after the user dismisses 3 times.
+    final prefs = await SharedPreferences.getInstance();
+    final dismissCount = prefs.getInt('notif_prompt_dismiss_count') ?? 0;
+    if (dismissCount >= 3) return;
+    final lastShownMs = prefs.getInt('notif_prompt_last_shown') ?? 0;
+    final daysSinceLast = (DateTime.now().millisecondsSinceEpoch - lastShownMs) / 86400000;
+    if (lastShownMs > 0 && daysSinceLast < 7) return;
+
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted) _showNotificationPrompt();
+    });
+  }
+
+  void _showNotificationPrompt() {
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setInt('notif_prompt_last_shown', DateTime.now().millisecondsSinceEpoch);
+    });
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Container(
+              width: 64, height: 64,
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.notifications_outlined, color: AppColors.primary, size: 32),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Stay in the loop',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Color(0xFF1E293B)),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Enable notifications to get real-time updates on your driver, trip status, and payment confirmations.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 14, color: Color(0xFF64748B), height: 1.5),
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () async {
+                  Navigator.pop(ctx);
+                  final token = await NotificationService.instance.requestPermissionAndGetToken();
+                  if (token != null && token.isNotEmpty) {
+                    // ignore: unawaited_futures
+                    ref.read(authRepositoryProvider).updateProfile(fcmToken: token);
+                    final prefs = await SharedPreferences.getInstance();
+                    await prefs.remove('notif_prompt_dismiss_count');
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: const Text('Enable Notifications', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                SharedPreferences.getInstance().then((prefs) {
+                  final count = (prefs.getInt('notif_prompt_dismiss_count') ?? 0) + 1;
+                  prefs.setInt('notif_prompt_dismiss_count', count);
+                });
+              },
+              child: const Text('Not now', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 14)),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _showBiometricPrompt() {

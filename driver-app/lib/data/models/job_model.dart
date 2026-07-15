@@ -57,6 +57,7 @@ class JobModel {
     this.recipientPhone,
     this.senderPhone,
     this.packageDescription,
+    this.vehicleTypeName,
   });
 
   final String  id;
@@ -91,6 +92,7 @@ class JobModel {
   final String? recipientPhone;
   final String? senderPhone;
   final String? packageDescription;
+  final String? vehicleTypeName;
 
   double get displayFare => finalFare ?? estimatedFare;
 
@@ -178,6 +180,7 @@ class JobModel {
       recipientPhone:       j['recipient_phone']?.toString(),
       senderPhone:          j['sender_phone']?.toString(),
       packageDescription:   j['package_description']?.toString(),
+      vehicleTypeName:      j['vehicle_type_name']?.toString(),
     );
   }
 

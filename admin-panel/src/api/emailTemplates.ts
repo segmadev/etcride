@@ -4,6 +4,7 @@ export interface EmailTemplate {
   key: string;
   label: string;
   description: string;
+  accent_color: string;
   variables: string[];
   subject: string;
   body: string;

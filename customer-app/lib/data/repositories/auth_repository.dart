@@ -3,6 +3,7 @@ import '../../core/network/api_client.dart';
 import '../../core/network/api_endpoints.dart';
 import '../../core/storage/secure_storage.dart';
 import '../models/user_model.dart';
+import '../../core/errors/app_exception.dart';
 import 'terms_repository.dart';
 
 class AuthRepository {
@@ -45,22 +46,31 @@ class AuthRepository {
       email: email,
       profilePhoto: photo,
       isVerified: (json['status']?.toString() ?? '') == '1',
+      hasPassword: json['hasPassword'] == true || json['hasPassword'] == 1,
+      twoFaEnabled: json['two_fa_enabled'] == true || json['two_fa_enabled'] == 1 ||
+                    json['twoFaEnabled'] == true || json['twoFaEnabled'] == 1,
       createdAt: json['created_at']?.toString(),
     );
   }
 
   // ── OTP flow ──────────────────────────────────────────────────────────────
 
-  /// Send OTP to [contact] (email or phone). Returns contact_type.
-  Future<String> sendOtp(String contact) async {
+  /// Send OTP to [contact] (email or phone).
+  /// Returns (contactType, isExisting) — isExisting=true means this contact
+  /// already has a registered account with a password set.
+  Future<({String contactType, bool isExisting})> sendOtp(String contact) async {
     final data = await _client.post<Map<String, dynamic>>(
       ApiEndpoints.sendOtp,
       body: {'contact': contact},
     );
-    return data?['contact_type']?.toString() ?? 'email';
+    return (
+      contactType: data?['contact_type']?.toString() ?? 'email',
+      isExisting: data?['is_existing'] == true,
+    );
   }
 
   /// Verify OTP — logs in / registers the user. Returns authenticated user.
+  /// Throws [TwoFaRequiredException] when the account has 2FA enabled.
   Future<UserModel> verifyOtp({
     required String contact,
     required String otp,
@@ -72,6 +82,14 @@ class AuthRepository {
 
     if (data == null) throw const FormatException('Empty response.');
 
+    // 2FA gate: server verified the first OTP but requires a second factor.
+    if (data['two_fa_required'] == true) {
+      throw TwoFaRequiredException(
+        twoFaToken: data['two_fa_token']?.toString() ?? '',
+        twoFaContact: data['two_fa_contact']?.toString() ?? '',
+      );
+    }
+
     final token = data['token']?.toString();
     if (token == null || token.isEmpty) {
       throw const FormatException('Missing token in response.');
@@ -81,6 +99,37 @@ class AuthRepository {
     await _storage.saveToken(token);
     await _storage.saveUser(jsonEncode(user.toJson()));
     return user;
+  }
+
+  /// Complete a 2FA login after the second OTP is verified.
+  Future<UserModel> verify2fa({
+    required String twoFaToken,
+    required String otp,
+  }) async {
+    final data = await _client.post<Map<String, dynamic>>(
+      ApiEndpoints.verify2fa,
+      body: {'two_fa_token': twoFaToken, 'otp': otp},
+    );
+
+    if (data == null) throw const FormatException('Empty response.');
+
+    final token = data['token']?.toString();
+    if (token == null || token.isEmpty) {
+      throw const FormatException('Missing token in 2FA response.');
+    }
+
+    final user = _mapUser(data);
+    await _storage.saveToken(token);
+    await _storage.saveUser(jsonEncode(user.toJson()));
+    return user;
+  }
+
+  /// Toggle 2FA on/off for the current authenticated user.
+  Future<void> toggle2fa({required bool enabled}) async {
+    await _client.put<void>(
+      ApiEndpoints.toggle2fa,
+      body: {'enabled': enabled ? 1 : 0},
+    );
   }
 
   // ── Password login (fallback for users who have set a password) ───────────
@@ -164,6 +213,7 @@ class AuthRepository {
     String? fcmToken,
     String? emailToken,
     String? phoneToken,
+    bool? emailTripCompleted,
   }) async {
     final body = <String, dynamic>{};
     if (name       != null && name.isNotEmpty)       body['name']        = name;
@@ -173,6 +223,7 @@ class AuthRepository {
     if (fcmToken   != null && fcmToken.isNotEmpty)   body['fcm_token']   = fcmToken;
     if (emailToken != null && emailToken.isNotEmpty) body['email_token'] = emailToken;
     if (phoneToken != null && phoneToken.isNotEmpty) body['phone_token'] = phoneToken;
+    if (emailTripCompleted != null) body['email_trip_completed'] = emailTripCompleted ? 1 : 0;
 
     final data = await _client.put<Map<String, dynamic>>(
       ApiEndpoints.updateProfile,

@@ -13,7 +13,9 @@ class UserModel with _$UserModel {
     @Default('') String profilePhoto,
     @Default(false) bool isVerified,
     @Default(false) bool hasPassword,
+    @Default(false) bool twoFaEnabled,
     @Default(0.0) double rating,
+    @JsonKey(name: 'email_trip_completed') @Default(true) bool emailTripCompleted,
     String? createdAt,
   }) = _UserModel;
 

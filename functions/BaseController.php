@@ -304,8 +304,13 @@ class BaseController extends helper
         }
 
         $saPath = $_ENV['FCM_SERVICE_ACCOUNT_PATH'] ?? '';
+        // Resolve relative paths against ROOT (e.g. /sec/... → ROOT/sec/...)
+        if (!empty($saPath) && !file_exists($saPath)) {
+            $resolved = defined('ROOT') ? ROOT . ltrim($saPath, '/\\') : $saPath;
+            if (file_exists($resolved)) $saPath = $resolved;
+        }
         if (empty($saPath) || !file_exists($saPath)) {
-            error_log('[FCM] Service account file not found: ' . $saPath);
+            error_log('[FCM] Service account file not found: ' . $saPath . ' (ROOT=' . (defined('ROOT') ? ROOT : 'undefined') . ')');
             return null;
         }
 
@@ -799,11 +804,12 @@ class BaseController extends helper
         if (empty($to) || !filter_var($to, FILTER_VALIDATE_EMAIL)) return;
 
         require_once ROOT . 'functions/mailer.php';
+        require_once ROOT . 'api/controllers/admin/EmailTemplates.php';
 
-        // Resolve subject/body from DB (falling back to empty — EmailTemplates controller
-        // exposes defaults, but here we just skip if nothing is stored yet)
-        $subject = $this->setting("tpl_{$templateKey}_subject", '');
-        $body    = $this->setting("tpl_{$templateKey}_body",    '');
+        // Resolve subject/body from DB, falling back to defaults from EmailTemplates
+        $defaults = EmailTemplates::getDefaults($templateKey);
+        $subject  = $this->setting("tpl_{$templateKey}_subject", $defaults['subject']);
+        $body     = $this->setting("tpl_{$templateKey}_body",    $defaults['body']);
 
         if (empty($subject) || empty($body)) return;
 
@@ -816,18 +822,29 @@ class BaseController extends helper
         $renderedSubject = str_replace(array_keys($allVars), array_values($allVars), $subject);
         $renderedBody    = str_replace(array_keys($allVars), array_values($allVars), $body);
 
-        $smtpConfig = [
-            'smtp_host'       => $this->setting('smtp_host',       ''),
-            'smtp_port'       => $this->setting('smtp_port',       '587'),
-            'smtp_username'   => $this->setting('smtp_username',   ''),
-            'smtp_password'   => $this->setting('smtp_password',   ''),
-            'smtp_encryption' => $this->setting('smtp_encryption', 'tls'),
-            'smtp_from_name'  => $this->setting('smtp_from_name',  $this->setting('app_name', 'EtcRide')),
-            'smtp_from_email' => $this->setting('smtp_from_email', ''),
-        ];
+        // If the stored body is inner content (not a full HTML document), wrap it with the branded layout.
+        $isFullHtml = stripos(ltrim($renderedBody), '<!DOCTYPE') === 0 || stripos(ltrim($renderedBody), '<html') === 0;
+        if (!$isFullHtml) {
+            $accent = '#0f172a';
+            $label = [
+                'booking_confirmed'    => 'Booking Confirmed',
+                'driver_assigned'      => 'Driver Assigned',
+                'booking_cancelled'    => 'Booking Cancelled',
+                'welcome'              => 'Welcome!',
+                'driver_login'         => 'New Login Detected',
+                'email_verification'   => 'Verify Your Email',
+                'password_reset'       => 'Password Reset',
+                'driver_password_reset'=> 'Password Reset',
+            ][$templateKey] ?? $templateKey;
+            $renderedBody = Mymailer::layout(
+                $label, $accent, $renderedBody,
+                $allVars['{{app_name}}'] ?? $this->setting('app_name', 'EtcRide'),
+                $allVars['{{support_email}}'] ?? $this->setting('support_email', '')
+            );
+        }
 
         $mailer = new Mymailer();
-        $mailer->send_email_with_config($smtpConfig, $to, $renderedSubject, $renderedBody, $toName);
+        $mailer->send_email($to, $renderedSubject, $renderedBody, $toName);
     }
 
     // ── Token helpers ─────────────────────────────────────────────────────────
@@ -860,5 +877,96 @@ class BaseController extends helper
     {
         $zone = $this->getall('zones', 'is_default = 1 AND is_active = 1', [], 'id');
         return is_array($zone) ? $zone['id'] : null;
+    }
+
+    // ── OTP abuse protection ──────────────────────────────────────────────────
+
+    /**
+     * Rate-limit OTP send requests for a given contact key.
+     *
+     * Rules:
+     *   - Minimum 60 s cooldown between consecutive sends.
+     *   - Maximum 5 sends per contact within a rolling 30-minute window.
+     *
+     * Returns an API error string if the limit is hit, null if OK to proceed.
+     */
+    protected function checkOtpSendRateLimit(string $contactKey): ?string
+    {
+        $stmt = $this->db->prepare(
+            "SELECT COUNT(*) AS cnt, MAX(created_at) AS last_sent
+             FROM otp_requests
+             WHERE contact = ? AND created_at > DATE_SUB(NOW(), INTERVAL 30 MINUTE)"
+        );
+        $stmt->execute([$contactKey]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        // Hard cap: 5 OTP sends in 30 minutes
+        if ((int) $row['cnt'] >= 5) {
+            return utilities::apiMessage(
+                'Too many verification requests. Please wait 30 minutes before trying again.',
+                429
+            );
+        }
+
+        // Cooldown: at least 60 seconds between sends
+        if (!empty($row['last_sent'])) {
+            $elapsed  = time() - strtotime($row['last_sent']);
+            $cooldown = 60;
+            if ($elapsed < $cooldown) {
+                $wait = $cooldown - $elapsed;
+                return utilities::apiMessage(
+                    "Please wait {$wait} second(s) before requesting another code.",
+                    429,
+                    ['retry_after' => $wait]
+                );
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Record a failed OTP verify attempt and lock the OTP after 5 failures.
+     *
+     * Returns an API error string if the OTP should be rejected (wrong code or locked),
+     * null if the OTP matched and is valid.
+     *
+     * @param array  $otpRow  Full row from otp_requests.
+     * @param string $otp     The code the user submitted.
+     */
+    protected function verifyOtpWithBruteForceGuard(array $otpRow, string $otp): ?string
+    {
+        $maxAttempts = 5;
+        $attempts    = (int) ($otpRow['attempts'] ?? 0);
+
+        // Already locked from a previous attempt
+        if ($attempts >= $maxAttempts) {
+            $this->update('otp_requests', ['used' => 1], "id = '{$otpRow['id']}'");
+            return utilities::apiMessage(
+                'Too many failed attempts. Please request a new code.',
+                429
+            );
+        }
+
+        if (!password_verify($otp, $otpRow['otp_hash'])) {
+            $attempts++;
+            if ($attempts >= $maxAttempts) {
+                // Lock out: invalidate this OTP so it can never be used
+                $this->update('otp_requests', ['used' => 1, 'attempts' => $attempts], "id = '{$otpRow['id']}'");
+                return utilities::apiMessage(
+                    'Too many failed attempts. Please request a new code.',
+                    429
+                );
+            }
+            $remaining = $maxAttempts - $attempts;
+            $this->update('otp_requests', ['attempts' => $attempts], "id = '{$otpRow['id']}'");
+            return utilities::apiMessage(
+                "Invalid or expired code. {$remaining} attempt(s) remaining.",
+                400,
+                ['attempts_remaining' => $remaining]
+            );
+        }
+
+        return null; // OTP matched — caller should mark it used and proceed
     }
 }

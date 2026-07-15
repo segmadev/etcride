@@ -6,6 +6,8 @@ import '../../core/config/router.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../core/services/biometric_service.dart';
+import '../../core/services/notification_service.dart';
+import '../../core/services/notification_prefs_service.dart';
 import '../../shared/providers/providers.dart';
 import '../../shared/widgets/app_back_button.dart';
 
@@ -17,14 +19,98 @@ class DriverSettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _DriverSettingsScreenState extends ConsumerState<DriverSettingsScreen> {
-  bool _biometricsAvailable = false;
-  bool _biometricsEnabled   = false;
-  bool _loggingOut          = false;
+  bool _biometricsAvailable  = false;
+  bool _biometricsEnabled    = false;
+  bool _loggingOut           = false;
+  bool _notificationsEnabled = false;
+  bool _notifLoading         = false;
+  bool _notifNewJobs    = true;
+  bool _notifJobUpdates = true;
+  bool _notifPayments   = true;
+  bool _notifMessages   = true;
 
   @override
   void initState() {
     super.initState();
     _loadBiometrics();
+    _loadNotificationStatus();
+  }
+
+  Future<void> _loadNotificationStatus() async {
+    final enabled = await DriverNotificationService.instance.hasPermission();
+    final prefs   = DriverNotificationPrefsService.instance;
+    if (mounted) {
+      setState(() {
+        _notificationsEnabled = enabled;
+        _notifNewJobs    = prefs.getEnabled(DriverNotificationPrefsService.kNewJobs);
+        _notifJobUpdates = prefs.getEnabled(DriverNotificationPrefsService.kJobUpdates);
+        _notifPayments   = prefs.getEnabled(DriverNotificationPrefsService.kPayments);
+        _notifMessages   = prefs.getEnabled(DriverNotificationPrefsService.kMessages);
+      });
+    }
+  }
+
+  Future<void> _toggleNotifications(bool value) async {
+    if (_notifLoading) return;
+    if (value) {
+      setState(() => _notifLoading = true);
+      final token = await DriverNotificationService.instance.requestPermissionAndGetToken();
+      if (!mounted) return;
+      final granted = token != null && token.isNotEmpty;
+      if (granted) {
+        final driver = ref.read(currentDriverProvider);
+        if (driver != null) {
+          try {
+            await ref.read(driverAuthRepositoryProvider).updateProfile(
+              name: driver.name,
+              fcmToken: token,
+            );
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Notifications enabled.')),
+              );
+            }
+          } catch (e) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Failed to save notification token: $e')),
+              );
+            }
+          }
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Could not get notification token. Check device notification settings.')),
+          );
+        }
+      }
+      if (mounted) setState(() { _notificationsEnabled = granted; _notifLoading = false; });
+    } else {
+      setState(() => _notifLoading = true);
+      final driver = ref.read(currentDriverProvider);
+      try {
+        if (driver != null) {
+          await ref.read(driverAuthRepositoryProvider).updateProfile(
+            name: driver.name,
+            fcmToken: 'disabled',
+          );
+        }
+        if (mounted) {
+          setState(() { _notificationsEnabled = false; _notifLoading = false; });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Push notifications disabled.')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() => _notifLoading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to disable notifications: $e')),
+          );
+        }
+      }
+    }
   }
 
   Future<void> _loadBiometrics() async {
@@ -109,78 +195,174 @@ class _DriverSettingsScreenState extends ConsumerState<DriverSettingsScreen> {
     return Scaffold(
       backgroundColor: AppColors.white,
       body: SafeArea(
-        child: Padding(
+        child: ListView(
           padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const AppBackButton(),
-              const SizedBox(height: 20),
-              Text('Settings', style: AppTextStyles.h2),
-              const SizedBox(height: 24),
+          children: [
+            const AppBackButton(),
+            const SizedBox(height: 20),
+            Text('Settings', style: AppTextStyles.h2),
+            const SizedBox(height: 24),
 
-              Text('ACCOUNT', style: AppTextStyles.labelSmall),
-              const SizedBox(height: 8),
-              _SettingsTile(
-                icon: Icons.person_outline_rounded,
-                label: 'Edit Profile',
-                subtitle: driver?.name,
-                onTap: () => context.push(AppRoutes.driverProfile),
-              ),
-              const SizedBox(height: 8),
-              _SettingsTile(
-                icon: Icons.directions_car_filled_outlined,
-                label: 'Assigned Vehicle',
-                onTap: () => context.push(AppRoutes.assignedVehicle),
-              ),
+            Text('ACCOUNT', style: AppTextStyles.labelSmall),
+            const SizedBox(height: 8),
+            _SettingsTile(
+              icon: Icons.person_outline_rounded,
+              label: 'Edit Profile',
+              subtitle: driver?.name,
+              onTap: () => context.push(AppRoutes.driverProfile),
+            ),
+            const SizedBox(height: 8),
+            _SettingsTile(
+              icon: Icons.directions_car_filled_outlined,
+              label: 'Assigned Vehicle',
+              onTap: () => context.push(AppRoutes.assignedVehicle),
+            ),
 
-              if (_biometricsAvailable) ...[
-                const SizedBox(height: 24),
-                Text('PREFERENCES', style: AppTextStyles.labelSmall),
-                const SizedBox(height: 8),
-                _BiometricTile(
-                  value: _biometricsEnabled,
-                  onChanged: _toggleBiometrics,
+            const SizedBox(height: 24),
+            Text('PREFERENCES', style: AppTextStyles.labelSmall),
+            const SizedBox(height: 8),
+            _NotificationTile(
+              loading: _notifLoading,
+              value: _notificationsEnabled,
+              onChanged: _toggleNotifications,
+            ),
+            if (_notificationsEnabled) ...[
+              const SizedBox(height: 4),
+              _NotifSubTile(
+                label: 'New Jobs',
+                value: _notifNewJobs,
+                onChanged: (v) async {
+                  setState(() => _notifNewJobs = v);
+                  await DriverNotificationPrefsService.instance.setEnabled(DriverNotificationPrefsService.kNewJobs, v);
+                },
+              ),
+              _NotifSubTile(
+                label: 'Job Updates',
+                value: _notifJobUpdates,
+                onChanged: (v) async {
+                  setState(() => _notifJobUpdates = v);
+                  await DriverNotificationPrefsService.instance.setEnabled(DriverNotificationPrefsService.kJobUpdates, v);
+                },
+              ),
+              _NotifSubTile(
+                label: 'Payments',
+                value: _notifPayments,
+                onChanged: (v) async {
+                  setState(() => _notifPayments = v);
+                  await DriverNotificationPrefsService.instance.setEnabled(DriverNotificationPrefsService.kPayments, v);
+                },
+              ),
+              _NotifSubTile(
+                label: 'Messages',
+                value: _notifMessages,
+                onChanged: (v) async {
+                  setState(() => _notifMessages = v);
+                  await DriverNotificationPrefsService.instance.setEnabled(DriverNotificationPrefsService.kMessages, v);
+                },
+              ),
+            ],
+            if (_biometricsAvailable) ...[
+              const SizedBox(height: 8),
+              _BiometricTile(
+                value: _biometricsEnabled,
+                onChanged: _toggleBiometrics,
+              ),
+            ],
+
+            const SizedBox(height: 24),
+            Text('ABOUT', style: AppTextStyles.labelSmall),
+            const SizedBox(height: 8),
+            _SettingsTile(
+              icon: Icons.info_outline_rounded,
+              label: 'App Version',
+              subtitle: AppConfig.appVersion,
+            ),
+
+            const SizedBox(height: 24),
+            _SettingsTile(
+              icon: Icons.delete_outline_rounded,
+              label: 'Delete Account',
+              subtitle: 'Permanently delete your account',
+              onTap: () => context.push(AppRoutes.accountDeletion),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: _loggingOut ? null : _logout,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.red,
+                  side: const BorderSide(color: Colors.red),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
-              ],
-
-              const SizedBox(height: 24),
-              Text('ABOUT', style: AppTextStyles.labelSmall),
-              const SizedBox(height: 8),
-              _SettingsTile(
-                icon: Icons.info_outline_rounded,
-                label: 'App Version',
-                subtitle: AppConfig.appVersion,
-              ),
-
-              const Spacer(),
-              _SettingsTile(
-                icon: Icons.delete_outline_rounded,
-                label: 'Delete Account',
-                subtitle: 'Permanently delete your account',
-                onTap: () => context.push(AppRoutes.accountDeletion),
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton(
-                  onPressed: _loggingOut ? null : _logout,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.red,
-                    side: const BorderSide(color: Colors.red),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                  child: _loggingOut
-                      ? const SizedBox(
-                          width: 20, height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.red),
-                        )
-                      : const Text('Log Out'),
+                child: _loggingOut
+                    ? const SizedBox(
+                        width: 20, height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.red),
+                      )
+                    : const Text('Log Out'),
                 ),
               ),
             ],
           ),
+        ),
+    );
+  }
+}
+
+class _NotificationTile extends StatelessWidget {
+  const _NotificationTile({required this.loading, required this.value, required this.onChanged});
+
+  final bool loading;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.notifications_none_rounded, color: AppColors.primary),
+          const SizedBox(width: 14),
+          Expanded(child: Text('Push Notifications', style: AppTextStyles.h4)),
+          if (loading)
+            const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
+          else
+            Switch(value: value, onChanged: onChanged, activeColor: AppColors.primary),
+        ],
+      ),
+    );
+  }
+}
+
+class _NotifSubTile extends StatelessWidget {
+  const _NotifSubTile({required this.label, required this.value, required this.onChanged});
+  final String label;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 16),
+      child: Container(
+        margin: const EdgeInsets.only(top: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            Expanded(child: Text(label, style: AppTextStyles.bodyMedium)),
+            Switch(value: value, onChanged: onChanged, activeColor: AppColors.primary),
+          ],
         ),
       ),
     );

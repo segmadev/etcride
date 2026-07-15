@@ -4,37 +4,79 @@ require_once ROOT . 'functions/mailer.php';
 
 class EmailTemplates extends BaseController
 {
-    // ── Template metadata ──────────────────────────────────────────────────────
+    // ── Template registry ──────────────────────────────────────────────────────
+    // default_body stores INNER HTML only — the branded header/footer wrapper is
+    // applied automatically by BaseController::sendTemplateEmail() at send time.
+    // Admins who store a full <!DOCTYPE ...> body in settings get it sent as-is.
     private const TEMPLATES = [
         'booking_confirmed' => [
-            'label'       => 'Booking Confirmed',
-            'description' => 'Sent to the customer when their booking is confirmed.',
-            'variables'   => ['{{app_name}}', '{{customer_name}}', '{{booking_code}}', '{{pickup_address}}', '{{destination_address}}', '{{estimated_fare}}', '{{support_email}}'],
+            'label'           => 'Booking Confirmed',
+            'description'     => 'Sent to the customer when their booking is confirmed.',
+            'accent_color'    => '#0f172a',
+            'variables'       => ['{{app_name}}', '{{customer_name}}', '{{booking_code}}', '{{pickup_address}}', '{{destination_address}}', '{{estimated_fare}}', '{{support_email}}'],
             'default_subject' => 'Your {{app_name}} booking {{booking_code}} is confirmed',
-            'default_body'    => self::DEFAULT_BOOKING_CONFIRMED,
         ],
         'driver_assigned' => [
-            'label'       => 'Driver Assigned',
-            'description' => 'Sent to the customer when a driver has been assigned to their booking.',
-            'variables'   => ['{{app_name}}', '{{customer_name}}', '{{booking_code}}', '{{driver_name}}', '{{driver_phone}}', '{{vehicle_type}}', '{{support_email}}'],
+            'label'           => 'Driver Assigned',
+            'description'     => 'Sent to the customer when a driver has been assigned to their booking.',
+            'accent_color'    => '#0f172a',
+            'variables'       => ['{{app_name}}', '{{customer_name}}', '{{booking_code}}', '{{driver_name}}', '{{driver_phone}}', '{{vehicle_type}}', '{{support_email}}'],
             'default_subject' => 'Driver assigned for your {{app_name}} booking {{booking_code}}',
-            'default_body'    => self::DEFAULT_DRIVER_ASSIGNED,
         ],
         'booking_cancelled' => [
-            'label'       => 'Booking Cancelled',
-            'description' => 'Sent to the customer when a booking is cancelled.',
-            'variables'   => ['{{app_name}}', '{{customer_name}}', '{{booking_code}}', '{{cancellation_reason}}', '{{support_email}}'],
+            'label'           => 'Booking Cancelled',
+            'description'     => 'Sent to the customer when a booking is cancelled.',
+            'accent_color'    => '#0f172a',
+            'variables'       => ['{{app_name}}', '{{customer_name}}', '{{booking_code}}', '{{cancellation_reason}}', '{{support_email}}'],
             'default_subject' => 'Your {{app_name}} booking {{booking_code}} has been cancelled',
-            'default_body'    => self::DEFAULT_BOOKING_CANCELLED,
         ],
         'welcome' => [
-            'label'       => 'Welcome / Registration',
-            'description' => 'Sent to a new customer when they register.',
-            'variables'   => ['{{app_name}}', '{{customer_name}}', '{{support_email}}'],
+            'label'           => 'Welcome / Registration',
+            'description'     => 'Sent to a new customer when their email is verified.',
+            'accent_color'    => '#0f172a',
+            'variables'       => ['{{app_name}}', '{{customer_name}}', '{{support_email}}'],
             'default_subject' => 'Welcome to {{app_name}}!',
-            'default_body'    => self::DEFAULT_WELCOME,
+        ],
+        'driver_login' => [
+            'label'           => 'Driver Login Notification',
+            'description'     => 'Sent to a driver whenever a new login is detected on their account.',
+            'accent_color'    => '#0f172a',
+            'variables'       => ['{{app_name}}', '{{driver_name}}', '{{login_time}}', '{{device}}', '{{ip}}', '{{support_email}}'],
+            'default_subject' => 'New login detected on your {{app_name}} driver account',
+        ],
+        'email_verification' => [
+            'label'           => 'Email Verification (OTP)',
+            'description'     => 'Sent to a new customer with a 6-digit code to verify their email address.',
+            'accent_color'    => '#0f172a',
+            'variables'       => ['{{app_name}}', '{{customer_name}}', '{{code}}', '{{support_email}}'],
+            'default_subject' => 'Verify your {{app_name}} account',
+        ],
+        'password_reset' => [
+            'label'           => 'Customer Password Reset',
+            'description'     => 'Sent to a customer who requested a password reset code.',
+            'accent_color'    => '#0f172a',
+            'variables'       => ['{{app_name}}', '{{customer_name}}', '{{code}}', '{{support_email}}'],
+            'default_subject' => 'Password reset code - {{app_name}}',
+        ],
+        'driver_password_reset' => [
+            'label'           => 'Driver Password Reset',
+            'description'     => 'Sent to a driver who requested a password reset code.',
+            'accent_color'    => '#0f172a',
+            'variables'       => ['{{app_name}}', '{{driver_name}}', '{{code}}', '{{support_email}}'],
+            'default_subject' => 'Password reset code - {{app_name}}',
         ],
     ];
+
+    // ── Static helper for BaseController::sendTemplateEmail() ─────────────────
+    public static function getDefaults(string $key): array
+    {
+        $meta = self::TEMPLATES[$key] ?? null;
+        if ($meta === null) return ['subject' => '', 'body' => ''];
+        return [
+            'subject' => $meta['default_subject'],
+            'body'    => self::staticDefaultBody($key),
+        ];
+    }
 
     // ── GET /admin/email-templates ─────────────────────────────────────────────
     public function index(): void
@@ -42,14 +84,15 @@ class EmailTemplates extends BaseController
         $result = [];
         foreach (self::TEMPLATES as $key => $meta) {
             $subject = $this->setting("tpl_{$key}_subject", $meta['default_subject']);
-            $body    = $this->setting("tpl_{$key}_body",    $meta['default_body']);
+            $body    = $this->setting("tpl_{$key}_body",    $this->defaultBody($key));
             $result[] = [
-                'key'         => $key,
-                'label'       => $meta['label'],
-                'description' => $meta['description'],
-                'variables'   => $meta['variables'],
-                'subject'     => $subject,
-                'body'        => $body,
+                'key'          => $key,
+                'label'        => $meta['label'],
+                'description'  => $meta['description'],
+                'accent_color' => $meta['accent_color'],
+                'variables'    => $meta['variables'],
+                'subject'      => $subject,
+                'body'         => $body,
             ];
         }
         echo utilities::apiMessage('Email templates retrieved.', 200, $result);
@@ -59,9 +102,9 @@ class EmailTemplates extends BaseController
     // Body: { to: "test@example.com", template_key: "booking_confirmed" }
     public function test(): void
     {
-        $body = json_decode(file_get_contents('php://input'), true) ?? $_POST;
-        $to          = trim($body['to'] ?? '');
-        $templateKey = trim($body['template_key'] ?? 'booking_confirmed');
+        $payload     = json_decode(file_get_contents('php://input'), true) ?? $_POST;
+        $to          = trim($payload['to'] ?? '');
+        $templateKey = trim($payload['template_key'] ?? 'booking_confirmed');
 
         if (empty($to) || !filter_var($to, FILTER_VALIDATE_EMAIL)) {
             echo utilities::apiMessage('A valid recipient email is required.', 422);
@@ -74,143 +117,198 @@ class EmailTemplates extends BaseController
         }
 
         $meta    = self::TEMPLATES[$templateKey];
+        $appName = $this->setting('app_name', 'EtcRide');
         $subject = $this->setting("tpl_{$templateKey}_subject", $meta['default_subject']);
-        $bodyTpl = $this->setting("tpl_{$templateKey}_body",    $meta['default_body']);
+        $bodyTpl = $this->setting("tpl_{$templateKey}_body",    $this->defaultBody($templateKey));
 
-        // Replace variables with sample values for preview
         $sampleVars = [
-            '{{app_name}}'              => $this->setting('app_name', 'EtcRide'),
+            '{{app_name}}'              => $appName,
             '{{customer_name}}'         => 'John Doe',
+            '{{driver_name}}'           => 'Ahmed Musa',
             '{{booking_code}}'          => 'BK-DEMO123',
             '{{pickup_address}}'        => '12 Sample Street, Ilorin',
             '{{destination_address}}'   => '45 Demo Avenue, Ilorin',
-            '{{estimated_fare}}'        => '₦1,500',
-            '{{driver_name}}'           => 'Ahmed Musa',
+            '{{estimated_fare}}'        => '&#8358;1,500',
             '{{driver_phone}}'          => '+234 801 234 5678',
             '{{vehicle_type}}'          => 'Economy',
-            '{{cancellation_reason}}'   => 'Test cancellation',
+            '{{cancellation_reason}}'   => 'No driver available at this time.',
+            '{{login_time}}'            => date('D, d M Y \a\t g:i A'),
+            '{{device}}'                => 'Chrome on Windows',
+            '{{ip}}'                    => '127.0.0.1',
             '{{support_email}}'         => $this->setting('support_email', 'support@etcride.com'),
         ];
 
         $renderedSubject = str_replace(array_keys($sampleVars), array_values($sampleVars), $subject);
         $renderedBody    = str_replace(array_keys($sampleVars), array_values($sampleVars), $bodyTpl);
 
-        // Read DB SMTP config
-        $smtpConfig = [
-            'smtp_host'       => $this->setting('smtp_host',       ''),
-            'smtp_port'       => $this->setting('smtp_port',       '587'),
-            'smtp_username'   => $this->setting('smtp_username',   ''),
-            'smtp_password'   => $this->setting('smtp_password',   ''),
-            'smtp_encryption' => $this->setting('smtp_encryption', 'tls'),
-            'smtp_from_name'  => $this->setting('smtp_from_name',  $this->setting('app_name', 'EtcRide')),
-            'smtp_from_email' => $this->setting('smtp_from_email', ''),
-        ];
+        // Wrap inner content with the branded layout if not already full HTML
+        $isFullHtml = stripos(ltrim($renderedBody), '<!DOCTYPE') === 0 || stripos(ltrim($renderedBody), '<html') === 0;
+        if (!$isFullHtml) {
+            $renderedBody = Mymailer::layout(
+                $meta['label'],
+                $meta['accent_color'],
+                $renderedBody,
+                $appName,
+                $sampleVars['{{support_email}}']
+            );
+        }
 
+        Mymailer::setDb($this->db);
         $mailer = new Mymailer();
-        $sent   = $mailer->send_email_with_config($smtpConfig, $to, "[TEST] $renderedSubject", $renderedBody, 'Test Recipient');
+        $sent   = $mailer->send_email($to, "[TEST] $renderedSubject", $renderedBody, 'Test Recipient');
 
         if ($sent) {
             echo utilities::apiMessage("Test email sent to $to.", 200);
         } else {
-            echo utilities::apiMessage('Failed to send email. Check SMTP settings and server logs.', 500);
+            echo utilities::apiMessage('Failed to send. Check SMTP settings and logs/mail.log.', 500, [
+                'error' => $mailer->getLastError(),
+            ]);
         }
     }
 
-    // ── Default template bodies ────────────────────────────────────────────────
+    // ── Default inner-HTML bodies ──────────────────────────────────────────────
+    // These are the CONTENT sections only — the branded header/footer wrapper is
+    // added automatically. Admins can override these in settings with either inner
+    // HTML (gets wrapped) or a full <!DOCTYPE html> document (sent as-is).
 
-    private const DEFAULT_BOOKING_CONFIRMED = <<<HTML
-<!DOCTYPE html>
-<html>
-<body style="font-family:sans-serif;background:#f8fafc;margin:0;padding:20px;">
-<div style="max-width:560px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.08);">
-  <div style="background:#2563eb;padding:24px 28px;">
-    <h1 style="color:#fff;margin:0;font-size:20px;">Booking Confirmed</h1>
-  </div>
-  <div style="padding:28px;">
-    <p style="color:#334155;margin-top:0;">Hi <strong>{{customer_name}}</strong>,</p>
-    <p style="color:#334155;">Your ride with <strong>{{app_name}}</strong> has been confirmed.</p>
-    <table style="width:100%;border-collapse:collapse;margin:16px 0;">
-      <tr><td style="padding:8px 0;color:#64748b;font-size:14px;">Booking Code</td><td style="padding:8px 0;font-weight:600;color:#0f172a;">{{booking_code}}</td></tr>
-      <tr><td style="padding:8px 0;color:#64748b;font-size:14px;">Pickup</td><td style="padding:8px 0;color:#0f172a;">{{pickup_address}}</td></tr>
-      <tr><td style="padding:8px 0;color:#64748b;font-size:14px;">Destination</td><td style="padding:8px 0;color:#0f172a;">{{destination_address}}</td></tr>
-      <tr><td style="padding:8px 0;color:#64748b;font-size:14px;">Estimated Fare</td><td style="padding:8px 0;font-weight:600;color:#16a34a;">{{estimated_fare}}</td></tr>
-    </table>
-    <p style="color:#64748b;font-size:13px;">We will notify you once a driver is assigned. Need help? Contact us at <a href="mailto:{{support_email}}" style="color:#2563eb;">{{support_email}}</a>.</p>
-  </div>
-  <div style="background:#f1f5f9;padding:16px 28px;text-align:center;">
-    <p style="color:#94a3b8;font-size:12px;margin:0;">© {{app_name}}. All rights reserved.</p>
-  </div>
-</div>
-</body>
-</html>
-HTML;
+    private function defaultBody(string $key): string { return self::staticDefaultBody($key); }
 
-    private const DEFAULT_DRIVER_ASSIGNED = <<<HTML
-<!DOCTYPE html>
-<html>
-<body style="font-family:sans-serif;background:#f8fafc;margin:0;padding:20px;">
-<div style="max-width:560px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.08);">
-  <div style="background:#16a34a;padding:24px 28px;">
-    <h1 style="color:#fff;margin:0;font-size:20px;">Driver Assigned</h1>
-  </div>
-  <div style="padding:28px;">
-    <p style="color:#334155;margin-top:0;">Hi <strong>{{customer_name}}</strong>,</p>
-    <p style="color:#334155;">Great news! A driver has been assigned to your booking <strong>{{booking_code}}</strong>.</p>
-    <table style="width:100%;border-collapse:collapse;margin:16px 0;">
-      <tr><td style="padding:8px 0;color:#64748b;font-size:14px;">Driver</td><td style="padding:8px 0;font-weight:600;color:#0f172a;">{{driver_name}}</td></tr>
-      <tr><td style="padding:8px 0;color:#64748b;font-size:14px;">Phone</td><td style="padding:8px 0;color:#0f172a;">{{driver_phone}}</td></tr>
-      <tr><td style="padding:8px 0;color:#64748b;font-size:14px;">Vehicle Type</td><td style="padding:8px 0;color:#0f172a;">{{vehicle_type}}</td></tr>
-    </table>
-    <p style="color:#64748b;font-size:13px;">Questions? Email us at <a href="mailto:{{support_email}}" style="color:#2563eb;">{{support_email}}</a>.</p>
-  </div>
-  <div style="background:#f1f5f9;padding:16px 28px;text-align:center;">
-    <p style="color:#94a3b8;font-size:12px;margin:0;">© {{app_name}}. All rights reserved.</p>
-  </div>
-</div>
-</body>
-</html>
-HTML;
+    public static function staticDefaultBody(string $key): string
+    {
+        return match ($key) {
+            'booking_confirmed'    => self::innerBookingConfirmed(),
+            'driver_assigned'      => self::innerDriverAssigned(),
+            'booking_cancelled'    => self::innerBookingCancelled(),
+            'welcome'              => self::innerWelcome(),
+            'driver_login'         => self::innerDriverLogin(),
+            'email_verification'   => self::innerEmailVerification(),
+            'password_reset'       => self::innerPasswordReset(),
+            'driver_password_reset'=> self::innerDriverPasswordReset(),
+            default                => '',
+        };
+    }
 
-    private const DEFAULT_BOOKING_CANCELLED = <<<HTML
-<!DOCTYPE html>
-<html>
-<body style="font-family:sans-serif;background:#f8fafc;margin:0;padding:20px;">
-<div style="max-width:560px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.08);">
-  <div style="background:#dc2626;padding:24px 28px;">
-    <h1 style="color:#fff;margin:0;font-size:20px;">Booking Cancelled</h1>
-  </div>
-  <div style="padding:28px;">
-    <p style="color:#334155;margin-top:0;">Hi <strong>{{customer_name}}</strong>,</p>
-    <p style="color:#334155;">Your booking <strong>{{booking_code}}</strong> has been cancelled.</p>
-    <p style="color:#334155;"><strong>Reason:</strong> {{cancellation_reason}}</p>
-    <p style="color:#64748b;font-size:13px;">If you have any questions, please contact us at <a href="mailto:{{support_email}}" style="color:#2563eb;">{{support_email}}</a>. We apologise for any inconvenience.</p>
-  </div>
-  <div style="background:#f1f5f9;padding:16px 28px;text-align:center;">
-    <p style="color:#94a3b8;font-size:12px;margin:0;">© {{app_name}}. All rights reserved.</p>
-  </div>
-</div>
-</body>
-</html>
-HTML;
+    private static function innerBookingConfirmed(): string { return <<<HTML
+<p style="margin:0 0 16px;color:#334155;font-size:15px;line-height:1.6;">Hi <strong>{{customer_name}}</strong>,</p>
+<p style="margin:0 0 24px;color:#334155;font-size:15px;line-height:1.6;">Your booking with <strong>{{app_name}}</strong> has been received and confirmed. Here are your trip details:</p>
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;margin:0 0 24px;background:#f8fafc;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;">
+  <tr>
+    <td style="padding:14px 18px;color:#64748b;font-size:13px;font-weight:600;border-bottom:1px solid #e2e8f0;width:38%;">Booking Code</td>
+    <td style="padding:14px 18px;font-weight:700;color:#0f172a;font-size:14px;border-bottom:1px solid #e2e8f0;letter-spacing:0.5px;">{{booking_code}}</td>
+  </tr>
+  <tr>
+    <td style="padding:14px 18px;color:#64748b;font-size:13px;font-weight:600;border-bottom:1px solid #e2e8f0;">Pickup</td>
+    <td style="padding:14px 18px;color:#0f172a;font-size:14px;border-bottom:1px solid #e2e8f0;">{{pickup_address}}</td>
+  </tr>
+  <tr>
+    <td style="padding:14px 18px;color:#64748b;font-size:13px;font-weight:600;border-bottom:1px solid #e2e8f0;">Destination</td>
+    <td style="padding:14px 18px;color:#0f172a;font-size:14px;border-bottom:1px solid #e2e8f0;">{{destination_address}}</td>
+  </tr>
+  <tr>
+    <td style="padding:14px 18px;color:#64748b;font-size:13px;font-weight:600;">Estimated Fare</td>
+    <td style="padding:14px 18px;font-weight:700;color:#16a34a;font-size:15px;">{{estimated_fare}}</td>
+  </tr>
+</table>
+<p style="margin:0;color:#64748b;font-size:13px;line-height:1.6;">We will notify you as soon as a driver is on the way. Thank you for choosing <strong>{{app_name}}</strong>!</p>
+HTML; }
 
-    private const DEFAULT_WELCOME = <<<HTML
-<!DOCTYPE html>
-<html>
-<body style="font-family:sans-serif;background:#f8fafc;margin:0;padding:20px;">
-<div style="max-width:560px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.08);">
-  <div style="background:#2563eb;padding:24px 28px;">
-    <h1 style="color:#fff;margin:0;font-size:20px;">Welcome to {{app_name}}!</h1>
-  </div>
-  <div style="padding:28px;">
-    <p style="color:#334155;margin-top:0;">Hi <strong>{{customer_name}}</strong>,</p>
-    <p style="color:#334155;">Welcome aboard! Your account has been created successfully. You can now book rides quickly and easily with <strong>{{app_name}}</strong>.</p>
-    <p style="color:#64748b;font-size:13px;">Need help getting started? Reach out at <a href="mailto:{{support_email}}" style="color:#2563eb;">{{support_email}}</a>.</p>
-  </div>
-  <div style="background:#f1f5f9;padding:16px 28px;text-align:center;">
-    <p style="color:#94a3b8;font-size:12px;margin:0;">© {{app_name}}. All rights reserved.</p>
-  </div>
+    private static function innerDriverAssigned(): string { return <<<HTML
+<p style="margin:0 0 16px;color:#334155;font-size:15px;line-height:1.6;">Hi <strong>{{customer_name}}</strong>,</p>
+<p style="margin:0 0 8px;color:#334155;font-size:15px;line-height:1.6;">Great news! A driver has been assigned to your booking <strong>{{booking_code}}</strong> and is on the way.</p>
+<div style="margin:0 0 24px;padding:20px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;">
+  <p style="margin:0 0 4px;color:#15803d;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;">Your Driver</p>
+  <p style="margin:0 0 12px;color:#0f172a;font-size:20px;font-weight:700;">{{driver_name}}</p>
+  <table role="presentation" cellpadding="0" cellspacing="0">
+    <tr>
+      <td style="color:#64748b;font-size:13px;padding-right:8px;padding-bottom:6px;">Phone</td>
+      <td style="color:#0f172a;font-size:13px;font-weight:600;padding-bottom:6px;">{{driver_phone}}</td>
+    </tr>
+    <tr>
+      <td style="color:#64748b;font-size:13px;padding-right:8px;">Vehicle</td>
+      <td style="color:#0f172a;font-size:13px;font-weight:600;">{{vehicle_type}}</td>
+    </tr>
+  </table>
 </div>
-</body>
-</html>
-HTML;
+<p style="margin:0;color:#64748b;font-size:13px;line-height:1.6;">Please be ready at your pickup location. Safe travels!</p>
+HTML; }
+
+    private static function innerBookingCancelled(): string { return <<<HTML
+<p style="margin:0 0 16px;color:#334155;font-size:15px;line-height:1.6;">Hi <strong>{{customer_name}}</strong>,</p>
+<p style="margin:0 0 20px;color:#334155;font-size:15px;line-height:1.6;">We are sorry to let you know that your booking has been cancelled.</p>
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;margin:0 0 24px;background:#fff5f5;border:1px solid #fecaca;border-radius:10px;overflow:hidden;">
+  <tr>
+    <td style="padding:14px 18px;color:#64748b;font-size:13px;font-weight:600;border-bottom:1px solid #fecaca;width:38%;">Booking Code</td>
+    <td style="padding:14px 18px;font-weight:700;color:#0f172a;font-size:14px;border-bottom:1px solid #fecaca;">{{booking_code}}</td>
+  </tr>
+  <tr>
+    <td style="padding:14px 18px;color:#64748b;font-size:13px;font-weight:600;">Reason</td>
+    <td style="padding:14px 18px;color:#7f1d1d;font-size:14px;">{{cancellation_reason}}</td>
+  </tr>
+</table>
+<p style="margin:0;color:#64748b;font-size:13px;line-height:1.6;">We apologise for any inconvenience. You are welcome to book again at any time.</p>
+HTML; }
+
+    private static function innerWelcome(): string { return <<<HTML
+<p style="margin:0 0 16px;color:#334155;font-size:15px;line-height:1.6;">Hi <strong>{{customer_name}}</strong>,</p>
+<p style="margin:0 0 20px;color:#334155;font-size:15px;line-height:1.6;">Welcome to <strong>{{app_name}}</strong>! Your account is now fully verified and ready to use.</p>
+<div style="margin:0 0 24px;padding:20px 24px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;">
+  <p style="margin:0 0 10px;color:#1e40af;font-size:14px;font-weight:700;">What you can do now:</p>
+  <ul style="margin:0;padding:0 0 0 18px;color:#334155;font-size:14px;line-height:1.8;">
+    <li>Book a ride from anywhere to anywhere</li>
+    <li>Track your driver in real time</li>
+    <li>Pay securely online or with cash</li>
+    <li>View your trip history at any time</li>
+  </ul>
+</div>
+<p style="margin:0;color:#64748b;font-size:13px;line-height:1.6;">If you have any questions or need help getting started, we are always here for you.</p>
+HTML; }
+
+    private static function innerEmailVerification(): string { return <<<HTML
+<p style="margin:0 0 16px;color:#334155;font-size:15px;line-height:1.6;">Hi <strong>{{customer_name}}</strong>,</p>
+<p style="margin:0 0 24px;color:#334155;font-size:15px;line-height:1.6;">Thanks for signing up! Please verify your email address using the code below. It expires in <strong>30 minutes</strong>.</p>
+<div style="text-align:center;margin:0 0 28px;">
+  <span style="display:inline-block;background:#f0f9ff;border:2px solid #bae6fd;border-radius:12px;padding:20px 40px;font-size:38px;font-weight:800;letter-spacing:10px;color:#0c4a6e;font-family:'Courier New',monospace;">{{code}}</span>
+</div>
+<p style="margin:0;color:#94a3b8;font-size:13px;line-height:1.5;">If you did not create a {{app_name}} account, you can safely ignore this email.</p>
+HTML; }
+
+    private static function innerPasswordReset(): string { return <<<HTML
+<p style="margin:0 0 16px;color:#334155;font-size:15px;line-height:1.6;">Hi <strong>{{customer_name}}</strong>,</p>
+<p style="margin:0 0 24px;color:#334155;font-size:15px;line-height:1.6;">You requested a password reset. Use the code below to set a new password. It expires in <strong>15 minutes</strong>.</p>
+<div style="text-align:center;margin:0 0 28px;">
+  <span style="display:inline-block;background:#fefce8;border:2px solid #fde68a;border-radius:12px;padding:20px 40px;font-size:38px;font-weight:800;letter-spacing:10px;color:#78350f;font-family:'Courier New',monospace;">{{code}}</span>
+</div>
+<p style="margin:0;color:#94a3b8;font-size:13px;line-height:1.5;">If you did not request a password reset, please ignore this email. Your account is safe.</p>
+HTML; }
+
+    private static function innerDriverPasswordReset(): string { return <<<HTML
+<p style="margin:0 0 16px;color:#334155;font-size:15px;line-height:1.6;">Hi <strong>{{driver_name}}</strong>,</p>
+<p style="margin:0 0 24px;color:#334155;font-size:15px;line-height:1.6;">You requested a password reset for your driver account. Use the code below. It expires in <strong>15 minutes</strong>.</p>
+<div style="text-align:center;margin:0 0 28px;">
+  <span style="display:inline-block;background:#fefce8;border:2px solid #fde68a;border-radius:12px;padding:20px 40px;font-size:38px;font-weight:800;letter-spacing:10px;color:#78350f;font-family:'Courier New',monospace;">{{code}}</span>
+</div>
+<p style="margin:0;color:#94a3b8;font-size:13px;line-height:1.5;">If you did not request this, please ignore this email.</p>
+HTML; }
+
+    private static function innerDriverLogin(): string { return <<<HTML
+<p style="margin:0 0 16px;color:#334155;font-size:15px;line-height:1.6;">Hi <strong>{{driver_name}}</strong>,</p>
+<p style="margin:0 0 20px;color:#334155;font-size:15px;line-height:1.6;">A new login was detected on your <strong>{{app_name}}</strong> driver account.</p>
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;margin:0 0 24px;background:#faf5ff;border:1px solid #e9d5ff;border-radius:10px;overflow:hidden;">
+  <tr>
+    <td style="padding:14px 18px;color:#64748b;font-size:13px;font-weight:600;border-bottom:1px solid #e9d5ff;width:38%;">Time</td>
+    <td style="padding:14px 18px;color:#0f172a;font-size:14px;border-bottom:1px solid #e9d5ff;">{{login_time}}</td>
+  </tr>
+  <tr>
+    <td style="padding:14px 18px;color:#64748b;font-size:13px;font-weight:600;border-bottom:1px solid #e9d5ff;">Device</td>
+    <td style="padding:14px 18px;color:#0f172a;font-size:14px;border-bottom:1px solid #e9d5ff;">{{device}}</td>
+  </tr>
+  <tr>
+    <td style="padding:14px 18px;color:#64748b;font-size:13px;font-weight:600;">IP Address</td>
+    <td style="padding:14px 18px;color:#0f172a;font-size:14px;">{{ip}}</td>
+  </tr>
+</table>
+<div style="padding:16px 20px;background:#fef3c7;border:1px solid #fcd34d;border-radius:10px;">
+  <p style="margin:0;color:#92400e;font-size:14px;line-height:1.6;"><strong>Was this you?</strong> If you did not log in, please contact support immediately to secure your account.</p>
+</div>
+HTML; }
 }

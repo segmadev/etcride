@@ -10,6 +10,7 @@ class auth extends BaseController
     {
         parent::__construct();
         $this->mailer = new Mymailer();
+        Mymailer::setDb($this->db);
     }
 
     // ── POST /auth/register ───────────────────────────────────────────────────
@@ -58,13 +59,11 @@ class auth extends BaseController
             return;
         }
 
-        if ($email !== '' && $this->setting('email_notifications_enabled', '1') === '1') {
-            $appName = $this->setting('app_name', 'EtcRide');
-            $this->mailer->smtpmailer(
-                $email,
-                "Verify your $appName account",
-                "Hi $name,\n\nYour verification code is: $code\n\nThis code expires in 30 minutes.\n\n— $appName Team"
-            );
+        if ($email !== '') {
+            $this->sendTemplateEmail('email_verification', $email, $name, [
+                '{{customer_name}}' => $name,
+                '{{code}}'          => (string) $code,
+            ]);
         }
 
         $this->logActivity('customer', $id, 'register');
@@ -105,6 +104,11 @@ class auth extends BaseController
         $this->update('users', ['status' => 1, 'reset_code' => null], "id = '{$user['id']}'");
         $this->logActivity('customer', $user['id'], 'email_verified');
 
+        // Send welcome email
+        $this->sendTemplateEmail('welcome', $email, $user['name'], [
+            '{{customer_name}}' => $user['name'],
+        ]);
+
         echo utilities::apiMessage('Email verified. You can now log in.', 200);
     }
 
@@ -132,14 +136,10 @@ class auth extends BaseController
             'reset_code' => password_hash((string) $code, PASSWORD_DEFAULT),
         ], "id = '{$user['id']}'");
 
-        if ($this->setting('email_notifications_enabled', '1') === '1') {
-            $appName = $this->setting('app_name', 'EtcRide');
-            $this->mailer->smtpmailer(
-                $email,
-                "Your new verification code — $appName",
-                "Hi {$user['name']},\n\nYour new verification code is: $code\n\n— $appName Team"
-            );
-        }
+        $this->sendTemplateEmail('email_verification', $email, $user['name'], [
+            '{{customer_name}}' => $user['name'],
+            '{{code}}'          => (string) $code,
+        ]);
 
         echo utilities::apiMessage('Verification code resent. Please check your email.', 200);
     }
@@ -190,6 +190,16 @@ class auth extends BaseController
 
         $this->logActivity('customer', $user['id'], 'login');
 
+        // Save FCM token if supplied at login time
+        $fcmToken = $this->str('fcm_token');
+        if ($fcmToken !== '') {
+            $this->update('users', ['fcm_token' => $fcmToken], "id = '{$user['id']}'");
+            $user['fcm_token'] = $fcmToken;
+            error_log('[FCM] customer token registered for user ' . $user['id']);
+        } else {
+            error_log('[FCM] customer login without fcm_token — user ' . $user['id'] . ' (' . ($user['email'] ?? $user['phone'] ?? '') . ')');
+        }
+
         unset($user['password'], $user['reset_code']);
         $user['token']      = $token;
         $user['expires_at'] = $expiresAt;
@@ -227,16 +237,15 @@ class auth extends BaseController
             'reset_code' => password_hash((string) $code, PASSWORD_DEFAULT),
         ], "id = '{$user['id']}'");
 
-        if ($this->setting('email_notifications_enabled', '1') === '1') {
-            $appName = $this->setting('app_name', 'EtcRide');
-            $this->mailer->smtpmailer(
-                $email,
-                "Password reset code — $appName",
-                "Hi {$user['name']},\n\nYour password reset code is: $code\n\nIf you did not request this, you can ignore this email.\n\n— $appName Team"
-            );
-        }
+        $devMode = defined('APP_ENV') ? (APP_ENV !== 'production') : true;
+        $extra   = $devMode ? ['_dev_code' => $code] : [];
 
-        echo utilities::apiMessage('If that email is registered you will receive a reset code.', 200);
+        $this->sendTemplateEmail('password_reset', $email, $user['name'], [
+            '{{customer_name}}' => $user['name'],
+            '{{code}}'          => (string) $code,
+        ]);
+
+        echo utilities::apiMessage('If that email is registered you will receive a reset code.', 200, $extra);
     }
 
     // ── POST /auth/reset-password ─────────────────────────────────────────────
@@ -343,7 +352,13 @@ class auth extends BaseController
         }
 
         if (isset($_POST['fcm_token'])) {
-            $update['fcm_token'] = $this->str('fcm_token');
+            $tok = $this->str('fcm_token');
+            // 'disabled' is a sentinel meaning the user opted out of push notifications.
+            $update['fcm_token'] = ($tok === 'disabled') ? null : $tok;
+        }
+
+        if (isset($_POST['email_trip_completed'])) {
+            $update['email_trip_completed'] = $_POST['email_trip_completed'] ? 1 : 0;
         }
 
         if (empty($update)) {
@@ -386,7 +401,9 @@ class auth extends BaseController
         }
 
         // Prefix distinguishes contact-change OTPs from login OTPs
-        $contactKey = ($type === 'phone' ? 'change_phone:' : 'change_email:') . $contact;
+        $contactKey   = ($type === 'phone' ? 'change_phone:' : 'change_email:') . $contact;
+        $rateLimitErr = $this->checkOtpSendRateLimit($contactKey);
+        if ($rateLimitErr) { echo $rateLimitErr; return; }
 
         $otp     = str_pad((string) mt_rand(0, 999999), 6, '0', STR_PAD_LEFT);
         $hash    = password_hash($otp, PASSWORD_DEFAULT);
@@ -407,6 +424,7 @@ class auth extends BaseController
             $this->mailer->sendOtpEmail($contact, $otp, $appName);
         } else {
             require_once ROOT . 'functions/sms.php';
+            Sms::setDb($this->db);
             Sms::send($contact, "Your $appName Verification code is $otp. It expires in 10 minutes.");
         }
 
@@ -440,10 +458,13 @@ class auth extends BaseController
             $stmt->execute([$contactKey]);
             $otpRow = $stmt->fetch(PDO::FETCH_ASSOC);
 
-            if (!$otpRow || !password_verify($otp, $otpRow['otp_hash'])) {
+            if (!$otpRow) {
                 echo utilities::apiMessage('Invalid or expired code.', 400);
                 return;
             }
+
+            $bruteErr = $this->verifyOtpWithBruteForceGuard($otpRow, $otp);
+            if ($bruteErr) { echo $bruteErr; return; }
 
             // Mark used and store verification token
             $token = bin2hex(random_bytes(32));
@@ -505,8 +526,19 @@ class auth extends BaseController
         $isEmail = (bool) filter_var($contact, FILTER_VALIDATE_EMAIL);
         $type    = $isEmail ? 'email' : 'phone';
 
+        // Rate-limit OTP sends before doing any work
+        $rateLimitErr = $this->checkOtpSendRateLimit($contact);
+        if ($rateLimitErr) { echo $rateLimitErr; return; }
+
         // Find existing user
-        $user = $this->getall('users', "$type = ?", [$contact]);
+        $user       = $this->getall('users', "$type = ?", [$contact]);
+        // Only flag as existing when the account is fully set up:
+        // has a password AND is verified (status=1). A user who stopped
+        // mid-registration (no password, or unverified) should be allowed
+        // to continue without being redirected to login.
+        $isExisting = is_array($user)
+            && !empty($user['password'])
+            && (int) ($user['status'] ?? 0) === 1;
 
         if (!is_array($user)) {
             // Create minimal user record
@@ -550,6 +582,7 @@ class auth extends BaseController
             $sent = $this->mailer->sendOtpEmail($contact, $otp, $appName);
         } else {
             require_once ROOT . 'functions/sms.php';
+            Sms::setDb($this->db);
             $sent = Sms::send($contact, "Your $appName Verification code is $otp. It expires in 10 minutes.");
         }
 
@@ -560,6 +593,7 @@ class auth extends BaseController
         echo utilities::apiMessage('OTP sent successfully.', 200, array_merge([
             'contact'      => $contact,
             'contact_type' => $type,
+            'is_existing'  => $isExisting,
         ], $extra));
     }
 
@@ -582,10 +616,13 @@ class auth extends BaseController
             return;
         }
 
+        // No bypass in production — always verify against the real OTP.
+        // In dev only, 123456 is accepted so developers can test without receiving SMS.
         $bypass = $devMode && $otp === '123456';
 
-        if (!$bypass) {
-            // Find latest valid OTP for this contact
+        if ($bypass) {
+            // Dev-only shortcut — never reaches production
+        } else {
             $stmt = $this->db->prepare(
                 "SELECT * FROM otp_requests
                  WHERE contact = ? AND used = 0 AND expires_at > NOW()
@@ -594,17 +631,59 @@ class auth extends BaseController
             $stmt->execute([$contact]);
             $otpRow = $stmt->fetch(PDO::FETCH_ASSOC);
 
-            if (!$otpRow || !password_verify($otp, $otpRow['otp_hash'])) {
+            if (!$otpRow) {
                 echo utilities::apiMessage('Invalid or expired code. Please try again.', 400);
                 return;
             }
 
-            // Mark OTP used
+            $bruteErr = $this->verifyOtpWithBruteForceGuard($otpRow, $otp);
+            if ($bruteErr) { echo $bruteErr; return; }
+
             $this->update('otp_requests', ['used' => 1], "id = '{$otpRow['id']}'");
         }
 
         // Mark user verified
         $this->update('users', ['status' => 1], "id = '{$user['id']}'");
+
+        // Re-fetch after potential status update to get latest two_fa_enabled
+        $user = $this->getall('users', 'id = ?', [$user['id']]);
+
+        // 2FA gate: if enabled and user has an email, require a second factor.
+        $twoFaEnabled = !empty($user['two_fa_enabled']) && (int) $user['two_fa_enabled'] === 1;
+        $userEmail    = trim($user['email'] ?? '');
+
+        if ($twoFaEnabled && $userEmail !== '' && filter_var($userEmail, FILTER_VALIDATE_EMAIL)) {
+            $twoFaOtp   = str_pad((string) mt_rand(0, 999999), 6, '0', STR_PAD_LEFT);
+            $twoFaHash  = password_hash($twoFaOtp, PASSWORD_DEFAULT);
+            $twoFaToken = bin2hex(random_bytes(32));
+            $expires    = date('Y-m-d H:i:s', time() + 600);
+            $contactKey = '2fa:' . $user['id'];
+
+            $this->delete('otp_requests', 'contact = ?', [$contactKey]);
+            $this->quick_insert('otp_requests', [
+                'id'                 => utilities::genID('OTP_', 10),
+                'contact'            => $contactKey,
+                'contact_type'       => 'email',
+                'otp_hash'           => $twoFaHash,
+                'expires_at'         => $expires,
+                'used'               => 0,
+                'verification_token' => $twoFaToken,
+            ]);
+
+            $appName = $this->setting('app_name', 'ETCRide');
+            $this->mailer->sendOtpEmail($userEmail, $twoFaOtp, $appName);
+
+            // Mask email for display: j***@example.com
+            $at      = strrpos($userEmail, '@');
+            $masked  = substr($userEmail, 0, 1) . '***' . substr($userEmail, $at);
+
+            echo utilities::apiMessage('Second factor required.', 200, [
+                'two_fa_required' => true,
+                'two_fa_token'    => $twoFaToken,
+                'two_fa_contact'  => $masked,
+            ]);
+            return;
+        }
 
         // Create session
         $token     = $this->generateToken();
@@ -622,11 +701,118 @@ class auth extends BaseController
 
         $this->logActivity('customer', $user['id'], 'otp_login');
 
+        $fcmToken = $this->str('fcm_token');
+        if ($fcmToken !== '') {
+            $this->update('users', ['fcm_token' => $fcmToken], "id = '{$user['id']}'");
+            $user['fcm_token'] = $fcmToken;
+            error_log('[FCM] customer token registered via OTP login for user ' . $user['id']);
+        } else {
+            error_log('[FCM] OTP login without fcm_token — user ' . $user['id']);
+        }
+
         $user['hasPassword'] = !empty($user['password']);
         unset($user['password'], $user['reset_code']);
         $user['token']      = $token;
         $user['expires_at'] = $expiresAt;
 
         echo utilities::apiMessage('Verified successfully.', 200, $user);
+    }
+
+    // ── POST /auth/verify-2fa ─────────────────────────────────────────────────
+    public function verify2fa(): void
+    {
+        $err = $this->requireFields(['two_fa_token', 'otp']);
+        if ($err) { echo $err; return; }
+
+        $twoFaToken = trim($this->str('two_fa_token'));
+        $otp        = trim($this->str('otp'));
+
+        // Look up the pending 2FA session by token
+        $stmt = $this->db->prepare(
+            "SELECT * FROM otp_requests
+             WHERE verification_token = ? AND contact LIKE '2fa:%' AND used = 0 AND expires_at > NOW()
+             LIMIT 1"
+        );
+        $stmt->execute([$twoFaToken]);
+        $otpRow = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$otpRow) {
+            echo utilities::apiMessage('Invalid or expired 2FA session. Please log in again.', 400);
+            return;
+        }
+
+        $devMode = defined('APP_ENV') ? (APP_ENV !== 'production') : (strtolower((string) ($_ENV['APP_ENV'] ?? 'development')) !== 'production');
+        $bypass  = $devMode && $otp === '123456';
+
+        if (!$bypass) {
+            $bruteErr = $this->verifyOtpWithBruteForceGuard($otpRow, $otp);
+            if ($bruteErr) { echo $bruteErr; return; }
+        }
+
+        // Consume the 2FA row
+        $this->update('otp_requests', ['used' => 1], "id = '{$otpRow['id']}'");
+
+        // Extract user ID from contact = '2fa:<user_id>'
+        $userId = substr($otpRow['contact'], 4); // strip '2fa:'
+        $user   = $this->getall('users', 'id = ?', [$userId]);
+
+        if (!is_array($user)) {
+            echo utilities::apiMessage('Account not found.', 404);
+            return;
+        }
+
+        $token     = $this->generateToken();
+        $expiresAt = date('Y-m-d H:i:s', time() + 86400 * 30);
+
+        $this->delete('user_sessions', 'user_id = ?', [$user['id']]);
+        $this->quick_insert('user_sessions', [
+            'id'         => utilities::genID('USS_', 10),
+            'user_id'    => $user['id'],
+            'token'      => $token,
+            'expires_at' => $expiresAt,
+            'device'     => substr($_SERVER['HTTP_USER_AGENT'] ?? '', 0, 255),
+            'ip'         => $_SERVER['REMOTE_ADDR'] ?? '',
+        ]);
+
+        $this->logActivity('customer', $user['id'], '2fa_login');
+
+        $fcmToken = $this->str('fcm_token');
+        if ($fcmToken !== '') {
+            $this->update('users', ['fcm_token' => $fcmToken], "id = '{$user['id']}'");
+            $user['fcm_token'] = $fcmToken;
+            error_log('[FCM] customer token registered via 2FA login for user ' . $user['id']);
+        } else {
+            error_log('[FCM] 2FA login without fcm_token — user ' . $user['id']);
+        }
+
+        $user['hasPassword'] = !empty($user['password']);
+        unset($user['password'], $user['reset_code']);
+        $user['token']      = $token;
+        $user['expires_at'] = $expiresAt;
+
+        echo utilities::apiMessage('Login successful.', 200, $user);
+    }
+
+    // ── PUT /auth/2fa ─────────────────────────────────────────────────────────
+    // Protected — toggle 2FA on/off for the authenticated user.
+    public function toggle2fa(): void
+    {
+        $me      = BaseController::$authUser;
+        $enabled = (int) $this->input('enabled', 0);
+
+        if ($enabled && (filter_var($me['email'] ?? '', FILTER_VALIDATE_EMAIL) === false)) {
+            echo utilities::apiMessage('Add an email address to your profile before enabling 2FA.', 422);
+            return;
+        }
+
+        $this->update('users', ['two_fa_enabled' => $enabled ? 1 : 0], "id = '{$me['id']}'");
+
+        $this->logActivity('customer', $me['id'], $enabled ? '2fa_enabled' : '2fa_disabled');
+
+        echo utilities::apiMessage(
+            $enabled ? 'Two-factor authentication enabled.' : 'Two-factor authentication disabled.',
+            200,
+            ['two_fa_enabled' => (bool) $enabled]
+        );
     }
 }

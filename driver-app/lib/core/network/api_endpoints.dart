@@ -20,10 +20,12 @@ abstract final class ApiEndpoints {
   static const String directions           = '/content/directions';
 
   // ── Driver auth ───────────────────────────────────────────────────────────
-  static const String driverLogin         = '/driver/auth/login';
-  static const String driverRegister      = '/driver/auth/register';
-  static const String driverSendOtp       = '/driver/auth/send-otp';
-  static const String driverVerifyOtp     = '/driver/auth/verify-otp';
+  static const String driverLogin             = '/driver/auth/login';
+  static const String driverRegister          = '/driver/auth/register';
+  static const String driverSendOtp           = '/driver/auth/send-otp';
+  static const String driverVerifyOtp         = '/driver/auth/verify-otp';
+  static const String driverForgotPassword    = '/driver/auth/forgot-password';
+  static const String driverResetPassword     = '/driver/auth/reset-password';
   static const String driverLogout             = '/driver/auth/logout';
   static const String driverGetProfile         = '/driver/auth/profile';  // GET — fresh from DB
   static const String driverUpdateProfile      = '/driver/auth/profile';  // PUT
@@ -37,6 +39,8 @@ abstract final class ApiEndpoints {
 
   // ── Driver jobs ───────────────────────────────────────────────────────────
   static const String driverJobs            = '/driver/jobs';
+  static const String availableJobs         = '/driver/jobs/available';
+  static String selfAssignJob(String id)    => '/driver/jobs/$id/self-assign';
   static String driverJobById(String id)    => '/driver/jobs/$id';
   static String acceptJob(String id)        => '/driver/jobs/$id/accept';
   static String rejectJob(String id)        => '/driver/jobs/$id/reject';
@@ -48,6 +52,8 @@ abstract final class ApiEndpoints {
   static String completeJob(String id)      => '/driver/jobs/$id/complete';
   static String confirmPayment(String id)   => '/driver/jobs/$id/confirm-payment';
   static String reachStop(String id, String stopId) => '/driver/jobs/$id/stops/$stopId/reach';
+  static String acceptEarlyEnd(String id) => '/driver/jobs/$id/accept-early-end';
+  static String rejectEarlyEnd(String id) => '/driver/jobs/$id/reject-early-end';
   static String updateJobPaymentMethod(String id)   => '/driver/jobs/$id/payment-method';
   static String jobMessages(String id)              => '/driver/jobs/$id/messages';
   static const String driverChatThreads             = '/driver/chats';

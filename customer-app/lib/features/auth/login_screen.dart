@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -556,6 +557,10 @@ class _EmailSuggestionText extends StatelessWidget {
   }
 }
 
+// ── Forgot / Reset Password — 3-step bottom sheet ────────────────────────────
+
+enum _ResetStep { email, code, password }
+
 class _ResetPasswordSheet extends ConsumerStatefulWidget {
   const _ResetPasswordSheet();
 
@@ -564,50 +569,105 @@ class _ResetPasswordSheet extends ConsumerStatefulWidget {
 }
 
 class _ResetPasswordSheetState extends ConsumerState<_ResetPasswordSheet> {
-  final _emailCtrl = TextEditingController();
-  final _codeCtrl = TextEditingController();
-  final _passCtrl = TextEditingController();
+  _ResetStep _step = _ResetStep.email;
+
+  final _emailCtrl   = TextEditingController();
+  final _codeCtrl    = TextEditingController();
+  final _passCtrl    = TextEditingController();
   final _confirmCtrl = TextEditingController();
-  bool _sending = false;
-  bool _saving = false;
-  bool _sent = false;
-  bool _obscure = true;
+
+  bool    _loading  = false;
+  bool    _obscure  = true;
   String? _error;
 
-  Future<void> _sendCode() async {
+  // Resend timer — 3 minutes (email OTP rule)
+  static const _resendSecs = 180;
+  int     _secondsLeft = 0;
+  Timer?  _timer;
+
+  String  _sentEmail = '';
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _emailCtrl.dispose();
+    _codeCtrl.dispose();
+    _passCtrl.dispose();
+    _confirmCtrl.dispose();
+    super.dispose();
+  }
+
+  void _startTimer() {
+    _timer?.cancel();
+    setState(() => _secondsLeft = _resendSecs);
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() {
+        if (_secondsLeft > 0) {
+          _secondsLeft--;
+        } else {
+          _timer?.cancel();
+        }
+      });
+    });
+  }
+
+  String get _timerLabel {
+    final m = _secondsLeft ~/ 60;
+    final s = _secondsLeft % 60;
+    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+  }
+
+  String _maskEmail(String email) {
+    final at = email.indexOf('@');
+    if (at <= 1) return email;
+    final local = email.substring(0, at);
+    final domain = email.substring(at);
+    final visible = local.length > 2 ? local.substring(0, 2) : local[0];
+    return '$visible${'*' * (local.length - visible.length)}$domain';
+  }
+
+  Future<void> _sendCode({bool isResend = false}) async {
     final email = _emailCtrl.text.trim();
     if (!RegExp(r'^[^@]+@[^@]+\.[^@]+$').hasMatch(email)) {
       setState(() => _error = 'Enter a valid email address.');
       return;
     }
-    setState(() {
-      _sending = true;
-      _error = null;
-    });
+    setState(() { _loading = true; _error = null; });
     try {
       await ref.read(authRepositoryProvider).forgotPassword(email);
       if (!mounted) return;
-      setState(() => _sent = true);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Reset code sent. Check your email.')),
-      );
-    } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      _sentEmail = email;
+      _codeCtrl.clear();
+      _startTimer();
+      setState(() => _step = _ResetStep.code);
+      if (isResend) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('A new code has been sent to your email.')),
+        );
+      }
+    } on Exception catch (e) {
+      if (mounted) setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
     } finally {
-      if (mounted) setState(() => _sending = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 
-  Future<void> _save() async {
-    if (!_sent) return;
-    final email = _emailCtrl.text.trim();
+  Future<void> _verifyCode() async {
+    final code = _codeCtrl.text.trim();
+    if (code.length != 6) {
+      setState(() => _error = 'Enter the 6-digit code from your email.');
+      return;
+    }
+    // We don't have a standalone verify-code endpoint — move straight to password step.
+    // The code is validated when the password is submitted.
+    setState(() { _step = _ResetStep.password; _error = null; });
+  }
+
+  Future<void> _savePassword() async {
     final code = _codeCtrl.text.trim();
     final pass = _passCtrl.text;
     final conf = _confirmCtrl.text;
-    if (code.isEmpty) {
-      setState(() => _error = 'Enter the reset code.');
-      return;
-    }
     if (pass.trim().length < 6) {
       setState(() => _error = 'Password must be at least 6 characters.');
       return;
@@ -616,126 +676,275 @@ class _ResetPasswordSheetState extends ConsumerState<_ResetPasswordSheet> {
       setState(() => _error = 'Passwords do not match.');
       return;
     }
-    setState(() {
-      _saving = true;
-      _error = null;
-    });
+    setState(() { _loading = true; _error = null; });
     try {
       await ref.read(authRepositoryProvider).resetPassword(
-        email: email,
+        email: _sentEmail,
         code: code,
         password: pass,
       );
       if (!mounted) return;
+      _timer?.cancel();
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Password updated. You can log in now.')),
+        SnackBar(
+          content: const Text('Password updated successfully. You can now log in.'),
+          backgroundColor: AppColors.success,
+        ),
       );
-    } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+    } on Exception catch (e) {
+      if (mounted) setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 
   @override
-  void dispose() {
-    _emailCtrl.dispose();
-    _codeCtrl.dispose();
-    _passCtrl.dispose();
-    _confirmCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final busy = _sending || _saving;
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 24),
+        padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const SizedBox(height: 12),
+            // Drag handle
             Center(
               child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: AppColors.divider,
-                  borderRadius: BorderRadius.circular(2),
-                ),
+                width: 40, height: 4,
+                decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2)),
               ),
             ),
             const SizedBox(height: 24),
-            Text(AppStrings.resetPassword, style: AppTextStyles.h3, textAlign: TextAlign.center),
-            const SizedBox(height: 18),
-            AppTextField(
-              controller: _emailCtrl,
-              label: AppStrings.emailAddress,
-              hint: 'you@example.com',
-              keyboardType: TextInputType.emailAddress,
-              textInputAction: TextInputAction.done,
-              onChanged: (_) => setState(() => _error = null),
-            ),
-            const SizedBox(height: 14),
-            AppButton(
-              label: AppStrings.sendResetCode,
-              onPressed: (!busy) ? _sendCode : null,
-              enabled: !busy,
-            ),
-            if (_sent) ...[
-              const SizedBox(height: 18),
-              AppTextField(
-                controller: _codeCtrl,
-                label: AppStrings.resetCode,
-                hint: '123456',
-                keyboardType: TextInputType.number,
-                textInputAction: TextInputAction.next,
-                onChanged: (_) => setState(() => _error = null),
-              ),
-              const SizedBox(height: 14),
-              AppTextField(
-                controller: _passCtrl,
-                label: AppStrings.newPassword,
-                hint: '••••••••',
-                obscureText: _obscure,
-                textInputAction: TextInputAction.next,
-                onChanged: (_) => setState(() => _error = null),
-                suffixIcon: IconButton(
-                  onPressed: () => setState(() => _obscure = !_obscure),
-                  icon: Icon(
-                    _obscure ? Icons.visibility_off_rounded : Icons.visibility_rounded,
-                    color: AppColors.textHint,
-                  ),
+
+            // Step indicator
+            _StepIndicator(current: _step),
+            const SizedBox(height: 28),
+
+            // Back arrow on steps 2 & 3
+            if (_step != _ResetStep.email)
+              GestureDetector(
+                onTap: _loading ? null : () => setState(() {
+                  _error = null;
+                  _step = _step == _ResetStep.password ? _ResetStep.code : _ResetStep.email;
+                }),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.arrow_back_ios_new_rounded, size: 14, color: AppColors.primary),
+                    const SizedBox(width: 4),
+                    Text('Back', style: AppTextStyles.bodySmall.copyWith(color: AppColors.primary, fontWeight: FontWeight.w600)),
+                  ],
                 ),
               ),
-              const SizedBox(height: 14),
-              AppTextField(
-                controller: _confirmCtrl,
-                label: AppStrings.confirmNewPassword,
-                hint: '••••••••',
-                obscureText: _obscure,
-                textInputAction: TextInputAction.done,
-                onSubmitted: (_) => _save(),
-                onChanged: (_) => setState(() => _error = null),
-              ),
-              const SizedBox(height: 18),
-              AppButton(
-                label: AppStrings.saveNewPassword,
-                onPressed: (!busy) ? _save : null,
-                enabled: !busy,
-              ),
-            ],
+            if (_step != _ResetStep.email) const SizedBox(height: 16),
+
+            // ── Step content ──────────────────────────────────────────────────
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 220),
+              transitionBuilder: (child, anim) => FadeTransition(opacity: anim, child: child),
+              child: switch (_step) {
+                _ResetStep.email    => _buildEmailStep(),
+                _ResetStep.code     => _buildCodeStep(),
+                _ResetStep.password => _buildPasswordStep(),
+              },
+            ),
+
+            // Error
             if (_error != null) ...[
-              const SizedBox(height: 12),
-              Text(_error!, style: AppTextStyles.bodySmall.copyWith(color: AppColors.error)),
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: AppColors.error.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.error_outline_rounded, size: 16, color: AppColors.error),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(_error!, style: AppTextStyles.bodySmall.copyWith(color: AppColors.error))),
+                  ],
+                ),
+              ),
             ],
-            const SizedBox(height: 24),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildEmailStep() {
+    return Column(
+      key: const ValueKey('email'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text('Forgot password?', style: AppTextStyles.h3),
+        const SizedBox(height: 6),
+        Text(
+          'Enter your email address and we\'ll send you a 6-digit reset code.',
+          style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+        ),
+        const SizedBox(height: 24),
+        AppTextField(
+          controller: _emailCtrl,
+          label: AppStrings.emailAddress,
+          hint: 'you@example.com',
+          keyboardType: TextInputType.emailAddress,
+          textInputAction: TextInputAction.done,
+          onSubmitted: (_) => _loading ? null : _sendCode(),
+          onChanged: (_) => setState(() => _error = null),
+        ),
+        const SizedBox(height: 20),
+        AppButton(
+          label: AppStrings.sendResetCode,
+          loading: _loading,
+          onPressed: _loading ? null : _sendCode,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCodeStep() {
+    return Column(
+      key: const ValueKey('code'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text('Check your email', style: AppTextStyles.h3),
+        const SizedBox(height: 6),
+        RichText(
+          text: TextSpan(
+            style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+            children: [
+              const TextSpan(text: 'We sent a 6-digit code to '),
+              TextSpan(
+                text: _maskEmail(_sentEmail),
+                style: AppTextStyles.bodySmall.copyWith(color: AppColors.textPrimary, fontWeight: FontWeight.w700),
+              ),
+              const TextSpan(text: '. Enter it below.'),
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
+        AppTextField(
+          controller: _codeCtrl,
+          label: AppStrings.resetCode,
+          hint: '123456',
+          keyboardType: TextInputType.number,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(6)],
+          textInputAction: TextInputAction.done,
+          onSubmitted: (_) => _loading ? null : _verifyCode(),
+          onChanged: (_) => setState(() => _error = null),
+        ),
+        const SizedBox(height: 20),
+        AppButton(
+          label: 'Continue',
+          loading: _loading,
+          onPressed: _loading ? null : _verifyCode,
+        ),
+        const SizedBox(height: 16),
+        Center(
+          child: _secondsLeft > 0
+              ? Text(
+                  'Resend code in $_timerLabel',
+                  style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+                )
+              : GestureDetector(
+                  onTap: _loading ? null : () => _sendCode(isResend: true),
+                  child: Text(
+                    'Resend code',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.w700,
+                      decoration: TextDecoration.underline,
+                      decorationColor: AppColors.primary,
+                    ),
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPasswordStep() {
+    return Column(
+      key: const ValueKey('password'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text('Set new password', style: AppTextStyles.h3),
+        const SizedBox(height: 6),
+        Text(
+          'Choose a strong password you haven\'t used before.',
+          style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+        ),
+        const SizedBox(height: 24),
+        AppTextField(
+          controller: _passCtrl,
+          label: AppStrings.newPassword,
+          hint: '••••••••',
+          obscureText: _obscure,
+          textInputAction: TextInputAction.next,
+          onChanged: (_) => setState(() => _error = null),
+          suffixIcon: IconButton(
+            onPressed: () => setState(() => _obscure = !_obscure),
+            icon: Icon(
+              _obscure ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+              color: AppColors.textHint,
+              size: 20,
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+        AppTextField(
+          controller: _confirmCtrl,
+          label: AppStrings.confirmNewPassword,
+          hint: '••••••••',
+          obscureText: _obscure,
+          textInputAction: TextInputAction.done,
+          onSubmitted: (_) => _loading ? null : _savePassword(),
+          onChanged: (_) => setState(() => _error = null),
+        ),
+        const SizedBox(height: 20),
+        AppButton(
+          label: AppStrings.saveNewPassword,
+          loading: _loading,
+          onPressed: _loading ? null : _savePassword,
+        ),
+      ],
+    );
+  }
+}
+
+class _StepIndicator extends StatelessWidget {
+  const _StepIndicator({required this.current});
+  final _ResetStep current;
+
+  @override
+  Widget build(BuildContext context) {
+    final steps = _ResetStep.values;
+    final currentIdx = steps.indexOf(current);
+    return Row(
+      children: List.generate(steps.length, (i) {
+        final done   = i < currentIdx;
+        final active = i == currentIdx;
+        return Expanded(
+          child: Row(
+            children: [
+              Expanded(
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: done || active ? AppColors.primary : AppColors.divider,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              if (i < steps.length - 1) const SizedBox(width: 6),
+            ],
+          ),
+        );
+      }),
     );
   }
 }

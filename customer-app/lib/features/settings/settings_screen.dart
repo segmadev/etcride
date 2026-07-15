@@ -6,6 +6,8 @@ import '../../../core/constants/app_text_styles.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/config/router.dart';
 import '../../../core/services/biometric_service.dart';
+import '../../../core/services/notification_service.dart';
+import '../../../core/services/notification_prefs_service.dart';
 import '../../../shared/providers/providers.dart';
 import '../../../shared/widgets/loading_overlay.dart';
 
@@ -17,14 +19,135 @@ class SettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
-  bool _biometricsAvailable = false;
-  bool _biometricsEnabled   = false;
-  bool _loggingOut          = false;
+  bool _biometricsAvailable  = false;
+  bool _biometricsEnabled    = false;
+  bool _twoFaEnabled         = false;
+  bool _twoFaLoading         = false;
+  bool _loggingOut           = false;
+  bool _notificationsEnabled  = false;
+  bool _notifLoading          = false;
+  bool _emailTripCompleted    = true;
+  bool _emailTripLoading      = false;
+  // Per-type notification prefs
+  bool _notifTripUpdates = true;
+  bool _notifPayments    = true;
+  bool _notifMessages    = true;
 
   @override
   void initState() {
     super.initState();
     _loadBiometrics();
+    _loadTwoFa();
+    _loadNotificationStatus();
+  }
+
+  Future<void> _loadNotificationStatus() async {
+    final enabled = await NotificationService.instance.hasPermission();
+    final prefs   = NotificationPrefsService.instance;
+    if (mounted) {
+      setState(() {
+        _notificationsEnabled = enabled;
+        _notifTripUpdates = prefs.getEnabled(NotificationPrefsService.kTripUpdates);
+        _notifPayments    = prefs.getEnabled(NotificationPrefsService.kPayments);
+        _notifMessages    = prefs.getEnabled(NotificationPrefsService.kMessages);
+      });
+    }
+  }
+
+  Future<void> _toggleNotifications(bool value) async {
+    if (_notifLoading) return;
+    if (value) {
+      setState(() => _notifLoading = true);
+      final token = await NotificationService.instance.requestPermissionAndGetToken();
+      if (!mounted) return;
+      final granted = token != null && token.isNotEmpty;
+      if (granted) {
+        try {
+          await ref.read(authRepositoryProvider).updateProfile(fcmToken: token);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Notifications enabled.')),
+            );
+          }
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Failed to save notification token: $e')),
+            );
+          }
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Could not get notification token. Check device notification settings.')),
+          );
+        }
+      }
+      if (mounted) setState(() { _notificationsEnabled = granted; _notifLoading = false; });
+    } else {
+      setState(() => _notifLoading = true);
+      try {
+        await ref.read(authRepositoryProvider).updateProfile(fcmToken: 'disabled');
+        if (mounted) {
+          setState(() { _notificationsEnabled = false; _notifLoading = false; });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Push notifications disabled.')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() => _notifLoading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to disable notifications: $e')),
+          );
+        }
+      }
+    }
+  }
+
+  void _loadTwoFa() {
+    final user = ref.read(currentUserProvider);
+    if (user != null) {
+      setState(() {
+        _twoFaEnabled = user.twoFaEnabled;
+        _emailTripCompleted = user.emailTripCompleted;
+      });
+    }
+  }
+
+  Future<void> _toggleEmailTripCompleted(bool value) async {
+    setState(() => _emailTripLoading = true);
+    try {
+      final updated = await ref.read(authRepositoryProvider).updateProfile(emailTripCompleted: value);
+      ref.read(currentUserProvider.notifier).state = updated;
+      if (mounted) setState(() { _emailTripCompleted = value; _emailTripLoading = false; });
+    } catch (_) {
+      if (mounted) setState(() => _emailTripLoading = false);
+    }
+  }
+
+  Future<void> _toggleTwoFa(bool value) async {
+    final user = ref.read(currentUserProvider);
+    if (user == null || user.email.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Add an email address to your profile to enable 2FA.')),
+      );
+      return;
+    }
+    setState(() => _twoFaLoading = true);
+    try {
+      await ref.read(authRepositoryProvider).toggle2fa(enabled: value);
+      final updated = user.copyWith(twoFaEnabled: value);
+      ref.read(currentUserProvider.notifier).state = updated;
+      if (mounted) setState(() { _twoFaEnabled = value; _twoFaLoading = false; });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _twoFaLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString())),
+        );
+      }
+    }
   }
 
   Future<void> _loadBiometrics() async {
@@ -130,11 +253,88 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             const SizedBox(height: 10),
             Padding(
               padding: const EdgeInsets.only(left: 18),
+              child: _notifLoading
+                  ? const SizedBox(
+                      height: 46,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+                      ),
+                    )
+                  : _SettingsToggleRow(
+                      icon: Icons.notifications_none_rounded,
+                      label: 'Push Notifications',
+                      value: _notificationsEnabled,
+                      onChanged: _toggleNotifications,
+                    ),
+            ),
+            if (_notificationsEnabled) ...[
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.only(left: 36),
+                child: _SettingsToggleRow(
+                  icon: Icons.local_taxi_outlined,
+                  label: 'Trip Updates',
+                  value: _notifTripUpdates,
+                  onChanged: (v) async {
+                    setState(() => _notifTripUpdates = v);
+                    await NotificationPrefsService.instance.setEnabled(NotificationPrefsService.kTripUpdates, v);
+                  },
+                ),
+              ),
+              const SizedBox(height: 4),
+              Padding(
+                padding: const EdgeInsets.only(left: 36),
+                child: _SettingsToggleRow(
+                  icon: Icons.payment_outlined,
+                  label: 'Payments',
+                  value: _notifPayments,
+                  onChanged: (v) async {
+                    setState(() => _notifPayments = v);
+                    await NotificationPrefsService.instance.setEnabled(NotificationPrefsService.kPayments, v);
+                  },
+                ),
+              ),
+              const SizedBox(height: 4),
+              Padding(
+                padding: const EdgeInsets.only(left: 36),
+                child: _SettingsToggleRow(
+                  icon: Icons.chat_bubble_outline_rounded,
+                  label: 'Messages',
+                  value: _notifMessages,
+                  onChanged: (v) async {
+                    setState(() => _notifMessages = v);
+                    await NotificationPrefsService.instance.setEnabled(NotificationPrefsService.kMessages, v);
+                  },
+                ),
+              ),
+            ],
+            const SizedBox(height: 14),
+            Padding(
+              padding: const EdgeInsets.only(left: 18),
               child: _SettingsRow(
-                icon: Icons.notifications_none_rounded,
-                label: AppStrings.notifications,
+                icon: Icons.history_rounded,
+                label: 'Notification History',
                 onTap: () => context.push(AppRoutes.notifications),
               ),
+            ),
+            const SizedBox(height: 14),
+            Padding(
+              padding: const EdgeInsets.only(left: 18),
+              child: _emailTripLoading
+                  ? const SizedBox(
+                      height: 46,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+                      ),
+                    )
+                  : _SettingsToggleRow(
+                      icon: Icons.email_outlined,
+                      label: 'Email on Trip Completion',
+                      value: _emailTripCompleted,
+                      onChanged: _toggleEmailTripCompleted,
+                    ),
             ),
             if (_biometricsAvailable) ...[
               const SizedBox(height: 14),
@@ -174,6 +374,28 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             const SizedBox(height: 26),
             _SectionTitle('Security'),
             const SizedBox(height: 10),
+            Padding(
+              padding: const EdgeInsets.only(left: 18),
+              child: _twoFaLoading
+                  ? const SizedBox(
+                      height: 46,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      ),
+                    )
+                  : _SettingsToggleRow(
+                      icon: Icons.verified_user_outlined,
+                      label: 'Two-Factor Authentication',
+                      value: _twoFaEnabled,
+                      onChanged: _toggleTwoFa,
+                    ),
+            ),
+            const SizedBox(height: 14),
             Padding(
               padding: const EdgeInsets.only(left: 18),
               child: _SettingsRow(
@@ -388,7 +610,8 @@ class _SettingsToggleRow extends StatelessWidget {
           Switch(
             value: value,
             onChanged: onChanged,
-            activeColor: AppColors.primary,
+            activeThumbColor: AppColors.primary,
+            activeTrackColor: AppColors.primaryLight,
           ),
         ],
       ),

@@ -79,6 +79,10 @@ $router->group('/admin', function ($r) {
     $r->get('/email-templates',              'admin/EmailTemplates@index');
     $r->post('/email-templates/test',        'admin/EmailTemplates@test');
 
+    // ── FCM debug ─────────────────────────────────────────────────────────────
+    $r->post('/fcm/test',                    'admin/FcmDebug@test');
+    $r->get('/fcm/status',                   'admin/FcmDebug@status');
+
     // ── Payments ──────────────────────────────────────────────────────────────
     $r->get('/payments',                     'admin/Payments@index');
     $r->get('/payments/:id',                 'admin/Payments@show');

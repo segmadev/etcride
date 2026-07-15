@@ -153,6 +153,7 @@ class SmtpConfigs extends BaseController
 
         require_once ROOT . 'functions/mailer.php';
         $mailer  = new Mymailer();
+        Mymailer::setDb($this->db);
         $appName = $this->setting('app_name', 'ETCRide');
         $sent    = $mailer->smtpmailer(
             $to,

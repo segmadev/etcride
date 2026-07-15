@@ -75,10 +75,12 @@ final appRouter = GoRouter(
       path: AppRoutes.login,
       pageBuilder: (_, state) => _page(state, const DriverSignInScreen()),
     ),
-    GoRoute(
-      path: AppRoutes.register,
-      pageBuilder: (_, state) => _page(state, const DriverRegisterScreen()),
-    ),
+    // DRIVER REGISTRATION DISABLED — registration is handled via website/admin onboarding.
+    // To re-enable: uncomment the block below and restore the Register button in sign_in_screen.dart.
+    // GoRoute(
+    //   path: AppRoutes.register,
+    //   pageBuilder: (_, state) => _page(state, const DriverRegisterScreen()),
+    // ),
     GoRoute(
       path: AppRoutes.driverOtp,
       pageBuilder: (_, state) {

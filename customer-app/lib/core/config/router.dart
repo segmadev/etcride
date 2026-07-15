@@ -5,6 +5,7 @@ import '../../features/splash/splash_screen.dart';
 import '../../features/onboarding/onboarding_screen.dart';
 import '../../features/auth/phone_screen.dart';
 import '../../features/auth/otp_screen.dart';
+import '../../features/auth/two_fa_screen.dart';
 import '../../features/auth/login_screen.dart';
 import '../../features/auth/complete_profile_screen.dart';
 import '../../features/auth/set_password_screen.dart';
@@ -69,6 +70,7 @@ abstract final class AppRoutes {
   static const String phone              = '/phone';        // contact entry (email or phone)
   static const String login              = '/login';
   static const String otp                = '/otp';          // extra: OtpExtra
+  static const String twoFa             = '/2fa';          // extra: {token, contact}
   static const String completeProfile    = '/complete-profile';
   static const String setPassword        = '/set-password';
   static const String locationPermission = '/location-permission';
@@ -148,6 +150,19 @@ final appRouter = GoRouter(
             contact: extra.contact,
             contactType: extra.contactType,
             isRegistration: extra.isRegistration,
+          ),
+        );
+      },
+    ),
+    GoRoute(
+      path: AppRoutes.twoFa,
+      pageBuilder: (_, state) {
+        final extra = state.extra as Map<String, dynamic>;
+        return _appPage(
+          state,
+          TwoFaScreen(
+            twoFaToken: extra['token'] as String,
+            twoFaContact: extra['contact'] as String,
           ),
         );
       },

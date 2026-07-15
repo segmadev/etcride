@@ -24,6 +24,7 @@ abstract final class ApiEndpoints {
   static String trackBooking(String id)   => '/bookings/$id/track';
   static String confirmDelivery(String id)=> '/bookings/$id/confirm-delivery';
   static String initiatePayment(String id)=> '/bookings/$id/pay';
+  static String syncPayment(String id)    => '/bookings/$id/pay/sync';
   static String paymentStatus(String id)  => '/bookings/$id/payment-status';
   static String paymentMethod(String id)  => '/bookings/$id/payment-method';
   static String rateBooking(String id)    => '/bookings/$id/rate';
@@ -33,6 +34,7 @@ abstract final class ApiEndpoints {
   static String reportTrip(String id)     => '/bookings/$id/report';
   static String reportStatus(String id)   => '/bookings/$id/report-status';
   static String requestCancellation(String id) => '/bookings/$id/request-cancellation';
+  static String requestEarlyEnd(String id)    => '/bookings/$id/request-early-end';
   static const String chatThreads          = '/chats';
   static String markChatRead(String id)   => '/chats/$id/read';
 
@@ -46,6 +48,8 @@ abstract final class ApiEndpoints {
   static const String verifyOtp        = '/auth/verify-otp';
   static const String sendContactOtp   = '/auth/send-contact-otp';
   static const String verifyContactOtp = '/auth/verify-contact-otp';
+  static const String verify2fa        = '/auth/verify-2fa';
+  static const String toggle2fa        = '/auth/2fa';
 
   // ── Content ───────────────────────────────────────────────────────────────
   static const String vehicleTypes         = '/content/vehicle-types';

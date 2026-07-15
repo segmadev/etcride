@@ -82,6 +82,10 @@ final driverHistoryProvider = FutureProvider<List<JobModel>>((ref) async {
   return ref.read(driverRepositoryProvider).getHistory();
 });
 
+final availableJobsProvider = FutureProvider<List<JobModel>>((ref) async {
+  return ref.read(driverRepositoryProvider).getAvailableJobs();
+});
+
 final driverNotificationsProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
   return ref.read(driverRepositoryProvider).getNotifications();
 });

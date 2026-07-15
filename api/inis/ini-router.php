@@ -37,6 +37,7 @@ $router->post('/auth/forgot-password',      'auth@forgotPassword');
 $router->post('/auth/reset-password',       'auth@resetPassword');
 $router->post('/auth/send-otp',             'auth@sendOtp');
 $router->post('/auth/verify-otp',           'auth@verifyOtp');
+$router->post('/auth/verify-2fa',           'auth@verify2fa');
 
 // ── Customer auth (protected) ─────────────────────────────────────────────────
 $router->group('/auth', function ($r) {
@@ -44,6 +45,7 @@ $router->group('/auth', function ($r) {
     $r->put('/profile',              'auth@updateProfile');
     $r->post('/send-contact-otp',    'auth@sendContactOtp');
     $r->post('/verify-contact-otp',  'auth@verifyContactOtp');
+    $r->put('/2fa',                  'auth@toggle2fa');
 }, ['auth' => true, 'authType' => 'customer']);
 
 // ── Terms & Conditions (customer) ──────────────────────────────────────────────
@@ -72,6 +74,7 @@ $router->group('/bookings', function ($r) {
     $r->get('/:id/track',                  'Bookings@track');
     $r->post('/:id/confirm-delivery',      'Bookings@confirmDelivery');
     $r->post('/:id/pay',                   'Payments@initiate');
+    $r->post('/:id/pay/sync',              'Payments@sync');
     $r->get('/:id/payment-status',         'Payments@status');
     $r->put('/:id/payment-method',         'Bookings@updatePaymentMethod');
     $r->put('/:id/location',               'Bookings@updateLocation');
@@ -81,6 +84,7 @@ $router->group('/bookings', function ($r) {
     $r->post('/:id/report',                 'TripReports@reportTrip');
     $r->get('/:id/report-status',           'TripReports@getReportStatus');
     $r->post('/:id/request-cancellation',   'TripReports@requestCancellation');
+    $r->post('/:id/request-early-end',      'Bookings@requestEarlyEnd');
 }, ['auth' => true, 'authType' => 'customer']);
 
 // ── Customer Reports ──────────────────────────────────────────────────────────
@@ -109,10 +113,12 @@ $router->post('/payments/webhook/korapay',     'payments/Webhook@korapay');
 $router->get('/payments/callback', 'payments/Webhook@callback');
 
 // ── Driver auth (public) ──────────────────────────────────────────────────────
-$router->post('/driver/auth/login', 'driver/Auth@login');
-$router->post('/driver/auth/register',   'driver/Auth@register');
-$router->post('/driver/auth/send-otp',   'driver/Auth@sendOtp');
-$router->post('/driver/auth/verify-otp', 'driver/Auth@verifyOtp');
+$router->post('/driver/auth/login',          'driver/Auth@login');
+$router->post('/driver/auth/register',       'driver/Auth@register');
+$router->post('/driver/auth/send-otp',       'driver/Auth@sendOtp');
+$router->post('/driver/auth/verify-otp',     'driver/Auth@verifyOtp');
+$router->post('/driver/auth/forgot-password','driver/Auth@forgotPassword');
+$router->post('/driver/auth/reset-password', 'driver/Auth@resetPassword');
 
 // ── Driver protected routes ───────────────────────────────────────────────────
 $router->group('/driver', function ($r) {
@@ -133,6 +139,8 @@ $router->group('/driver', function ($r) {
     $r->post('/kyc',                   'driver/Kyc@submit');
 
     // Jobs
+    $r->get('/jobs/available',         'driver/Jobs@availableBookings');
+    $r->post('/jobs/:id/self-assign',  'driver/Jobs@selfAssign');
     $r->get('/jobs',                   'driver/Jobs@index');
     $r->get('/jobs/:id',               'driver/Jobs@show');
     $r->post('/jobs/:id/accept',       'driver/Jobs@accept');
@@ -144,6 +152,8 @@ $router->group('/driver', function ($r) {
     $r->post('/jobs/:id/start',        'driver/Jobs@start');
     $r->post('/jobs/:id/complete',          'driver/Jobs@complete');
     $r->post('/jobs/:id/confirm-payment',   'driver/Jobs@confirmPayment');
+    $r->post('/jobs/:id/accept-early-end',  'driver/Jobs@acceptEarlyEnd');
+    $r->post('/jobs/:id/reject-early-end',  'driver/Jobs@rejectEarlyEnd');
     $r->put('/jobs/:id/payment-method',     'driver/Jobs@updatePaymentMethod');
     $r->post('/jobs/:id/stops/:stop_id/reach', 'driver/Jobs@reachStop');
     $r->get('/jobs/:id/messages',              'driver/Jobs@getMessages');

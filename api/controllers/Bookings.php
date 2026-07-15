@@ -266,6 +266,18 @@ class Bookings extends BaseController
         $this->recordStatusChange($id, null, 'pending', 'system');
         $this->logActivity('customer', $me['id'], 'booking_created', ['booking_id' => $id]);
 
+        // Email customer: booking confirmed
+        if (!empty($me['email'])) {
+            $fareFormatted = '₦' . number_format((float)($insertData['estimated_fare'] ?? 0), 0);
+            $this->sendTemplateEmail('booking_confirmed', $me['email'], $me['name'], [
+                '{{customer_name}}'       => $me['name'],
+                '{{booking_code}}'        => $insertData['booking_code'] ?? $id,
+                '{{pickup_address}}'      => $insertData['pickup_address'] ?? '',
+                '{{destination_address}}' => $insertData['destination_address'] ?? '',
+                '{{estimated_fare}}'      => $fareFormatted,
+            ]);
+        }
+
         // Auto-assign nearest online driver matching the chosen vehicle type
         $assignedDriver = null;
         $autoAssign = $this->setting('auto_assign_enabled', '1') === '1';
@@ -561,6 +573,14 @@ class Bookings extends BaseController
             'sender_id'   => $me['id'],
             'body'        => $body,
         ]);
+
+        // Push notification to driver
+        if (!empty($booking['driver_id'])) {
+            $preview = mb_strlen($body) > 60 ? mb_substr($body, 0, 60) . '…' : $body;
+            $this->notify('driver', $booking['driver_id'],
+                'Message from ' . ($me['name'] ?? 'Customer'),
+                $preview, 'new_message', $id);
+        }
 
         echo utilities::apiMessage('Message sent.', 200, $this->getall('trip_messages', 'id = ?', [$msgId]));
     }
@@ -1100,5 +1120,31 @@ class Bookings extends BaseController
         $stmt->execute([$lat, $lng, $lat, $category, $excludeVtId]);
 
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    // ── POST /bookings/:id/request-early-end ─────────────────────────────────
+    public function requestEarlyEnd(string $id): void
+    {
+        $me      = BaseController::$authUser;
+        $id      = $this->normalizeId($id);
+        $booking = $this->getall('bookings', 'id = ? AND customer_id = ?', [$id, $me['id']]);
+
+        if (!is_array($booking)) { echo utilities::apiMessage('Booking not found.', 404); return; }
+        if ($booking['status'] !== 'in_progress') {
+            echo utilities::apiMessage('Trip is not in progress.', 409); return;
+        }
+        if ((int)($booking['early_end_requested'] ?? 0)) {
+            echo utilities::apiMessage('Early end already requested.', 409); return;
+        }
+
+        $this->update('bookings', ['early_end_requested' => 1], "id = '$id'");
+
+        if (!empty($booking['driver_id'])) {
+            $this->notify('driver', $booking['driver_id'], 'Early End Request',
+                ($me['name'] ?? 'Customer') . ' is requesting to end the trip early.',
+                'early_end_request', $id);
+        }
+
+        echo utilities::apiMessage('Early end requested. Waiting for driver to accept.', 200);
     }
 }

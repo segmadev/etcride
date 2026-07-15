@@ -66,8 +66,40 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> with TickerProviderSt
 
     setState(() { _loading = true; _error = null; });
     try {
-      final contactType = await ref.read(authRepositoryProvider).sendOtp(contact);
+      final (:contactType, :isExisting) =
+          await ref.read(authRepositoryProvider).sendOtp(contact);
       if (!mounted) return;
+
+      if (isExisting) {
+        setState(() => _loading = false);
+        final goToLogin = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Account already exists'),
+            content: Text(
+              'An account is already registered with this '
+              '${_method == _LoginMethod.phone ? 'phone number' : 'email address'}. '
+              'Would you like to log in instead?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Continue anyway'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Log In'),
+              ),
+            ],
+          ),
+        );
+        if (!mounted) return;
+        if (goToLogin == true) {
+          context.push(AppRoutes.login);
+          return;
+        }
+      }
+
       context.push(
         AppRoutes.otp,
         extra: OtpExtra(

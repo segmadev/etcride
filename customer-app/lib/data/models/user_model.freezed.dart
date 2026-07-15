@@ -27,7 +27,10 @@ mixin _$UserModel {
   String get profilePhoto => throw _privateConstructorUsedError;
   bool get isVerified => throw _privateConstructorUsedError;
   bool get hasPassword => throw _privateConstructorUsedError;
+  bool get twoFaEnabled => throw _privateConstructorUsedError;
   double get rating => throw _privateConstructorUsedError;
+  @JsonKey(name: 'email_trip_completed')
+  bool get emailTripCompleted => throw _privateConstructorUsedError;
   String? get createdAt => throw _privateConstructorUsedError;
 
   /// Serializes this UserModel to a JSON map.
@@ -53,7 +56,9 @@ abstract class $UserModelCopyWith<$Res> {
       String profilePhoto,
       bool isVerified,
       bool hasPassword,
+      bool twoFaEnabled,
       double rating,
+      @JsonKey(name: 'email_trip_completed') bool emailTripCompleted,
       String? createdAt});
 }
 
@@ -79,7 +84,9 @@ class _$UserModelCopyWithImpl<$Res, $Val extends UserModel>
     Object? profilePhoto = null,
     Object? isVerified = null,
     Object? hasPassword = null,
+    Object? twoFaEnabled = null,
     Object? rating = null,
+    Object? emailTripCompleted = null,
     Object? createdAt = freezed,
   }) {
     return _then(_value.copyWith(
@@ -111,10 +118,18 @@ class _$UserModelCopyWithImpl<$Res, $Val extends UserModel>
           ? _value.hasPassword
           : hasPassword // ignore: cast_nullable_to_non_nullable
               as bool,
+      twoFaEnabled: null == twoFaEnabled
+          ? _value.twoFaEnabled
+          : twoFaEnabled // ignore: cast_nullable_to_non_nullable
+              as bool,
       rating: null == rating
           ? _value.rating
           : rating // ignore: cast_nullable_to_non_nullable
               as double,
+      emailTripCompleted: null == emailTripCompleted
+          ? _value.emailTripCompleted
+          : emailTripCompleted // ignore: cast_nullable_to_non_nullable
+              as bool,
       createdAt: freezed == createdAt
           ? _value.createdAt
           : createdAt // ignore: cast_nullable_to_non_nullable
@@ -139,7 +154,9 @@ abstract class _$$UserModelImplCopyWith<$Res>
       String profilePhoto,
       bool isVerified,
       bool hasPassword,
+      bool twoFaEnabled,
       double rating,
+      @JsonKey(name: 'email_trip_completed') bool emailTripCompleted,
       String? createdAt});
 }
 
@@ -163,7 +180,9 @@ class __$$UserModelImplCopyWithImpl<$Res>
     Object? profilePhoto = null,
     Object? isVerified = null,
     Object? hasPassword = null,
+    Object? twoFaEnabled = null,
     Object? rating = null,
+    Object? emailTripCompleted = null,
     Object? createdAt = freezed,
   }) {
     return _then(_$UserModelImpl(
@@ -195,10 +214,18 @@ class __$$UserModelImplCopyWithImpl<$Res>
           ? _value.hasPassword
           : hasPassword // ignore: cast_nullable_to_non_nullable
               as bool,
+      twoFaEnabled: null == twoFaEnabled
+          ? _value.twoFaEnabled
+          : twoFaEnabled // ignore: cast_nullable_to_non_nullable
+              as bool,
       rating: null == rating
           ? _value.rating
           : rating // ignore: cast_nullable_to_non_nullable
               as double,
+      emailTripCompleted: null == emailTripCompleted
+          ? _value.emailTripCompleted
+          : emailTripCompleted // ignore: cast_nullable_to_non_nullable
+              as bool,
       createdAt: freezed == createdAt
           ? _value.createdAt
           : createdAt // ignore: cast_nullable_to_non_nullable
@@ -218,7 +245,9 @@ class _$UserModelImpl implements _UserModel {
       this.profilePhoto = '',
       this.isVerified = false,
       this.hasPassword = false,
+      this.twoFaEnabled = false,
       this.rating = 0.0,
+      this.emailTripCompleted = true,
       this.createdAt});
 
   factory _$UserModelImpl.fromJson(Map<String, dynamic> json) =>
@@ -245,13 +274,19 @@ class _$UserModelImpl implements _UserModel {
   final bool hasPassword;
   @override
   @JsonKey()
+  final bool twoFaEnabled;
+  @override
+  @JsonKey()
   final double rating;
+  @override
+  @JsonKey(name: 'email_trip_completed')
+  final bool emailTripCompleted;
   @override
   final String? createdAt;
 
   @override
   String toString() {
-    return 'UserModel(id: $id, phone: $phone, name: $name, email: $email, profilePhoto: $profilePhoto, isVerified: $isVerified, hasPassword: $hasPassword, rating: $rating, createdAt: $createdAt)';
+    return 'UserModel(id: $id, phone: $phone, name: $name, email: $email, profilePhoto: $profilePhoto, isVerified: $isVerified, hasPassword: $hasPassword, twoFaEnabled: $twoFaEnabled, rating: $rating, emailTripCompleted: $emailTripCompleted, createdAt: $createdAt)';
   }
 
   @override
@@ -269,7 +304,10 @@ class _$UserModelImpl implements _UserModel {
                 other.isVerified == isVerified) &&
             (identical(other.hasPassword, hasPassword) ||
                 other.hasPassword == hasPassword) &&
+            (identical(other.twoFaEnabled, twoFaEnabled) ||
+                other.twoFaEnabled == twoFaEnabled) &&
             (identical(other.rating, rating) || other.rating == rating) &&
+            (identical(other.emailTripCompleted, emailTripCompleted) || other.emailTripCompleted == emailTripCompleted) &&
             (identical(other.createdAt, createdAt) ||
                 other.createdAt == createdAt));
   }
@@ -277,7 +315,7 @@ class _$UserModelImpl implements _UserModel {
   @JsonKey(includeFromJson: false, includeToJson: false)
   @override
   int get hashCode => Object.hash(runtimeType, id, phone, name, email,
-      profilePhoto, isVerified, hasPassword, rating, createdAt);
+      profilePhoto, isVerified, hasPassword, twoFaEnabled, rating, emailTripCompleted, createdAt);
 
   /// Create a copy of UserModel
   /// with the given fields replaced by the non-null parameter values.
@@ -304,7 +342,9 @@ abstract class _UserModel implements UserModel {
       final String profilePhoto,
       final bool isVerified,
       final bool hasPassword,
+      final bool twoFaEnabled,
       final double rating,
+      @JsonKey(name: 'email_trip_completed') final bool emailTripCompleted,
       final String? createdAt}) = _$UserModelImpl;
 
   factory _UserModel.fromJson(Map<String, dynamic> json) =
@@ -325,7 +365,12 @@ abstract class _UserModel implements UserModel {
   @override
   bool get hasPassword;
   @override
+  bool get twoFaEnabled;
+  @override
   double get rating;
+  @override
+  @JsonKey(name: 'email_trip_completed')
+  bool get emailTripCompleted;
   @override
   String? get createdAt;
 

@@ -192,7 +192,7 @@ class Bookings extends BaseController
         // Notify previous driver
         if ($prevDriverId && $prevDriverId !== $newDriverId) {
             $this->notify('driver', $prevDriverId, 'Job Reassigned',
-                'This booking has been reassigned to another driver.', 'booking_cancelled', $id);
+                'This booking has been reassigned to another driver.', 'job_reassigned', $id);
         }
 
         // Notify new driver
@@ -272,7 +272,7 @@ class Bookings extends BaseController
 
         if ($prevDriverId) {
             $this->notify('driver', $prevDriverId, 'Job Removed',
-                'A booking that was assigned to you has been unassigned by admin.', 'booking_cancelled', $id);
+                'A booking that was assigned to you has been unassigned by admin.', 'job_removed', $id);
         }
 
         $this->logActivity('admin', $me['id'], 'booking_driver_deassigned',

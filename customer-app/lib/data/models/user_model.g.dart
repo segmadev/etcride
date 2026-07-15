@@ -15,7 +15,13 @@ _$UserModelImpl _$$UserModelImplFromJson(Map<String, dynamic> json) =>
       profilePhoto: json['profilePhoto'] as String? ?? '',
       isVerified: json['isVerified'] as bool? ?? false,
       hasPassword: json['hasPassword'] as bool? ?? false,
+      twoFaEnabled: json['twoFaEnabled'] as bool? ?? false,
       rating: (json['rating'] as num?)?.toDouble() ?? 0.0,
+      emailTripCompleted: json['email_trip_completed'] == null
+          ? true
+          : (json['email_trip_completed'] is bool
+              ? json['email_trip_completed'] as bool
+              : (json['email_trip_completed'] as num).toInt() != 0),
       createdAt: json['createdAt'] as String?,
     );
 
@@ -28,6 +34,8 @@ Map<String, dynamic> _$$UserModelImplToJson(_$UserModelImpl instance) =>
       'profilePhoto': instance.profilePhoto,
       'isVerified': instance.isVerified,
       'hasPassword': instance.hasPassword,
+      'twoFaEnabled': instance.twoFaEnabled,
       'rating': instance.rating,
+      'email_trip_completed': instance.emailTripCompleted,
       'createdAt': instance.createdAt,
     };

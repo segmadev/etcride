@@ -11,7 +11,9 @@ import '../../core/constants/app_text_styles.dart';
 import '../../core/errors/app_exception.dart';
 import '../../core/services/biometric_service.dart';
 import '../../shared/providers/providers.dart';
+import '../../shared/widgets/app_bottom_drawer.dart';
 import '../../shared/widgets/app_button.dart';
+import '../../shared/widgets/app_text_field.dart';
 
 enum _ContactTab { phone, email }
 
@@ -23,8 +25,7 @@ class DriverSignInScreen extends ConsumerStatefulWidget {
 }
 
 class _DriverSignInScreenState extends ConsumerState<DriverSignInScreen> {
-  _ContactTab _tab     = _ContactTab.phone;
-  int         _step    = 0;   // 0 = contact entry, 1 = password entry
+  _ContactTab _tab = _ContactTab.phone;
 
   final _phoneCtrl    = TextEditingController();
   final _emailCtrl    = TextEditingController();
@@ -40,12 +41,12 @@ class _DriverSignInScreenState extends ConsumerState<DriverSignInScreen> {
       : _emailCtrl.text.trim();
 
   String get _authMode => ref.read(driverAuthModeProvider);
-  bool get _isContactStep => _step == 0;
   bool get _isPhone => _tab == _ContactTab.phone;
   String get _switchLabel =>
       _isPhone ? 'Use email instead' : 'Use phone number instead';
   String get _contactHint => _isPhone ? '08012345678' : 'Email';
   bool get _otpAvailable => _authMode == 'otp' || _authMode == 'both';
+  bool get _passwordAvailable => _authMode == 'password' || _authMode == 'both';
   String get _contactInstruction => _isPhone
       ? 'Enter your phone number to continue'
       : 'Enter your email address to continue';
@@ -93,27 +94,21 @@ class _DriverSignInScreenState extends ConsumerState<DriverSignInScreen> {
     super.dispose();
   }
 
-  Future<void> _onContinue() async {
-    final contact = _contact;
-    if (contact.isEmpty) {
-      setState(() => _error = 'Please enter your ${_tab == _ContactTab.phone ? 'phone number' : 'email'}');
-      return;
-    }
-    setState(() => _error = null);
-
-    final mode = _authMode;
-
-    if (mode == 'otp' || mode == 'both') {
-      await _sendOtp(contact);
-    } else {
-      setState(() => _step = 1);
-    }
-  }
-
   Future<void> _onLogin() async {
     final contact = _contact;
-    final password = _passwordCtrl.text;
 
+    if (contact.isEmpty) {
+      setState(() => _error = 'Please enter your ${_isPhone ? 'phone number' : 'email'}');
+      return;
+    }
+
+    // OTP-only mode: treat SIGN IN as send-OTP
+    if (!_passwordAvailable) {
+      await _sendOtp(contact);
+      return;
+    }
+
+    final password = _passwordCtrl.text;
     if (password.isEmpty) {
       setState(() => _error = 'Please enter your password');
       return;
@@ -177,15 +172,15 @@ class _DriverSignInScreenState extends ConsumerState<DriverSignInScreen> {
     });
   }
 
-  void _onBackPressed() {
-    if (_step == 1) {
-      setState(() {
-        _step = 0;
-        _error = null;
-      });
-      return;
-    }
+  Future<void> _showForgotPassword() async {
+    await showAppBottomDrawer<void>(
+      context: context,
+      heightFactor: 0.78,
+      child: _ForgotPasswordSheet(initialEmail: _tab == _ContactTab.email ? _emailCtrl.text.trim() : ''),
+    );
+  }
 
+  void _onBackPressed() {
     if (context.canPop()) {
       context.pop();
     } else {
@@ -213,11 +208,11 @@ class _DriverSignInScreenState extends ConsumerState<DriverSignInScreen> {
                     const SizedBox(height: 76),
                     ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 308),
-                      child: Text(
-                        _isContactStep ? 'Start Driving' : 'Enter Password',
+                      child: const Text(
+                        'Start Driving',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontFamily: 'Poppins',
                           fontSize: 24,
                           fontWeight: FontWeight.w600,
@@ -230,9 +225,7 @@ class _DriverSignInScreenState extends ConsumerState<DriverSignInScreen> {
                     ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 260),
                       child: Text(
-                        _isContactStep
-                            ? _contactInstruction
-                            : 'Enter your password to continue',
+                        _contactInstruction,
                         style: AppTextStyles.bodyMedium.copyWith(
                           color: AppColors.textSecondary,
                           fontWeight: FontWeight.w500,
@@ -241,28 +234,19 @@ class _DriverSignInScreenState extends ConsumerState<DriverSignInScreen> {
                       ),
                     ),
                     const SizedBox(height: 48),
-                    if (_isContactStep) ...[
-                      if (_isPhone)
-                        _PhoneContactField(
-                          controller: _phoneCtrl,
-                          onSubmit: _onContinue,
-                        )
-                      else
-                        _OutlinedInput(
-                          controller: _emailCtrl,
-                          hint: _contactHint,
-                          keyboardType: TextInputType.emailAddress,
-                          onSubmitted: (_) => _onContinue(),
-                        ),
-                    ] else ...[
-                      _SelectedContactCard(
-                        tab: _tab,
-                        contact: _contact,
-                        onEdit: () => setState(() {
-                          _step = 0;
-                          _error = null;
-                        }),
+                    if (_isPhone)
+                      _PhoneContactField(
+                        controller: _phoneCtrl,
+                        onSubmit: () => FocusScope.of(context).nextFocus(),
+                      )
+                    else
+                      _OutlinedInput(
+                        controller: _emailCtrl,
+                        hint: _contactHint,
+                        keyboardType: TextInputType.emailAddress,
+                        onSubmitted: (_) => FocusScope.of(context).nextFocus(),
                       ),
+                    if (_passwordAvailable) ...[
                       const SizedBox(height: 16),
                       _PasswordField(
                         controller: _passwordCtrl,
@@ -272,23 +256,6 @@ class _DriverSignInScreenState extends ConsumerState<DriverSignInScreen> {
                         onToggleVisibility: () =>
                             setState(() => _showPassword = !_showPassword),
                       ),
-                      if (_otpAvailable) ...[
-                        const SizedBox(height: 28),
-                        Center(
-                          child: GestureDetector(
-                            onTap: () => _sendOtp(_contact),
-                            child: Text(
-                              'Use OTP instead',
-                              style: AppTextStyles.bodyMedium.copyWith(
-                                color: AppColors.primary,
-                                fontWeight: FontWeight.w900,
-                                decoration: TextDecoration.underline,
-                                decorationColor: AppColors.primary,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
                     ],
                     if (_error != null) ...[
                       const SizedBox(height: 14),
@@ -302,11 +269,11 @@ class _DriverSignInScreenState extends ConsumerState<DriverSignInScreen> {
                     ],
                     const SizedBox(height: 38),
                     AppButton(
-                      label: _isContactStep ? 'CONTINUE' : 'SIGN IN',
+                      label: 'SIGN IN',
                       loading: _loading,
-                      onPressed: _isContactStep ? _onContinue : _onLogin,
+                      onPressed: _onLogin,
                     ),
-                    if (_biometricAvailable && !_isContactStep) ...[
+                    if (_biometricAvailable) ...[
                       const SizedBox(height: 14),
                       OutlinedButton.icon(
                         onPressed: _loading ? null : _biometricLogin,
@@ -323,56 +290,260 @@ class _DriverSignInScreenState extends ConsumerState<DriverSignInScreen> {
                         ),
                       ),
                     ],
-                    if (_isContactStep) ...[
-                      const SizedBox(height: 28),
+                    if (_passwordAvailable) ...[
+                      const SizedBox(height: 4),
                       Center(
                         child: GestureDetector(
-                          onTap: _toggleMethod,
+                          onTap: _showForgotPassword,
                           child: Text(
-                            _switchLabel,
+                            AppStrings.forgotPassword,
                             style: AppTextStyles.bodyMedium.copyWith(
-                              color: AppColors.primary,
-                              fontWeight: FontWeight.w900,
+                              color: AppColors.textSecondary,
+                              fontWeight: FontWeight.w600,
                               decoration: TextDecoration.underline,
-                              decorationColor: AppColors.primary,
+                              decorationColor: AppColors.textSecondary,
                             ),
                           ),
                         ),
                       ),
                     ],
-                    const SizedBox(height: 40),
+                    const SizedBox(height: 12),
                     Center(
-                      child: Wrap(
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          Text(
-                            "Don't have an account? ",
-                            style: AppTextStyles.bodyMedium.copyWith(
-                              color: AppColors.textSecondary,
-                              fontWeight: FontWeight.w500,
-                            ),
+                      child: GestureDetector(
+                        onTap: _toggleMethod,
+                        child: Text(
+                          _switchLabel,
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w900,
+                            decoration: TextDecoration.underline,
+                            decorationColor: AppColors.primary,
                           ),
-                          GestureDetector(
-                            onTap: () => context.push(AppRoutes.register),
-                            child: Text(
-                              'Register',
-                              style: AppTextStyles.bodyMedium.copyWith(
-                                color: AppColors.textPrimary,
-                                fontWeight: FontWeight.w800,
-                                decoration: TextDecoration.underline,
-                                decorationColor: AppColors.textPrimary,
-                              ),
-                            ),
-                          ),
-                        ],
+                        ),
                       ),
                     ),
+                    const SizedBox(height: 40),
+                    // DRIVER REGISTRATION DISABLED — registration is via website/admin onboarding.
+                    // To re-enable: restore the Center/Wrap block below and uncomment AppRoutes.register in router.dart.
+                    // Center(
+                    //   child: Wrap(
+                    //     crossAxisAlignment: WrapCrossAlignment.center,
+                    //     children: [
+                    //       Text(
+                    //         "Don't have an account? ",
+                    //         style: AppTextStyles.bodyMedium.copyWith(
+                    //           color: AppColors.textSecondary,
+                    //           fontWeight: FontWeight.w500,
+                    //         ),
+                    //       ),
+                    //       GestureDetector(
+                    //         onTap: () => context.push(AppRoutes.register),
+                    //         child: Text(
+                    //           'Register',
+                    //           style: AppTextStyles.bodyMedium.copyWith(
+                    //             color: AppColors.textPrimary,
+                    //             fontWeight: FontWeight.w800,
+                    //             decoration: TextDecoration.underline,
+                    //             decorationColor: AppColors.textPrimary,
+                    //           ),
+                    //         ),
+                    //       ),
+                    //     ],
+                    //   ),
+                    // ),
                     const SizedBox(height: 12),
                   ],
                 ),
               ),
             );
           },
+        ),
+      ),
+    );
+  }
+}
+
+// ── Forgot / Reset password bottom sheet ─────────────────────────────────────
+
+class _ForgotPasswordSheet extends ConsumerStatefulWidget {
+  const _ForgotPasswordSheet({this.initialEmail = ''});
+  final String initialEmail;
+
+  @override
+  ConsumerState<_ForgotPasswordSheet> createState() => _ForgotPasswordSheetState();
+}
+
+class _ForgotPasswordSheetState extends ConsumerState<_ForgotPasswordSheet> {
+  late final TextEditingController _emailCtrl;
+  final _codeCtrl    = TextEditingController();
+  final _passCtrl    = TextEditingController();
+  final _confirmCtrl = TextEditingController();
+
+  bool    _sending = false;
+  bool    _saving  = false;
+  bool    _sent    = false;
+  bool    _obscure = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _emailCtrl = TextEditingController(text: widget.initialEmail);
+  }
+
+  @override
+  void dispose() {
+    _emailCtrl.dispose();
+    _codeCtrl.dispose();
+    _passCtrl.dispose();
+    _confirmCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _sendCode() async {
+    final email = _emailCtrl.text.trim();
+    if (!RegExp(r'^[^@]+@[^@]+\.[^@]+$').hasMatch(email)) {
+      setState(() => _error = 'Enter a valid email address.');
+      return;
+    }
+    setState(() { _sending = true; _error = null; });
+    try {
+      await ref.read(driverAuthRepositoryProvider).forgotPassword(email);
+      if (!mounted) return;
+      setState(() => _sent = true);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Reset code sent. Check your email.')),
+      );
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } catch (_) {
+      if (mounted) setState(() => _error = AppStrings.somethingWrong);
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  Future<void> _save() async {
+    if (!_sent) return;
+    final email = _emailCtrl.text.trim();
+    final code  = _codeCtrl.text.trim();
+    final pass  = _passCtrl.text;
+    final conf  = _confirmCtrl.text;
+    if (code.isEmpty) { setState(() => _error = 'Enter the reset code.'); return; }
+    if (pass.trim().length < 6) { setState(() => _error = 'Password must be at least 6 characters.'); return; }
+    if (pass != conf) { setState(() => _error = 'Passwords do not match.'); return; }
+
+    setState(() { _saving = true; _error = null; });
+    try {
+      await ref.read(driverAuthRepositoryProvider).resetPassword(
+        email: email, code: code, password: pass,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Password updated. You can sign in now.')),
+      );
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } catch (_) {
+      if (mounted) setState(() => _error = AppStrings.somethingWrong);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final busy = _sending || _saving;
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SizedBox(height: 12),
+            Center(
+              child: Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(AppStrings.resetPassword, style: AppTextStyles.h3, textAlign: TextAlign.center),
+            const SizedBox(height: 6),
+            Text(
+              'Enter your registered email address and we\'ll send you a 6-digit reset code.',
+              style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 20),
+            AppTextField(
+              controller: _emailCtrl,
+              label: 'Email address',
+              hint: 'you@example.com',
+              keyboardType: TextInputType.emailAddress,
+              textInputAction: TextInputAction.done,
+              enabled: !_sent,
+              onChanged: (_) => setState(() => _error = null),
+            ),
+            const SizedBox(height: 14),
+            AppButton(
+              label: AppStrings.sendResetCode,
+              onPressed: (!busy && !_sent) ? _sendCode : (_sent ? null : null),
+              enabled: !busy && !_sent,
+              loading: _sending,
+            ),
+            if (_sent) ...[
+              const SizedBox(height: 18),
+              AppTextField(
+                controller: _codeCtrl,
+                label: AppStrings.resetCode,
+                hint: '123456',
+                keyboardType: TextInputType.number,
+                textInputAction: TextInputAction.next,
+                onChanged: (_) => setState(() => _error = null),
+              ),
+              const SizedBox(height: 14),
+              AppTextField(
+                controller: _passCtrl,
+                label: AppStrings.newPassword,
+                hint: '••••••••',
+                obscureText: _obscure,
+                textInputAction: TextInputAction.next,
+                onChanged: (_) => setState(() => _error = null),
+                suffixIcon: IconButton(
+                  onPressed: () => setState(() => _obscure = !_obscure),
+                  icon: Icon(
+                    _obscure ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                    color: AppColors.textHint,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              AppTextField(
+                controller: _confirmCtrl,
+                label: AppStrings.confirmNewPassword,
+                hint: '••••••••',
+                obscureText: _obscure,
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) => _save(),
+                onChanged: (_) => setState(() => _error = null),
+              ),
+              const SizedBox(height: 18),
+              AppButton(
+                label: AppStrings.saveNewPassword,
+                onPressed: !busy ? _save : null,
+                enabled: !busy,
+                loading: _saving,
+              ),
+            ],
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(_error!, style: AppTextStyles.bodySmall.copyWith(color: AppColors.error)),
+            ],
+            const SizedBox(height: 24),
+          ],
         ),
       ),
     );

@@ -3,6 +3,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../config/router.dart';
+import 'notification_prefs_service.dart';
 
 // Must be a top-level function — Flutter requires this for background isolate.
 @pragma('vm:entry-point')
@@ -71,6 +72,7 @@ class NotificationService {
         _pendingExtra = extra;
       }
 
+      await NotificationPrefsService.instance.init();
       _initialized = true;
     } catch (e) {
       // FCM setup failed (e.g. google-services.json missing).
@@ -80,10 +82,52 @@ class NotificationService {
   }
 
   Future<String?> getToken() async {
+    if (!_initialized) {
+      debugPrint('[FCM] getToken() skipped — service not initialized');
+      return null;
+    }
+    try {
+      final status = await FirebaseMessaging.instance.getNotificationSettings();
+      if (status.authorizationStatus == AuthorizationStatus.denied) {
+        debugPrint('[FCM] getToken() skipped — notification permission denied');
+        return null;
+      }
+      final token = await FirebaseMessaging.instance.getToken();
+      debugPrint('[FCM] token: ${token != null ? '${token.substring(0, 20)}...' : 'null'}');
+      return token;
+    } catch (e) {
+      debugPrint('[FCM] getToken() error: $e');
+      return null;
+    }
+  }
+
+  /// Returns true if the user has granted notification permission.
+  Future<bool> hasPermission() async {
+    if (!_initialized) return false;
+    try {
+      final settings = await FirebaseMessaging.instance.getNotificationSettings();
+      return settings.authorizationStatus == AuthorizationStatus.authorized ||
+             settings.authorizationStatus == AuthorizationStatus.provisional;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Requests permission and returns the resulting FCM token (null if denied).
+  Future<String?> requestPermissionAndGetToken() async {
     if (!_initialized) return null;
     try {
-      return await FirebaseMessaging.instance.getToken();
-    } catch (_) {
+      final result = await FirebaseMessaging.instance.requestPermission(
+        alert: true, badge: true, sound: true,
+      );
+      debugPrint('[FCM] permission result: ${result.authorizationStatus}');
+      if (result.authorizationStatus == AuthorizationStatus.authorized ||
+          result.authorizationStatus == AuthorizationStatus.provisional) {
+        return await FirebaseMessaging.instance.getToken();
+      }
+      return null;
+    } catch (e) {
+      debugPrint('[FCM] requestPermissionAndGetToken() error: $e');
       return null;
     }
   }
@@ -114,8 +158,11 @@ class NotificationService {
   }
 
   void _showLocal(RemoteMessage message) {
+    _handleEarlyEndCallbacks(message);
     final n = message.notification;
     if (n == null) return;
+    final type = message.data['type']?.toString() ?? '';
+    if (!NotificationPrefsService.instance.isTypeEnabled(type)) return;
     _localNotifications.show(
       message.hashCode,
       n.title,
@@ -158,7 +205,23 @@ class NotificationService {
       'stop_reached'      => (AppRoutes.tripInProgress,  bookingId),
       'trip_completed'    => (AppRoutes.tripCompleted,   bookingId),
       'payment_required'  => (AppRoutes.payment,         bookingId),
+      'payment_confirmed' => (AppRoutes.tripCompleted,   bookingId),
+      'new_message'       => (AppRoutes.driverChat,      bookingId),
+      'early_end_accepted'=> (AppRoutes.tripInProgress,  bookingId),
+      'early_end_rejected'=> (AppRoutes.tripInProgress,  bookingId),
       _                   => (null,                      null),
     };
+  }
+
+  /// Callbacks set by TripInProgressScreen to handle early-end responses.
+  void Function(String bookingId)? onEarlyEndAccepted;
+  void Function(String bookingId)? onEarlyEndRejected;
+
+  void _handleEarlyEndCallbacks(RemoteMessage message) {
+    final type      = message.data['type']?.toString() ?? '';
+    final bookingId = message.data['booking_id']?.toString() ?? '';
+    if (bookingId.isEmpty) return;
+    if (type == 'early_end_accepted') onEarlyEndAccepted?.call(bookingId);
+    if (type == 'early_end_rejected') onEarlyEndRejected?.call(bookingId);
   }
 }
