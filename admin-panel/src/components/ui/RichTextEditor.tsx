@@ -86,6 +86,7 @@ export interface RichTextEditorProps {
   placeholder?: string;
   minHeight?: number;
   label?: React.ReactNode;
+  helper?: string;
 }
 
 // ── Editor ─────────────────────────────────────────────────────────────────────
@@ -97,6 +98,7 @@ export function RichTextEditor({
   placeholder = 'Write your email content here…',
   minHeight = 320,
   label,
+  helper,
 }: RichTextEditorProps) {
   const editor = useEditor({
     extensions: [
@@ -123,7 +125,7 @@ export function RichTextEditor({
   useEffect(() => {
     if (!editor || editor.isDestroyed) return;
     if (editor.getHTML() !== value) {
-      editor.commands.setContent(value ?? '', false);
+      editor.commands.setContent(value ?? '', { emitUpdate: false });
     }
   }, [value, editor]);
 
@@ -247,6 +249,9 @@ export function RichTextEditor({
         {/* Canvas */}
         <EditorContent editor={editor} />
       </div>
+      {helper && (
+        <p className="mt-1.5 text-xs text-slate-500">{helper}</p>
+      )}
     </div>
   );
 }
