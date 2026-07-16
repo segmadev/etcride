@@ -76,6 +76,7 @@ class DriverModel {
     this.drivingExperience,
     this.kycNote,
     this.assignedVehicle,
+    this.twoFaEnabled = false,
   });
 
   final String id;
@@ -89,6 +90,7 @@ class DriverModel {
   final String? drivingExperience;
   final String? kycNote;
   final DriverAssignedVehicle? assignedVehicle;
+  final bool twoFaEnabled;
 
   bool get isKycRejected => kycStatus == 'rejected';
 
@@ -132,6 +134,10 @@ class DriverModel {
               ?.toString(),
       drivingExperience: json['driving_experience']?.toString(),
       kycNote: (json['kyc_note'] ?? json['rejection_reason'])?.toString(),
+      twoFaEnabled: json['two_fa_enabled'] == true || json['two_fa_enabled'] == 1 ||
+                    json['twoFaEnabled'] == true || json['twoFaEnabled'] == 1 ||
+                    json['two_fa_enabled']?.toString() == '1' ||
+                    json['twoFaEnabled']?.toString() == '1',
       assignedVehicle: json['assigned_vehicle'] is Map<String, dynamic>
           ? DriverAssignedVehicle.fromJson(
               json['assigned_vehicle'] as Map<String, dynamic>,
@@ -152,6 +158,7 @@ class DriverModel {
     String? drivingExperience,
     String? kycNote,
     DriverAssignedVehicle? assignedVehicle,
+    bool? twoFaEnabled,
   }) => DriverModel(
     id: id ?? this.id,
     phone: phone ?? this.phone,
@@ -164,6 +171,7 @@ class DriverModel {
     drivingExperience: drivingExperience ?? this.drivingExperience,
     kycNote: kycNote ?? this.kycNote,
     assignedVehicle: assignedVehicle ?? this.assignedVehicle,
+    twoFaEnabled: twoFaEnabled ?? this.twoFaEnabled,
   );
 
   Map<String, dynamic> toJson() => {
@@ -178,5 +186,6 @@ class DriverModel {
     if (drivingExperience != null) 'driving_experience': drivingExperience,
     if (kycNote != null) 'kyc_note': kycNote,
     if (assignedVehicle != null) 'assigned_vehicle': assignedVehicle!.toJson(),
+    'two_fa_enabled': twoFaEnabled,
   };
 }

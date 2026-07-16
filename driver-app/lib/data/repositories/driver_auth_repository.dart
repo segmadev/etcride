@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:dio/dio.dart' show DioException, FormData, MultipartFile;
 import 'package:image_picker/image_picker.dart';
+import '../../core/errors/app_exception.dart';
 import '../../core/network/api_client.dart';
 import '../../core/network/api_endpoints.dart';
 import '../../core/storage/secure_storage.dart';
@@ -55,6 +56,14 @@ class DriverAuthRepository {
       body: {'contact': contact, 'otp': otp},
     );
     if (data == null) throw const FormatException('Empty response.');
+
+    if (data['two_fa_required'] == true) {
+      throw TwoFaRequiredException(
+        twoFaToken: data['two_fa_token']?.toString() ?? '',
+        twoFaContact: data['two_fa_contact']?.toString() ?? '',
+      );
+    }
+
     final token = data['token']?.toString();
     if (token == null || token.isEmpty) {
       throw const FormatException('Missing token in response.');
@@ -63,6 +72,36 @@ class DriverAuthRepository {
     await _storage.saveToken(token);
     await _storage.saveUser(jsonEncode(driver.toJson()));
     return driver;
+  }
+
+  Future<DriverModel> verify2fa({
+    required String twoFaToken,
+    required String otp,
+  }) async {
+    final data = await _client.post<Map<String, dynamic>>(
+      ApiEndpoints.driverVerify2fa,
+      body: {'two_fa_token': twoFaToken, 'otp': otp},
+    );
+    if (data == null) throw const FormatException('Empty response.');
+    final token = data['token']?.toString();
+    if (token == null || token.isEmpty) {
+      throw const FormatException('Missing token in 2FA response.');
+    }
+    final driver = DriverModel.fromJson(data);
+    await _storage.saveToken(token);
+    await _storage.saveUser(jsonEncode(driver.toJson()));
+    return driver;
+  }
+
+  Future<void> toggle2fa({required bool enabled}) async {
+    await _client.put<void>(
+      ApiEndpoints.driverToggle2fa,
+      body: {'enabled': enabled ? 1 : 0},
+    );
+    final cached = await getCachedDriver();
+    if (cached != null) {
+      await _storage.saveUser(jsonEncode(cached.copyWith(twoFaEnabled: enabled).toJson()));
+    }
   }
 
   Future<DriverModel> getProfile() async {
@@ -126,6 +165,13 @@ class DriverAuthRepository {
       },
     );
     if (data == null) throw const FormatException('Empty response.');
+
+    if (data['two_fa_required'] == true) {
+      throw TwoFaRequiredException(
+        twoFaToken: data['two_fa_token']?.toString() ?? '',
+        twoFaContact: data['two_fa_contact']?.toString() ?? '',
+      );
+    }
 
     final token = data['token']?.toString();
     if (token == null || token.isEmpty) {
@@ -194,10 +240,15 @@ class DriverAuthRepository {
   }
 
   Future<void> logout() async {
+    TermsRepository.clearCache();
+    final bioEnabled = await _storage.biometricsEnabled;
+    if (bioEnabled) {
+      // Keep storage so biometric re-login works on next open.
+      return;
+    }
     try {
       await _client.post<void>(ApiEndpoints.driverLogout);
     } catch (_) {}
-    TermsRepository.clearCache();
     await _storage.clearAll();
   }
 

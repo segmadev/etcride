@@ -127,6 +127,12 @@ class _DriverSignInScreenState extends ConsumerState<DriverSignInScreen> {
       await ref.read(secureStorageProvider).setHasLoggedInBefore();
       if (!mounted) return;
       _navigateAfterAuth(driver.kycStatus);
+    } on TwoFaRequiredException catch (e) {
+      if (!mounted) return;
+      context.push(AppRoutes.driverTwoFa, extra: {
+        'token':   e.twoFaToken,
+        'contact': e.twoFaContact,
+      });
     } on ApiException catch (e) {
       setState(() => _error = e.message);
     } catch (_) {

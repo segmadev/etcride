@@ -119,6 +119,7 @@ $router->post('/driver/auth/send-otp',       'driver/Auth@sendOtp');
 $router->post('/driver/auth/verify-otp',     'driver/Auth@verifyOtp');
 $router->post('/driver/auth/forgot-password','driver/Auth@forgotPassword');
 $router->post('/driver/auth/reset-password', 'driver/Auth@resetPassword');
+$router->post('/driver/auth/verify-2fa',     'driver/Auth@verify2fa');
 
 // ── Driver protected routes ───────────────────────────────────────────────────
 $router->group('/driver', function ($r) {
@@ -167,6 +168,9 @@ $router->group('/driver', function ($r) {
     // Notifications
     $r->get('/notifications',              'driver/Jobs@notifications');
     $r->put('/notifications/:id/read',     'driver/Jobs@markNotificationRead');
+
+    // 2FA
+    $r->put('/auth/2fa',                   'driver/Auth@toggle2fa');
 
     // Terms & Conditions
     $r->post('/auth/accept-terms',         'TermsConditions@driverAcceptTerms');

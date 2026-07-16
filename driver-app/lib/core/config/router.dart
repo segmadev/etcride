@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import '../../features/auth/otp_screen.dart';
 import '../../features/auth/register_screen.dart';
 import '../../features/auth/sign_in_screen.dart';
+import '../../features/auth/two_fa_screen.dart';
 import '../../features/auth/verified_screen.dart';
 import '../../data/models/job_model.dart';
 import '../../features/chat/chat_screen.dart';
@@ -58,6 +59,7 @@ abstract final class AppRoutes {
   static const String legalDocuments = '/legal-documents';
   static const String chat        = '/chat';
   static const String chatHistory = '/chat-history';
+  static const String driverTwoFa = '/2fa';
 }
 
 final appRouter = GoRouter(
@@ -86,6 +88,16 @@ final appRouter = GoRouter(
       pageBuilder: (_, state) {
         final contact = state.extra as String? ?? '';
         return _page(state, DriverOtpScreen(contact: contact));
+      },
+    ),
+    GoRoute(
+      path: AppRoutes.driverTwoFa,
+      pageBuilder: (_, state) {
+        final extra = state.extra as Map<String, dynamic>;
+        return _page(state, DriverTwoFaScreen(
+          twoFaToken:   extra['token'] as String,
+          twoFaContact: extra['contact'] as String,
+        ));
       },
     ),
     GoRoute(

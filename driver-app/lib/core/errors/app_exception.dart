@@ -33,3 +33,13 @@ final class ServerException extends AppException {
 final class ParseException extends AppException {
   const ParseException([super.message = 'Failed to parse server response.']);
 }
+
+/// 2FA required — the primary credential was accepted but a second factor is needed.
+final class TwoFaRequiredException extends AppException {
+  const TwoFaRequiredException({
+    required this.twoFaToken,
+    required this.twoFaContact,
+  }) : super('Two-factor authentication required.');
+  final String twoFaToken;
+  final String twoFaContact;
+}

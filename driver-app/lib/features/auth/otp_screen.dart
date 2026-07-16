@@ -132,6 +132,12 @@ class _DriverOtpScreenState extends ConsumerState<DriverOtpScreen> {
         default:
           context.go(AppRoutes.kyc);
       }
+    } on TwoFaRequiredException catch (e) {
+      if (!mounted) return;
+      context.push(AppRoutes.driverTwoFa, extra: {
+        'token':   e.twoFaToken,
+        'contact': e.twoFaContact,
+      });
     } on ApiException catch (e) {
       setState(() => _error = e.message);
       for (final c in _ctrls) { c.clear(); }

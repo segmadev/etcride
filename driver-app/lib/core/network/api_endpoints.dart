@@ -31,6 +31,8 @@ abstract final class ApiEndpoints {
   static const String driverUpdateProfile      = '/driver/auth/profile';  // PUT
   static const String driverSendContactOtp     = '/driver/auth/send-contact-otp';
   static const String driverVerifyContactOtp   = '/driver/auth/verify-contact-otp';
+  static const String driverToggle2fa          = '/driver/auth/2fa';
+  static const String driverVerify2fa          = '/driver/auth/verify-2fa';
 
   // ── Driver availability & location ────────────────────────────────────────
   static const String driverAvailability  = '/driver/availability';

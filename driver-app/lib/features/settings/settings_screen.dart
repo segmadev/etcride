@@ -22,6 +22,8 @@ class _DriverSettingsScreenState extends ConsumerState<DriverSettingsScreen> {
   bool _biometricsAvailable  = false;
   bool _biometricsEnabled    = false;
   bool _loggingOut           = false;
+  bool _twoFaEnabled         = false;
+  bool _twoFaLoading         = false;
   bool _notificationsEnabled = false;
   bool _notifLoading         = false;
   bool _notifNewJobs    = true;
@@ -34,6 +36,36 @@ class _DriverSettingsScreenState extends ConsumerState<DriverSettingsScreen> {
     super.initState();
     _loadBiometrics();
     _loadNotificationStatus();
+    _loadTwoFa();
+  }
+
+  void _loadTwoFa() {
+    final driver = ref.read(currentDriverProvider);
+    if (driver != null) setState(() => _twoFaEnabled = driver.twoFaEnabled);
+  }
+
+  Future<void> _toggleTwoFa(bool value) async {
+    final driver = ref.read(currentDriverProvider);
+    if (driver == null) return;
+    if (value && (driver.email.isEmpty)) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Add an email address to your profile before enabling 2FA.')),
+      );
+      return;
+    }
+    setState(() => _twoFaLoading = true);
+    try {
+      await ref.read(driverAuthRepositoryProvider).toggle2fa(enabled: value);
+      final updated = driver.copyWith(twoFaEnabled: value);
+      ref.read(currentDriverProvider.notifier).state = updated;
+      if (mounted) setState(() => _twoFaEnabled = value);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString())),
+      );
+    } finally {
+      if (mounted) setState(() => _twoFaLoading = false);
+    }
   }
 
   Future<void> _loadNotificationStatus() async {
@@ -268,6 +300,12 @@ class _DriverSettingsScreenState extends ConsumerState<DriverSettingsScreen> {
                 onChanged: _toggleBiometrics,
               ),
             ],
+            const SizedBox(height: 8),
+            _TwoFaTile(
+              value: _twoFaEnabled,
+              loading: _twoFaLoading,
+              onChanged: _toggleTwoFa,
+            ),
 
             const SizedBox(height: 24),
             Text('ABOUT', style: AppTextStyles.labelSmall),
@@ -364,6 +402,47 @@ class _NotifSubTile extends StatelessWidget {
             Switch(value: value, onChanged: onChanged, activeColor: AppColors.primary),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _TwoFaTile extends StatelessWidget {
+  const _TwoFaTile({required this.value, required this.loading, required this.onChanged});
+
+  final bool value;
+  final bool loading;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.security_rounded, color: AppColors.primary),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Two-Factor Auth', style: AppTextStyles.h4),
+                Text(
+                  'Requires email on your profile',
+                  style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+                ),
+              ],
+            ),
+          ),
+          if (loading)
+            const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
+          else
+            Switch(value: value, onChanged: onChanged, activeColor: AppColors.primary),
+        ],
       ),
     );
   }

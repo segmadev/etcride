@@ -121,6 +121,41 @@ class Auth extends BaseController
             return;
         }
 
+        // 2FA gate
+        $twoFaEnabled = (int) ($driver['two_fa_enabled'] ?? 0);
+        $driverEmail  = trim($driver['email'] ?? '');
+        if ($twoFaEnabled && $driverEmail !== '' && filter_var($driverEmail, FILTER_VALIDATE_EMAIL)) {
+            $twoFaOtp   = str_pad((string) mt_rand(0, 999999), 6, '0', STR_PAD_LEFT);
+            $twoFaHash  = password_hash($twoFaOtp, PASSWORD_DEFAULT);
+            $twoFaToken = bin2hex(random_bytes(32));
+            $expires    = date('Y-m-d H:i:s', time() + 600);
+            $contactKey = '2fa:driver:' . $driver['id'];
+
+            $this->delete('otp_requests', 'contact = ?', [$contactKey]);
+            $this->quick_insert('otp_requests', [
+                'id'                 => utilities::genID('OTP_', 10),
+                'contact'            => $contactKey,
+                'contact_type'       => 'email',
+                'otp_hash'           => $twoFaHash,
+                'expires_at'         => $expires,
+                'used'               => 0,
+                'verification_token' => $twoFaToken,
+            ]);
+
+            $appName = $this->setting('app_name', 'ETCRide');
+            $this->mailer->sendOtpEmail($driverEmail, $twoFaOtp, $appName);
+
+            $at     = strrpos($driverEmail, '@');
+            $masked = substr($driverEmail, 0, 1) . '***' . substr($driverEmail, $at);
+
+            echo utilities::apiMessage('Second factor required.', 200, [
+                'two_fa_required' => true,
+                'two_fa_token'    => $twoFaToken,
+                'two_fa_contact'  => $masked,
+            ]);
+            return;
+        }
+
         $token     = $this->generateToken();
         $expiresAt = date('Y-m-d H:i:s', time() + 86400 * 30);
 
@@ -351,6 +386,41 @@ class Auth extends BaseController
             if ($bruteErr) { echo $bruteErr; return; }
 
             $this->update('otp_requests', ['used' => 1], "id = '{$otpRow['id']}'");
+        }
+
+        // 2FA gate — only applies when login is via phone OTP and driver has email
+        $twoFaEnabled = (int) ($driver['two_fa_enabled'] ?? 0);
+        $driverEmail  = trim($driver['email'] ?? '');
+        if ($twoFaEnabled && $driverEmail !== '' && filter_var($driverEmail, FILTER_VALIDATE_EMAIL)) {
+            $twoFaOtp   = str_pad((string) mt_rand(0, 999999), 6, '0', STR_PAD_LEFT);
+            $twoFaHash  = password_hash($twoFaOtp, PASSWORD_DEFAULT);
+            $twoFaToken = bin2hex(random_bytes(32));
+            $expires    = date('Y-m-d H:i:s', time() + 600);
+            $contactKey = '2fa:driver:' . $driver['id'];
+
+            $this->delete('otp_requests', 'contact = ?', [$contactKey]);
+            $this->quick_insert('otp_requests', [
+                'id'                 => utilities::genID('OTP_', 10),
+                'contact'            => $contactKey,
+                'contact_type'       => 'email',
+                'otp_hash'           => $twoFaHash,
+                'expires_at'         => $expires,
+                'used'               => 0,
+                'verification_token' => $twoFaToken,
+            ]);
+
+            $appName = $this->setting('app_name', 'ETCRide');
+            $this->mailer->sendOtpEmail($driverEmail, $twoFaOtp, $appName);
+
+            $at     = strrpos($driverEmail, '@');
+            $masked = substr($driverEmail, 0, 1) . '***' . substr($driverEmail, $at);
+
+            echo utilities::apiMessage('Second factor required.', 200, [
+                'two_fa_required' => true,
+                'two_fa_token'    => $twoFaToken,
+                'two_fa_contact'  => $masked,
+            ]);
+            return;
         }
 
         $token     = $this->generateToken();
@@ -621,6 +691,87 @@ class Auth extends BaseController
         $this->delete('driver_sessions', 'driver_id = ?', [$driver['id']]);
 
         echo utilities::apiMessage('Password updated successfully.', 200);
+    }
+
+    // ── PUT /driver/auth/2fa ─────────────────────────────────────────────────
+    // Protected — toggle 2FA on/off for the authenticated driver.
+    public function toggle2fa(): void
+    {
+        $me      = BaseController::$authDriver;
+        $enabled = (int) $this->input('enabled', 0);
+
+        if ($enabled && (filter_var($me['email'] ?? '', FILTER_VALIDATE_EMAIL) === false)) {
+            echo utilities::apiMessage('Add an email address to your profile before enabling 2FA.', 422);
+            return;
+        }
+
+        $this->update('drivers', ['two_fa_enabled' => $enabled ? 1 : 0], "id = '{$me['id']}'");
+        $this->logActivity('driver', $me['id'], $enabled ? '2fa_enabled' : '2fa_disabled');
+
+        echo utilities::apiMessage(
+            $enabled ? 'Two-factor authentication enabled.' : 'Two-factor authentication disabled.',
+            200,
+            ['two_fa_enabled' => (bool) $enabled]
+        );
+    }
+
+    // ── POST /driver/auth/verify-2fa ─────────────────────────────────────────
+    // Public — verify the second factor OTP and issue a session token.
+    public function verify2fa(): void
+    {
+        $err = $this->requireFields(['two_fa_token', 'otp']);
+        if ($err) { echo $err; return; }
+
+        $twoFaToken = trim($this->str('two_fa_token'));
+        $otp        = trim($this->str('otp'));
+
+        $stmt = $this->db->prepare(
+            "SELECT * FROM otp_requests
+             WHERE verification_token = ? AND used = 0 AND expires_at > NOW()
+             LIMIT 1"
+        );
+        $stmt->execute([$twoFaToken]);
+        $otpRow = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$otpRow) {
+            echo utilities::apiMessage('Invalid or expired 2FA session. Please sign in again.', 400);
+            return;
+        }
+
+        $bruteErr = $this->verifyOtpWithBruteForceGuard($otpRow, $otp);
+        if ($bruteErr) { echo $bruteErr; return; }
+
+        $this->update('otp_requests', ['used' => 1], "id = '{$otpRow['id']}'");
+
+        // Extract driver id from contact key: '2fa:driver:DRV_xxx'
+        $contactKey = $otpRow['contact'];
+        $driverId   = substr($contactKey, strlen('2fa:driver:'));
+
+        $driver = $this->getall('drivers', 'id = ?', [$driverId]);
+        if (!is_array($driver)) {
+            echo utilities::apiMessage('Driver account not found.', 404);
+            return;
+        }
+
+        $token     = $this->generateToken();
+        $expiresAt = date('Y-m-d H:i:s', time() + 86400 * 30);
+
+        $this->delete('driver_sessions', 'driver_id = ?', [$driver['id']]);
+        $this->quick_insert('driver_sessions', [
+            'id'         => utilities::genID('DSS_', 10),
+            'driver_id'  => $driver['id'],
+            'token'      => $token,
+            'expires_at' => $expiresAt,
+            'device'     => substr($_SERVER['HTTP_USER_AGENT'] ?? '', 0, 255),
+            'ip'         => $_SERVER['REMOTE_ADDR'] ?? '',
+        ]);
+
+        $this->logActivity('driver', $driver['id'], '2fa_login');
+
+        echo utilities::apiMessage('Verified successfully.', 200, $this->driverPayload($driver, [
+            'token'      => $token,
+            'expires_at' => $expiresAt,
+        ]));
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
