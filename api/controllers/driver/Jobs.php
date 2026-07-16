@@ -907,7 +907,7 @@ class Jobs extends BaseController
         }
 
         $stmt = $this->db->prepare("
-            SELECT b.id, b.booking_ref, b.booking_code, b.booking_type,
+            SELECT b.id, b.booking_code, b.booking_type,
                    b.pickup_address, b.destination_address,
                    b.pickup_lat, b.pickup_lng,
                    b.destination_lat, b.destination_lng,
