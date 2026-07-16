@@ -174,6 +174,41 @@ class auth extends BaseController
             return;
         }
 
+        // 2FA gate — same logic as verifyOtp()
+        $twoFaEnabled = (int) ($user['two_fa_enabled'] ?? 0);
+        $userEmail    = trim($user['email'] ?? '');
+        if ($twoFaEnabled && $userEmail !== '' && filter_var($userEmail, FILTER_VALIDATE_EMAIL)) {
+            $twoFaOtp   = str_pad((string) mt_rand(0, 999999), 6, '0', STR_PAD_LEFT);
+            $twoFaHash  = password_hash($twoFaOtp, PASSWORD_DEFAULT);
+            $twoFaToken = bin2hex(random_bytes(32));
+            $expires    = date('Y-m-d H:i:s', time() + 600);
+            $contactKey = '2fa:' . $user['id'];
+
+            $this->delete('otp_requests', 'contact = ?', [$contactKey]);
+            $this->quick_insert('otp_requests', [
+                'id'                 => utilities::genID('OTP_', 10),
+                'contact'            => $contactKey,
+                'contact_type'       => 'email',
+                'otp_hash'           => $twoFaHash,
+                'expires_at'         => $expires,
+                'used'               => 0,
+                'verification_token' => $twoFaToken,
+            ]);
+
+            $appName = $this->setting('app_name', 'ETCRide');
+            $this->mailer->sendOtpEmail($userEmail, $twoFaOtp, $appName);
+
+            $at     = strrpos($userEmail, '@');
+            $masked = substr($userEmail, 0, 1) . '***' . substr($userEmail, $at);
+
+            echo utilities::apiMessage('Second factor required.', 200, [
+                'two_fa_required' => true,
+                'two_fa_token'    => $twoFaToken,
+                'two_fa_contact'  => $masked,
+            ]);
+            return;
+        }
+
         // Create session
         $token     = $this->generateToken();
         $expiresAt = date('Y-m-d H:i:s', time() + 86400 * 30); // 30 days

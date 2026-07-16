@@ -34,7 +34,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
       if (mounted) {
         setState(() {
           _notifications =
-              (data ?? []).cast<Map<String, dynamic>>();
+              (data ?? []).whereType<Map<String, dynamic>>().toList();
           _loading = false;
         });
       }
@@ -55,7 +55,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   }
 
   Future<void> _markRead(Map<String, dynamic> n) async {
-    if ((n['is_read'] as int?) == 1) return;
+    if (n['is_read']?.toString() == '1') return;
     try {
       await ref
           .read(apiClientProvider)
@@ -74,7 +74,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
         leading: const BackButton(color: AppColors.textPrimary),
         title: Text(AppStrings.notifications, style: AppTextStyles.h4),
         actions: [
-          if (_notifications.any((n) => (n['is_read'] as int?) == 0))
+          if (_notifications.any((n) => n['is_read']?.toString() != '1'))
             TextButton(
               onPressed: _markAllRead,
               child: Text('Mark all read',
@@ -98,7 +98,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                         const Divider(height: 1, indent: 72),
                     itemBuilder: (_, i) {
                       final n = _notifications[i];
-                      final isRead = (n['is_read'] as int?) == 1;
+                      final isRead = n['is_read']?.toString() == '1';
                       return ListTile(
                         contentPadding: const EdgeInsets.symmetric(
                             horizontal: 20, vertical: 8),

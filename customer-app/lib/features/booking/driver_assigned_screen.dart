@@ -1160,7 +1160,7 @@ class _WaitingTimerBanner extends StatelessWidget {
     final bgColor   = charging ? const Color(0xFFD84315) : AppColors.success;
     final icon      = charging ? Icons.timer_off_rounded : Icons.timer_rounded;
     final label     = charging
-        ? 'â‚¦${extraCharge.toStringAsFixed(2)} extra  â€¢  ${_fmt(extraSecs)} over free time'
+        ? '₦${extraCharge.toStringAsFixed(2)} extra  •  ${_fmt(extraSecs)} over free time'
         : 'Free waiting: ${_fmt(remaining)} remaining';
 
     return Container(

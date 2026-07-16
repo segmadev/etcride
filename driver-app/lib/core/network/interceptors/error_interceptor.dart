@@ -22,9 +22,11 @@ class ErrorInterceptor extends Interceptor {
 
         if (status == 401) {
           final path = err.requestOptions.path;
-          final isPublicAuth = path.startsWith('/auth/') &&
+          final isPublicAuth = (path.startsWith('/auth/') || path.startsWith('/driver/auth/')) &&
               path != '/auth/logout' &&
-              path != '/auth/profile';
+              path != '/auth/profile' &&
+              path != '/driver/auth/logout' &&
+              path != '/driver/auth/profile';
           // Silent paths — 401 here is not a session expiry.
           final isSilent401 = path.contains('/account/delete-request');
           // If the request had NO Authorization header, this is a race condition

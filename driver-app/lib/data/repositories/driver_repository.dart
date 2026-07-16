@@ -155,8 +155,19 @@ class DriverRepository {
     );
   }
 
-  Future<void> acceptEarlyEnd(String id) async {
-    await _client.post<void>(ApiEndpoints.acceptEarlyEnd(id), body: {});
+  Future<void> acceptEarlyEnd(
+    String id, {
+    double? distanceKm,
+    double? durationMinutes,
+    double? lat,
+    double? lng,
+  }) async {
+    await _client.post<void>(ApiEndpoints.acceptEarlyEnd(id), body: {
+      if (distanceKm != null)    'distance_km':     distanceKm,
+      if (durationMinutes != null) 'duration_minutes': durationMinutes,
+      if (lat != null)           'lat':             lat,
+      if (lng != null)           'lng':             lng,
+    });
   }
 
   Future<void> rejectEarlyEnd(String id) async {

@@ -1,5 +1,6 @@
 <?php
 require_once ROOT . 'functions/BaseController.php';
+require_once ROOT . 'functions/mailer.php';
 
 class Jobs extends BaseController
 {
@@ -813,12 +814,15 @@ class Jobs extends BaseController
             <p style='margin:0;color:#64748b;font-size:14px;'>See you on your next trip!</p>
         ";
 
-        $html = \Mymailer::layout('Trip Completed', '#0f172a', $inner, $appName, $support);
-        $mailer = new \Mymailer();
+        Mymailer::setDb($this->db);
+        $html   = Mymailer::layout('Trip Completed', '#0f172a', $inner, $appName, $support);
+        $mailer = new Mymailer();
         $mailer->send_email($customer['email'], 'Your trip is complete — Thank you!', $html, $name);
     }
 
     // ── POST /driver/jobs/:id/accept-early-end ────────────────────────────────
+    // Accepting early end atomically completes the trip — no separate complete
+    // call is needed. Status moves to payment_pending (or completed if already paid).
     public function acceptEarlyEnd(string $id): void
     {
         $me  = BaseController::$authDriver;
@@ -832,12 +836,56 @@ class Jobs extends BaseController
             echo utilities::apiMessage('No early end request pending.', 409); return;
         }
 
-        $this->update('bookings', ['early_end_approved' => 1], "id = '$id'");
-        $this->notify('customer', $job['customer_id'], 'Early End Accepted',
-            'The driver accepted your request. The trip will end at your current location.',
-            'early_end_accepted', $id);
+        $now = date('Y-m-d H:i:s');
 
-        echo utilities::apiMessage('Early end accepted. Complete the trip when ready.', 200);
+        // Fare — keep estimated fare if final fare not yet set
+        $fareUpdate = [];
+        if (!isset($job['final_fare']) || $job['final_fare'] === null || $job['final_fare'] === '') {
+            $fareUpdate['final_fare'] = $job['estimated_fare'];
+        }
+
+        // Optional GPS data from driver app
+        $distanceUpdate = [];
+        $actualDistanceKm  = isset($_POST['distance_km'])     ? (float)$_POST['distance_km']     : null;
+        $actualDurationMin = isset($_POST['duration_minutes']) ? (float)$_POST['duration_minutes'] : null;
+        if ($actualDistanceKm !== null && $actualDistanceKm > 0) {
+            $distanceUpdate['distance_km'] = $actualDistanceKm;
+        }
+        if ($actualDurationMin !== null && $actualDurationMin > 0) {
+            $distanceUpdate['route_duration_seconds'] = (int) round($actualDurationMin * 60);
+        }
+
+        $newStatus = ($job['payment_status'] !== 'paid') ? 'payment_pending' : 'completed';
+        $this->update('bookings', array_merge($fareUpdate, $distanceUpdate, [
+            'status'             => $newStatus,
+            'early_end_approved' => 1,
+            'early_end_requested'=> 0,
+        ]), "id = '$id'");
+        $this->recordStatusChange($id, 'in_progress', $newStatus, 'driver', $me['id']);
+
+        // Update the trip record
+        $trip = $this->getall('trips', 'booking_id = ?', [$id]);
+        if (is_array($trip)) {
+            $this->update('trips', ['completed_at' => $now, 'status' => 'completed'], "id = '{$trip['id']}'");
+        }
+
+        if ($newStatus === 'payment_pending') {
+            $this->notify('customer', $job['customer_id'], 'Trip Ended — Payment Required',
+                'The driver accepted your early end request. Please complete your payment.',
+                'trip_completed', $id);
+        } else {
+            $this->notify('customer', $job['customer_id'], 'Trip Completed',
+                'Your trip has ended early. Thank you for riding with us!',
+                'trip_completed', $id);
+        }
+        $this->sendTripCompletedEmail($job, $me);
+        $this->logActivity('driver', $me['id'], 'trip_completed', ['booking_id' => $id]);
+
+        $finalFare = $fareUpdate['final_fare'] ?? $job['final_fare'] ?? $job['estimated_fare'];
+        echo utilities::apiMessage('Early end accepted. Trip is complete.', 200, [
+            'status'    => $newStatus,
+            'final_fare'=> (float) $finalFare,
+        ]);
     }
 
     // ── POST /driver/jobs/:id/reject-early-end ────────────────────────────────
@@ -1011,7 +1059,7 @@ class Jobs extends BaseController
         $jobStmt = $this->db->prepare("
             SELECT b.*, vt.name AS vehicle_type_name,
                    COALESCE(u.name, b.customer_name) AS customer_name,
-                   COALESCE(u.phone, b.customer_phone) AS customer_phone
+                   u.phone AS customer_phone
             FROM bookings b
             JOIN vehicle_types vt ON vt.id = b.vehicle_type_id
             LEFT JOIN users u ON u.id = b.customer_id

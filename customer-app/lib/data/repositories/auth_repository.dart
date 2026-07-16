@@ -48,7 +48,9 @@ class AuthRepository {
       isVerified: (json['status']?.toString() ?? '') == '1',
       hasPassword: json['hasPassword'] == true || json['hasPassword'] == 1,
       twoFaEnabled: json['two_fa_enabled'] == true || json['two_fa_enabled'] == 1 ||
-                    json['twoFaEnabled'] == true || json['twoFaEnabled'] == 1,
+                    json['twoFaEnabled'] == true || json['twoFaEnabled'] == 1 ||
+                    json['two_fa_enabled']?.toString() == '1' ||
+                    json['twoFaEnabled']?.toString() == '1',
       createdAt: json['created_at']?.toString(),
     );
   }
@@ -130,6 +132,11 @@ class AuthRepository {
       ApiEndpoints.toggle2fa,
       body: {'enabled': enabled ? 1 : 0},
     );
+    // Persist the updated flag to secure storage so it survives logout/re-login.
+    final cached = await getCachedUser();
+    if (cached != null) {
+      await _storage.saveUser(jsonEncode(cached.copyWith(twoFaEnabled: enabled).toJson()));
+    }
   }
 
   // ── Password login (fallback for users who have set a password) ───────────
@@ -146,6 +153,13 @@ class AuthRepository {
       },
     );
     if (data == null) throw const FormatException('Empty response.');
+
+    if (data['two_fa_required'] == true) {
+      throw TwoFaRequiredException(
+        twoFaToken: data['two_fa_token']?.toString() ?? '',
+        twoFaContact: data['two_fa_contact']?.toString() ?? '',
+      );
+    }
 
     final token = data['token']?.toString();
     if (token == null || token.isEmpty) {
@@ -275,9 +289,14 @@ class AuthRepository {
     return UserModel.fromJson(jsonDecode(json) as Map<String, dynamic>);
   }
 
-  Future<void> logout() {
+  Future<void> logout() async {
     TermsRepository.clearCache();
-    return _storage.clearAll();
+    // When biometrics is on the user expects to re-authenticate via fingerprint
+    // on the next open, so keep the token + user in storage intact.
+    final bioEnabled = await _storage.biometricsEnabled;
+    if (!bioEnabled) {
+      await _storage.clearAll();
+    }
   }
 
   Future<void> logoutRemote() async {

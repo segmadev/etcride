@@ -58,6 +58,7 @@ class JobModel {
     this.senderPhone,
     this.packageDescription,
     this.vehicleTypeName,
+    this.earlyEndRequested = false,
   });
 
   final String  id;
@@ -93,6 +94,7 @@ class JobModel {
   final String? senderPhone;
   final String? packageDescription;
   final String? vehicleTypeName;
+  final bool    earlyEndRequested;
 
   double get displayFare => finalFare ?? estimatedFare;
 
@@ -181,6 +183,7 @@ class JobModel {
       senderPhone:          j['sender_phone']?.toString(),
       packageDescription:   j['package_description']?.toString(),
       vehicleTypeName:      j['vehicle_type_name']?.toString(),
+      earlyEndRequested:    (j['early_end_requested'] == 1 || j['early_end_requested'] == '1' || j['early_end_requested'] == true),
     );
   }
 

@@ -9,6 +9,7 @@ import '../../core/constants/app_assets.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/constants/app_text_styles.dart';
+import '../../core/errors/app_exception.dart';
 import '../../core/services/biometric_service.dart';
 import '../../shared/providers/providers.dart';
 import '../../shared/widgets/app_bottom_drawer.dart';
@@ -101,6 +102,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
       if (!mounted) return;
       FocusManager.instance.primaryFocus?.unfocus();
       await _triggerDriveAnimation();
+    } on TwoFaRequiredException catch (e) {
+      if (!mounted) return;
+      context.push(AppRoutes.twoFa, extra: {
+        'token':   e.twoFaToken,
+        'contact': e.twoFaContact,
+      });
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {

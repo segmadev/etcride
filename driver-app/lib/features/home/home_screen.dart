@@ -1252,7 +1252,7 @@ class _HomeTabState extends ConsumerState<_HomeTab> {
   }
 
   void _showEarlyEndDialog(String bookingId) {
-    if (!mounted) return;
+    if (!mounted || _earlyEndPending) return;
     _earlyEndPending = true;
     showModalBottomSheet<bool>(
       context: context,
@@ -1269,8 +1269,18 @@ class _HomeTabState extends ConsumerState<_HomeTab> {
       final repo = ref.read(driverRepositoryProvider);
       try {
         if (accepted == true) {
-          await repo.acceptEarlyEnd(bookingId);
-          if (mounted) _showInfoSnack('Early end accepted. Complete the trip when ready.');
+          final pos = LocationService.instance.lastPosition;
+          final durationMin = _tripStartTime != null
+              ? DateTime.now().difference(_tripStartTime!).inSeconds / 60.0
+              : null;
+          await repo.acceptEarlyEnd(
+            bookingId,
+            distanceKm: _tripDistanceKm > 0.1 ? _tripDistanceKm : null,
+            durationMinutes: (durationMin != null && durationMin > 0.5) ? durationMin : null,
+            lat: pos?.latitude,
+            lng: pos?.longitude,
+          );
+          if (mounted) _showInfoSnack('Early end accepted. Trip is complete.');
         } else {
           await repo.rejectEarlyEnd(bookingId);
           if (mounted) _showInfoSnack('Early end rejected.');
@@ -1726,6 +1736,7 @@ class _HomeTabState extends ConsumerState<_HomeTab> {
         map: _TripMapView(job: job),
         child: _ActiveTripView(
           job: job,
+          earlyEndDialogShowing: _earlyEndPending,
           onArrive: job.canArrive
               ? () => _doJobAction(
                   () => repo.arriveAtPickup(job.id),
@@ -1773,6 +1784,30 @@ class _HomeTabState extends ConsumerState<_HomeTab> {
                     gpsAccuracyM: pos?.accuracy,
                   ));
                 }
+              : null,
+          onAcceptEarlyEnd: job.earlyEndRequested
+              ? () {
+                  final pos = LocationService.instance.lastPosition;
+                  final durationMin = _tripStartTime != null
+                      ? DateTime.now().difference(_tripStartTime!).inSeconds / 60.0
+                      : null;
+                  return _doJobAction(
+                    () => repo.acceptEarlyEnd(
+                      job.id,
+                      distanceKm: _tripDistanceKm > 0.1 ? _tripDistanceKm : null,
+                      durationMinutes: (durationMin != null && durationMin > 0.5) ? durationMin : null,
+                      lat: pos?.latitude,
+                      lng: pos?.longitude,
+                    ),
+                    onSuccess: () => _showInfoSnack('Early end accepted. Trip is complete.'),
+                  );
+                }
+              : null,
+          onRejectEarlyEnd: job.earlyEndRequested
+              ? () => _doJobAction(
+                  () => repo.rejectEarlyEnd(job.id),
+                  onSuccess: () => _showInfoSnack('Early end rejected.'),
+                )
               : null,
           onNavigateToPickup: () => _openTripNavigation(job),
           onNavigateToDestination: () =>
@@ -3235,11 +3270,14 @@ class _DecisionButton extends StatelessWidget {
 class _ActiveTripView extends StatefulWidget {
   const _ActiveTripView({
     required this.job,
+    this.earlyEndDialogShowing = false,
     this.onArrive,
     this.onPickup,
     this.onStart,
     this.onComplete,
     this.onConfirmCashPayment,
+    this.onAcceptEarlyEnd,
+    this.onRejectEarlyEnd,
     required this.onNavigateToPickup,
     required this.onNavigateToDestination,
     required this.onCallPassenger,
@@ -3252,6 +3290,9 @@ class _ActiveTripView extends StatefulWidget {
   final Future<void> Function()? onStart;
   final Future<void> Function()? onComplete;
   final Future<void> Function()? onConfirmCashPayment;
+  final Future<void> Function()? onAcceptEarlyEnd;
+  final Future<void> Function()? onRejectEarlyEnd;
+  final bool earlyEndDialogShowing;
   final VoidCallback onNavigateToPickup;
   final VoidCallback onNavigateToDestination;
   final VoidCallback onCallPassenger;
@@ -3269,6 +3310,11 @@ class _ActiveTripViewState extends State<_ActiveTripView> {
   void initState() {
     super.initState();
     LocationService.instance.setActiveJob(true);
+    // Show sheet on app open if early-end is already pending and the home
+    // screen hasn't opened its own dialog via push notification.
+    if (widget.job.earlyEndRequested && !widget.earlyEndDialogShowing) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _showEarlyEndSheet());
+    }
   }
 
   @override
@@ -3277,6 +3323,8 @@ class _ActiveTripViewState extends State<_ActiveTripView> {
     super.dispose();
   }
 
+  bool _earlyEndSheetOpen = false;
+
   @override
   void didUpdateWidget(covariant _ActiveTripView oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -3284,6 +3332,39 @@ class _ActiveTripViewState extends State<_ActiveTripView> {
         widget.job.status != 'arrived') {
       _passengerReadyToStart = false;
     }
+    // Show the early-end sheet when the flag appears via polling — but only
+    // if the home screen hasn't already opened its own dialog via push notification.
+    if (!oldWidget.job.earlyEndRequested &&
+        widget.job.earlyEndRequested &&
+        !_earlyEndSheetOpen &&
+        !widget.earlyEndDialogShowing) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _showEarlyEndSheet());
+    }
+  }
+
+  void _showEarlyEndSheet() {
+    if (!mounted || _earlyEndSheetOpen) return;
+    _earlyEndSheetOpen = true;
+    showModalBottomSheet<bool>(
+      context: context,
+      isDismissible: false,
+      enableDrag: false,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _EarlyEndSheet(
+        onAccept: () => Navigator.pop(ctx, true),
+        onReject: () => Navigator.pop(ctx, false),
+      ),
+    ).then((accepted) async {
+      _earlyEndSheetOpen = false;
+      if (!mounted) return;
+      try {
+        if (accepted == true) {
+          await _run(widget.onAcceptEarlyEnd);
+        } else {
+          await _run(widget.onRejectEarlyEnd);
+        }
+      } catch (_) {}
+    });
   }
 
   Future<void> _run(Future<void> Function()? action) async {
@@ -3294,6 +3375,35 @@ class _ActiveTripViewState extends State<_ActiveTripView> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Future<void> _confirmAndRun(
+    String title,
+    String body,
+    Future<void> Function()? action,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: Text(body),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.black),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(
+              'Confirm',
+              style: const TextStyle(color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) _run(action);
   }
 
   String get _tripCode => widget.job.bookingRef.isNotEmpty
@@ -3432,6 +3542,7 @@ class _ActiveTripViewState extends State<_ActiveTripView> {
         _TripPrimaryButton(
           label: 'START NAVIGATION',
           onPressed: widget.onNavigateToPickup,
+          slide: false,
         ),
         const SizedBox(height: 10),
         _TripPrimaryButton(
@@ -3623,7 +3734,12 @@ class _ActiveTripViewState extends State<_ActiveTripView> {
         _TripPrimaryButton(
           label: 'START DELIVERY',
           loading: _busy,
-          onPressed: () => _run(widget.onStart),
+          slide: false,
+          onPressed: () => _confirmAndRun(
+            'Start Delivery',
+            'Are you sure you want to start the delivery?',
+            widget.onStart,
+          ),
         ),
       ],
     );
@@ -3683,7 +3799,14 @@ class _ActiveTripViewState extends State<_ActiveTripView> {
               ? 'START DELIVERY'
               : 'START TRIP',
           loading: _busy,
-          onPressed: () => _run(widget.onStart),
+          slide: false,
+          onPressed: () => _confirmAndRun(
+            widget.job.bookingType == 'delivery' ? 'Start Delivery' : 'Start Trip',
+            widget.job.bookingType == 'delivery'
+                ? 'Are you sure you want to start the delivery?'
+                : 'Are you sure you want to start the trip?',
+            widget.onStart,
+          ),
         ),
       ],
     );
@@ -4187,57 +4310,286 @@ class _TripContactAction extends StatelessWidget {
   }
 }
 
-class _TripPrimaryButton extends StatelessWidget {
+/// Slide-to-confirm button used for every critical driver action.
+/// Drag the thumb rightward to ≥88 % of track width to fire [onPressed].
+/// Snaps back if released early. Shows a spinner while [loading] is true.
+class _TripPrimaryButton extends StatefulWidget {
   const _TripPrimaryButton({
     required this.label,
     required this.onPressed,
     this.loading = false,
     this.secondary = false,
+    this.slide = true,
   });
 
   final String label;
   final VoidCallback? onPressed;
   final bool loading;
   final bool secondary;
+  final bool slide;
+
+  @override
+  State<_TripPrimaryButton> createState() => _TripPrimaryButtonState();
+}
+
+class _TripPrimaryButtonState extends State<_TripPrimaryButton>
+    with TickerProviderStateMixin {
+  double _drag = 0.0;          // 0.0 → 1.0
+  bool _confirmed = false;
+  bool _dragging  = false;
+  late final AnimationController _snapCtrl;
+  late final AnimationController _hintCtrl;
+  late Animation<double> _snapAnim;
+  late Animation<double> _hintAnim;
+
+  static const double _trackH    = 64.0;
+  static const double _thumbSz   = 44.0;
+  static const double _threshold = 0.88;
+  static const double _hintPx    = 10.0; // max nudge distance
+
+  @override
+  void initState() {
+    super.initState();
+    _snapCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
+    _hintCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 3000),
+    );
+    // One cycle: nudge right → return → long pause, repeat indefinitely.
+    _hintAnim = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween(begin: 0.0, end: 1.0)
+            .chain(CurveTween(curve: Curves.easeOut)),
+        weight: 1,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: 1.0, end: 0.0)
+            .chain(CurveTween(curve: Curves.easeIn)),
+        weight: 1,
+      ),
+      TweenSequenceItem(
+        tween: ConstantTween<double>(0.0),
+        weight: 4,
+      ),
+    ]).animate(_hintCtrl)
+      ..addListener(() => setState(() {}));
+    if (widget.slide) {
+      Future.delayed(const Duration(milliseconds: 600), () {
+        if (mounted && !_dragging && !_confirmed) _hintCtrl.repeat();
+      });
+    }
+  }
+
+  @override
+  void didUpdateWidget(_TripPrimaryButton old) {
+    super.didUpdateWidget(old);
+    // Reset when loading finishes so the track is ready for next action
+    if (old.loading && !widget.loading) {
+      _confirmed = false;
+      _dragging  = false;
+      _drag      = 0.0;
+      if (widget.slide) _hintCtrl.repeat();
+    }
+  }
+
+  @override
+  void dispose() {
+    _snapCtrl.dispose();
+    _hintCtrl.dispose();
+    super.dispose();
+  }
+
+  void _snapBack() {
+    _snapAnim = Tween<double>(begin: _drag, end: 0.0).animate(
+      CurvedAnimation(parent: _snapCtrl, curve: Curves.easeOut),
+    )..addListener(() => setState(() => _drag = _snapAnim.value));
+    _snapCtrl.forward(from: 0);
+  }
+
+  void _onDragStart(DragStartDetails d) {
+    if (widget.loading || widget.onPressed == null) return;
+    setState(() => _dragging = true);
+    _hintCtrl.stop();
+  }
+
+  void _onDragUpdate(DragUpdateDetails d, double trackW) {
+    if (widget.loading || widget.onPressed == null) return;
+    final maxX = trackW - _thumbSz - 8;
+    setState(() => _drag = (_drag + d.delta.dx / maxX).clamp(0.0, 1.0));
+  }
+
+  void _onDragEnd(DragEndDetails d, double trackW) {
+    if (_drag >= _threshold && !_confirmed) {
+      setState(() { _confirmed = true; _drag = 1.0; });
+      Future.delayed(const Duration(milliseconds: 120), () {
+        widget.onPressed?.call();
+      });
+    } else {
+      setState(() => _dragging = false);
+      _snapBack();
+      Future.delayed(const Duration(milliseconds: 800), () {
+        if (mounted && !_confirmed && !_dragging) _hintCtrl.repeat();
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final bg = secondary ? Colors.white : Colors.black;
-    final fg = secondary ? Colors.black : Colors.white;
-    final border = secondary ? BorderSide(color: Colors.black.withValues(alpha: 0.3)) : BorderSide.none;
-    return SizedBox(
-      width: double.infinity,
-      height: 48,
-      child: ElevatedButton(
-        onPressed: loading ? null : onPressed,
-        style: ElevatedButton.styleFrom(
-          elevation: 0,
-          backgroundColor: bg,
-          foregroundColor: fg,
-          disabledBackgroundColor: bg.withValues(alpha: 0.65),
-          side: border,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24),
+    final disabled = widget.loading || widget.onPressed == null;
+    final bg = widget.secondary
+        ? const Color(0xFFF2F2F2)
+        : Colors.black;
+    final fg = widget.secondary ? Colors.black : Colors.white;
+    final thumbColor = widget.secondary ? Colors.black : _kAmber;
+
+    // Plain tap button (no slide gesture)
+    if (!widget.slide) {
+      return SizedBox(
+        width: double.infinity,
+        height: 56.0,
+        child: Material(
+          color: disabled ? bg.withValues(alpha: 0.45) : bg,
+          borderRadius: BorderRadius.circular(28),
+          child: InkWell(
+            onTap: disabled ? null : widget.onPressed,
+            borderRadius: BorderRadius.circular(28),
+            child: Center(
+              child: widget.loading
+                  ? SizedBox(
+                      width: 20, height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2.2, color: fg),
+                    )
+                  : Text(
+                      widget.label,
+                      style: AppTextStyles.labelMedium.copyWith(
+                        color: fg,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+            ),
           ),
         ),
-        child: loading
-            ? SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: fg,
+      );
+    }
+
+    return SizedBox(
+      width: double.infinity,
+      height: _trackH,
+      child: LayoutBuilder(builder: (ctx, bc) {
+        final trackW = bc.maxWidth;
+        final maxX   = trackW - _thumbSz - 8;
+        final thumbX = 4.0 + _drag * maxX;
+
+        final hintOffset = _dragging ? 0.0 : _hintAnim.value * _hintPx;
+        final effectiveThumbX = thumbX + hintOffset;
+
+        return GestureDetector(
+          onHorizontalDragStart:  _onDragStart,
+          onHorizontalDragUpdate: (d) => _onDragUpdate(d, trackW),
+          onHorizontalDragEnd:    (d) => _onDragEnd(d, trackW),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(28),
+            child: Stack(
+              children: [
+                // ── Track background ────────────────────────────────────────
+                Container(
+                  width: trackW,
+                  height: _trackH,
+                  decoration: BoxDecoration(
+                    color: disabled
+                        ? bg.withValues(alpha: 0.45)
+                        : bg,
+                    borderRadius: BorderRadius.circular(28),
+                    border: widget.secondary
+                        ? Border.all(color: Colors.black.withValues(alpha: 0.15))
+                        : null,
+                  ),
                 ),
-              )
-            : Text(
-                label,
-                style: AppTextStyles.labelMedium.copyWith(
-                  color: fg,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.2,
+                // ── Filled progress strip ───────────────────────────────────
+                if (!disabled)
+                  Positioned(
+                    left: 0, top: 0, bottom: 0,
+                    child: AnimatedContainer(
+                      duration: Duration.zero,
+                      width: effectiveThumbX + _thumbSz / 2,
+                      decoration: BoxDecoration(
+                        color: thumbColor.withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(28),
+                      ),
+                    ),
+                  ),
+                // ── Label + hint text ────────────────────────────────────────
+                Center(
+                  child: widget.loading
+                      ? SizedBox(
+                          width: 20, height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.2, color: fg,
+                          ),
+                        )
+                      : Opacity(
+                          opacity: (1.0 - _drag * 1.4).clamp(0.0, 1.0),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                widget.label,
+                                style: AppTextStyles.labelMedium.copyWith(
+                                  color: fg,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0.2,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'swipe to confirm  →',
+                                style: AppTextStyles.bodySmall.copyWith(
+                                  color: fg.withValues(alpha: 0.55),
+                                  fontSize: 10,
+                                  letterSpacing: 0.3,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                 ),
-              ),
-      ),
+                // ── Thumb ───────────────────────────────────────────────────
+                if (!disabled)
+                  Positioned(
+                    left: effectiveThumbX,
+                    top: (_trackH - _thumbSz) / 2,
+                    child: Container(
+                      width: _thumbSz,
+                      height: _thumbSz,
+                      decoration: BoxDecoration(
+                        color: thumbColor,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.18),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Icon(
+                        _confirmed
+                            ? Icons.check_rounded
+                            : Icons.chevron_right_rounded,
+                        color: widget.secondary ? Colors.white : Colors.black,
+                        size: 22,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      }),
     );
   }
 }
@@ -6802,7 +7154,7 @@ class _EarlyEndSheetState extends State<_EarlyEndSheet> {
           ),
           const SizedBox(height: 8),
           const Text(
-            'The customer wants to end the trip early.\nSlide to accept or tap Reject to decline.',
+            'The customer wants to end the trip here.\nSlide to accept and complete the trip, or tap Reject.',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 14, color: Color(0xFF64748B), height: 1.5),
           ),
